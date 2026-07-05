@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "foxyberry",
+  "owner": { "name": "foxyberry" },
+  "description": "재사용 가능한 Claude·Codex 에이전트 하네스 — 핸드오프, 자기개선 회고, 커밋 공유 메모리, 워크플로",
+  "plugins": [
+    {
+      "name": "agent-harness",
+      "source": "./plugins/harness",
+      "description": "핸드오프 + 자기개선 회고 + 워크플로 스킬·훅 (Claude 어댑터)",
+      "category": "productivity",
+      "keywords": ["handoff", "memory", "reflection", "workflow", "codex"]
+    }
+  ]
+}

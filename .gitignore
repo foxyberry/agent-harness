@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# 로컬 실험/설치 산출물
+*.local
