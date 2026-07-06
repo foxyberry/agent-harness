@@ -28,9 +28,9 @@ jobs:
           print("Codex manifest 필수 필드 OK")
           PY
 
-      # core 스크립트 문법
-      - name: py_compile core scripts
-        run: python3 -m py_compile core/scripts/*.py
+      # core 스크립트·훅 문법
+      - name: py_compile core scripts+hooks
+        run: python3 -m py_compile core/scripts/*.py core/hooks/*.py
 
       # 정본(core)과 생성물(plugins/harness) 동기화 확인 — build.sh 안 돌린 채 커밋 방지
       - name: core↔adapter in sync (build.sh drift check)

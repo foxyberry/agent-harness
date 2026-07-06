@@ -1,0 +1,20 @@
+{
+  "//": "reflection 훅 데이터 — 방금 쓴 코드에 대해 띄울 품질 경고 규칙(언어·팀 특정).",
+  "//engine": "엔진(core)은 언어 규칙을 하드코딩하지 않는다. TODO/FIXME 범용 규칙만 내장. 나머지는 여기 데이터.",
+  "//format": "glob=적용 파일(생략시 전체), regex=Python re 패턴, min_count=이 수 이상일 때만(기본1), message={count}는 매칭수로 치환",
+  "//builtins": "내장 TODO/FIXME 경고를 끄려면: \"builtins\": {\"todo_fixme\": false}",
+  "//example": "아래는 Kotlin 예시(!!·var 남용). 네 언어/규칙에 맞게 고쳐라.",
+  "rules": [
+    {
+      "glob": "*.kt",
+      "regex": "!!",
+      "message": "`!!` 사용 {count}곳 — requireNotNull 또는 ?: return 으로 교체 검토"
+    },
+    {
+      "glob": "*.kt",
+      "regex": "(?m)^\\s*var ",
+      "min_count": 3,
+      "message": "var 선언 다수({count}) — fold/associate/sumOf 등으로 대체 검토"
+    }
+  ]
+}

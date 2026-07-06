@@ -19,7 +19,7 @@ SKILLS=$(cd core/skills && ls -d */ | sed 's#/##')
 
 # ── Claude 어댑터: plugins/harness ──────────────────────────────
 # 스크립트는 bin/ 공유(플러그인 활성 시 PATH 등록 — 검증됨).
-rm -rf plugins/harness/skills plugins/harness/bin
+rm -rf plugins/harness/skills plugins/harness/bin plugins/harness/hooks
 mkdir -p plugins/harness/bin
 cp core/scripts/handoff.py plugins/harness/bin/agent-handoff
 chmod +x plugins/harness/bin/agent-handoff
@@ -30,6 +30,34 @@ for s in $SKILLS; do
   mkdir -p "plugins/harness/skills/$s"
   render "core/skills/$s/SKILL.md" "plugins/harness/skills/$s/SKILL.md"
 done
+
+# 훅: core/hooks/*.py 를 그대로 번들(스크립트끼리 co-locate — 훅이 dirname(__file__) 로
+# reflect.py 를 찾고, reflect.py 가 compact_transcript.py 를 찾는다). Python 은 generic 이라
+# placeholder 렌더 불필요. hooks.json 은 ${CLAUDE_PLUGIN_ROOT} 로 이 번들을 참조.
+# ⚠️ Codex 훅은 pass 1 미포함(버전 취약 openai/codex#19385·#21639) — 스킬만 양쪽 배포. (이슈 #1)
+mkdir -p plugins/harness/hooks
+cp core/hooks/*.py plugins/harness/hooks/
+chmod +x plugins/harness/hooks/*.py
+cat > plugins/harness/hooks/hooks.json <<'HOOKS_JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] },
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-push-merged-guard.py\"" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] },
+      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
+    ]
+  }
+}
+HOOKS_JSON
 
 # ── Codex 어댑터: codex/ (skill-only plugin) ────────────────────
 # 스크립트는 스킬 폴더에 번들(scripts/) — bin PATH 가정 회피(Codex 미검증 영역).
