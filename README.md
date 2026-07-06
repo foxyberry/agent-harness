@@ -3,8 +3,9 @@
 **Claude Code + Codex** 를 위한 재사용 가능한 에이전트 하네스.
 핸드오프, 자기개선 회고, 커밋되어 공유되는 메모리, 워크플로 스킬을 한 번에 배포한다.
 
-> 설치 방식은 툴마다 다르지만(**아래 비대칭 참고**), 설치 후 쓰는 **명령 이름은 동일**하다:
-> `/handoff-save` · `/handoff-load` · `/feedback-review` · `/memory-update`
+> 설치 방식은 툴마다 다르다(**아래 비대칭 참고**). 호출 모델도 다르다 —
+> **Claude**는 슬래시 커맨드(`/handoff-save` …), **Codex**는 설명(description) 매칭으로 트리거되는 skill.
+> 개념·이름은 맞추되 슬래시 표기가 양쪽에서 동일 보장되진 않는다.
 
 ## 왜 다른가 (차별점)
 
@@ -22,10 +23,12 @@
 ```
 로컬 테스트: `/plugin marketplace add ./` (repo 루트에서)
 
-### Codex (skill 설치 + config merge) — *검증 후 확정*
+### Codex (skill-only plugin) — *installer 구축 중*
 ```
-./installers/install-codex.sh
+codex plugin marketplace add foxyberry/agent-harness   # (배포 후)
+# 또는 로컬: codex plugin marketplace add ./
 ```
+`installers/install-codex.sh`(config.toml merge)는 아직 미구현 — 현재는 위 marketplace 방식.
 
 ### 공통 (프로젝트 층)
 프로젝트 repo 에 `project-template/` 를 복사 — `AGENTS.md`(정본) + `CLAUDE.md`(@import) + `.claude/memory/` 템플릿.

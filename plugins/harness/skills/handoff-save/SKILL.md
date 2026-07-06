@@ -13,7 +13,6 @@ argument-hint: "선택: 한 줄 요약 — 예: 실거래 클라이언트 단일
 
 왜: transcript(.jsonl)는 로컬·툴 종속이라 남이 못 읽는다. 커밋된 핸드오프 파일만이
 clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
-(배경: `.claude/memory/harness/cross-machine-feedback-placement.md`)
 
 ## 실행 순서
 

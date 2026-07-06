@@ -13,12 +13,12 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 
 ## 실행 순서
 
-### 1. 루트 `CLAUDE.md` 를 먼저 읽는다 (프로젝트 규칙).
+### 1. 루트 `AGENTS.md` 를 먼저 읽는다 (프로젝트 규칙).
 
 ### 2. 핸드오프 + 현재 git 사실 로드
 
 ```bash
-agent-handoff load
+python3 scripts/handoff.py load
 ```
 
 출력에서 확인할 것:
@@ -27,7 +27,7 @@ agent-handoff load
 - **깊은 복구 힌트**: 같은 머신에 로컬 transcript 가 있으면 표시됨
 
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
-핸드오프만으로 부족하고 로컬 transcript 가 있으면 `/fw-claude` 또는 `/continue-claude`
+핸드오프만으로 부족하고 로컬 transcript 가 있으면 `~/.codex/sessions` 의 최근 세션 로그
 로 .jsonl 을 직접 읽어 더 자세히 복원한다. (다른 머신이면 생략 — 파일이 없음)
 
 ### 4. "이미 완료 / 남은 것 / 바로 할 액션" 으로 정리한 뒤,
@@ -35,4 +35,4 @@ agent-handoff load
 
 ## 주의
 - transcript·핸드오프보다 **현재 git 상태가 우선**. 이미 커밋/푸시/PR 된 작업 중복 금지.
-- 커밋 전 `CLAUDE.md` 승인 규칙, main 직접 merge 금지 규칙을 따른다.
+- 커밋 전 `AGENTS.md` 승인 규칙, main 직접 merge 금지 규칙을 따른다.

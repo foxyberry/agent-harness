@@ -13,7 +13,6 @@ argument-hint: "선택: 한 줄 요약 — 예: 실거래 클라이언트 단일
 
 왜: transcript(.jsonl)는 로컬·툴 종속이라 남이 못 읽는다. 커밋된 핸드오프 파일만이
 clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
-(배경: `.claude/memory/harness/cross-machine-feedback-placement.md`)
 
 ## 실행 순서
 
@@ -26,8 +25,8 @@ clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
 ### 2. 스크립트 실행 (서술은 실제 개행 포함 마크다운)
 
 ```bash
-agent-handoff save \
-  --agent claude \
+{{HANDOFF}} save \
+  --agent {{AGENT}} \
   --summary "한두 줄 요약" \
   --done "- 끝낸 것 1
 - 끝낸 것 2" \
@@ -41,7 +40,7 @@ git 사실(브랜치·origin/main 대비 커밋·변경 파일·열린 PR)은 �
 
 ### 3. 커밋·푸시 안내
 저장만으론 로컬에만 있다. 이어받기가 목적이면 **커밋·푸시**해야 한다.
-`CLAUDE.md` 커밋 승인 규칙을 따른다 — 사용자에게 확인 후 진행.
+`{{RULES_FILE}}` 커밋 승인 규칙을 따른다 — 사용자에게 확인 후 진행.
 
 ## 주의
 - 서술 섹션을 비우지 말 것. 빈 핸드오프는 무용하다.
