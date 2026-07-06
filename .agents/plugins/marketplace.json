@@ -1,0 +1,17 @@
+{
+  "name": "foxyberry",
+  "interface": {
+    "displayName": "foxyberry agent-harness"
+  },
+  "plugins": [
+    {
+      "name": "agent-harness",
+      "source": { "source": "local", "path": "./codex" },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
