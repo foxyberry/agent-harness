@@ -20,7 +20,7 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ```bash
 python3 scripts/handoff.py load
 ```
-
+> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. Bash 실행 시 workdir 를 그 스킬 폴더로 두고 실행하라.
 출력에서 확인할 것:
 - **커밋된 핸드오프**: 요약/완료/남은것/다음액션/검증 — 이게 이식 가능한 1순위 정보
 - **현재 git 사실**: 핸드오프 작성 이후 바뀐 게 있는지 **대조** (git 이 우선)

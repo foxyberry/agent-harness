@@ -6,11 +6,12 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # SKILL.md 의 {{PLACEHOLDER}} 를 어댑터별 값으로 치환 (sed 구분자 | — 값에 / 포함 대비)
-render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY)
+render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE)
   sed -e "s|{{AGENT}}|$AGENT|g" \
       -e "s|{{RULES_FILE}}|$RULES_FILE|g" \
       -e "s|{{HANDOFF}}|$HANDOFF|g" \
       -e "s|{{DEEP_RECOVERY}}|$DEEP_RECOVERY|g" \
+      -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
       "$1" > "$2"
 }
 
@@ -24,6 +25,7 @@ cp core/scripts/handoff.py plugins/harness/bin/agent-handoff
 chmod +x plugins/harness/bin/agent-handoff
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff
 DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
+PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 for s in $SKILLS; do
   mkdir -p "plugins/harness/skills/$s"
   render "core/skills/$s/SKILL.md" "plugins/harness/skills/$s/SKILL.md"
@@ -34,6 +36,8 @@ done
 rm -rf codex/skills codex/bin
 AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
 DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
+# Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 실행 workdir 를 그 폴더로
+PATH_NOTE='> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. Bash 실행 시 workdir 를 그 스킬 폴더로 두고 실행하라.'
 for s in $SKILLS; do
   mkdir -p "codex/skills/$s/scripts"
   cp core/scripts/handoff.py "codex/skills/$s/scripts/handoff.py"

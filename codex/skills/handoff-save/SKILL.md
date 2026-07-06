@@ -34,7 +34,7 @@ python3 scripts/handoff.py save \
 - 다음 액션 2" \
   --verify "검증 상태"
 ```
-
+> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. Bash 실행 시 workdir 를 그 스킬 폴더로 두고 실행하라.
 git 사실(브랜치·origin/main 대비 커밋·변경 파일·열린 PR)은 스크립트가 **자동 수집**한다.
 파일은 `.claude/handoff/<브랜치명>.md` 에 생성/갱신된다 (브랜치당 1개).
 
