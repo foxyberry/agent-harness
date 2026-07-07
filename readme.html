@@ -71,6 +71,25 @@
   .badge.done{background:var(--ok-soft); color:var(--ok)}
   .badge.soon{background:var(--warn-soft); color:var(--warn)}
   footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:.85rem}
+
+  /* architecture diagram */
+  .arch{display:flex; flex-direction:column; align-items:stretch; margin:20px 0 8px}
+  .arch .node{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 16px; text-align:center}
+  .arch .node b{font-size:.98rem}
+  .arch .node span{display:block; font-size:.8rem; color:var(--muted); margin-top:2px}
+  .arch .core{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent)}
+  .arch .core b{color:var(--accent)}
+  .arch .use{border-color:var(--ok)}
+  .arch .use b{color:var(--ok)}
+  .arch .flow{text-align:center; color:var(--muted); font-size:.8rem; padding:7px 0}
+  .arch .flow code{font-size:.85em; background:var(--code-bg); padding:.1em .4em; border-radius:5px}
+  .arch .split{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+  @media (max-width:640px){ .arch .split{grid-template-columns:1fr} }
+
+  /* folder tree */
+  pre.tree{font-size:.79rem; line-height:1.6}
+  pre.tree .d{color:var(--accent); font-weight:600}
+  pre.tree .c{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -161,6 +180,52 @@
     </tbody>
   </table>
   <p class="muted">core가 정본이고 어댑터는 생성물. 수정은 core에서 → <code>./build.sh</code> → 어댑터 재생성.</p>
+
+  <div class="arch">
+    <div class="node core"><b>core/</b><span>정본 — 훅 · 스킬 · 스크립트 · 메모리 스키마 (한 곳에서만 수정)</span></div>
+    <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
+    <div class="split">
+      <div class="node"><b>plugins/harness/</b><span>Claude 어댑터 · <code>hooks.json</code> 자동발견</span></div>
+      <div class="node"><b>codex/</b><span>Codex 어댑터 · skill-only (훅 defer)</span></div>
+    </div>
+    <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
+    <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
+  </div>
+  <p class="muted">core 한 곳을 고치면 두 어댑터가 함께 생성된다. CI가 "core↔어댑터 동기화"를 강제 — <code>build.sh</code> 안 돌린 채 커밋하면 실패.</p>
+
+  <h2>폴더 구조</h2>
+<pre class="tree">agent-harness/
+├─ <span class="d">core/</span>                     <span class="c">← 정본 (single source of truth)</span>
+│  ├─ <span class="d">hooks/</span>                 <span class="c">자기개선 훅 엔진</span>
+│  │  ├─ memory-search.py       <span class="c">편집 전 메모리 주입</span>
+│  │  ├─ reflection.py          <span class="c">편집 후 품질 경고</span>
+│  │  ├─ pr-merge-reflect.py    <span class="c">머지 회고 (핵심)</span>
+│  │  ├─ reflect.py             <span class="c">회고 잡 (LLM 백엔드)</span>
+│  │  └─ compact_transcript.py  <span class="c">트랜스크립트 압축</span>
+│  ├─ <span class="d">skills/</span>                <span class="c">스킬 (SKILL.md)</span>
+│  │  ├─ handoff-save · handoff-load
+│  │  └─ feedback-review · memory-update
+│  └─ <span class="d">scripts/</span>handoff.py
+│
+├─ <span class="d">plugins/harness/</span>          <span class="c">← Claude 어댑터 (build.sh 생성물)</span>
+│  ├─ hooks/  <span class="c">(hooks.json + *.py)</span>
+│  ├─ skills/
+│  └─ bin/agent-handoff
+│
+├─ <span class="d">codex/</span>                    <span class="c">← Codex 어댑터 (build.sh 생성물)</span>
+│  ├─ .codex-plugin/plugin.json
+│  └─ skills/*/scripts/handoff.py
+│
+├─ <span class="d">project-template/</span>         <span class="c">← opinion pack (프로젝트가 복사)</span>
+│  └─ .claude/memory/  <span class="c">routes.json · reflection-rules.json (예시)</span>
+│
+├─ <span class="d">.claude/memory/</span>           <span class="c">← 자기 dogfooding (이 repo에도 훅 적용)</span>
+├─ <span class="d">docs/</span>self-improvement-hooks.md
+├─ build.sh                  <span class="c">core → 어댑터 렌더</span>
+├─ .claude-plugin/marketplace.json    <span class="c">Claude 배포</span>
+├─ .agents/plugins/marketplace.json   <span class="c">Codex 배포</span>
+└─ AGENTS.md · README.md · readme.html
+</pre>
 
   <h2>상태</h2>
   <ul class="status">
