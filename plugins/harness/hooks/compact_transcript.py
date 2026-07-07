@@ -70,33 +70,37 @@ def _codex_msg(d):
 
 
 def compact(path):
-    lines = open(path, encoding="utf-8").read().splitlines()
+    # 라인 단위 스트리밍 — read().splitlines() 는 전체 문자열 + 전체 리스트를 동시에 물어
+    # 대용량(수십 MB) 트랜스크립트에서 피크 메모리가 2배가 된다. 한 줄씩만 필요하므로 iterate.
     md = []
-    for ln in lines:
-        try:
-            d = json.loads(ln)
-        except Exception:
-            continue
-        role, blocks = _claude_msg(d)
-        if role is None:
-            role, blocks = _codex_msg(d)  # Codex rollout 포맷 fallback
-        if role is None:
-            continue
-        if role == "user":
-            for kind, txt in blocks:
-                if kind == "text" and txt.strip():
-                    md.append(f"\n### 👤 USER\n{txt.strip()}")
-        elif role == "assistant":
-            texts = [t for k, t in blocks if k == "text" and t.strip()]
-            tools = [t for k, t in blocks if k == "tool"]
-            if texts:
-                joined = "\n".join(texts).strip()
-                if len(joined) > ASSIST_MAX:
-                    joined = joined[:ASSIST_MAX] + " …(절단)"
-                md.append(f"\n**🤖 ASSISTANT:** {joined}")
-            if tools:
-                md.append(f"  ↳ 도구: {', '.join(tools[:8])}" + (" …" if len(tools) > 8 else ""))
-    return "\n".join(md), len(lines)
+    n = 0
+    with open(path, encoding="utf-8") as f:
+        for ln in f:
+            n += 1
+            try:
+                d = json.loads(ln)
+            except Exception:
+                continue
+            role, blocks = _claude_msg(d)
+            if role is None:
+                role, blocks = _codex_msg(d)  # Codex rollout 포맷 fallback
+            if role is None:
+                continue
+            if role == "user":
+                for kind, txt in blocks:
+                    if kind == "text" and txt.strip():
+                        md.append(f"\n### 👤 USER\n{txt.strip()}")
+            elif role == "assistant":
+                texts = [t for k, t in blocks if k == "text" and t.strip()]
+                tools = [t for k, t in blocks if k == "tool"]
+                if texts:
+                    joined = "\n".join(texts).strip()
+                    if len(joined) > ASSIST_MAX:
+                        joined = joined[:ASSIST_MAX] + " …(절단)"
+                    md.append(f"\n**🤖 ASSISTANT:** {joined}")
+                if tools:
+                    md.append(f"  ↳ 도구: {', '.join(tools[:8])}" + (" …" if len(tools) > 8 else ""))
+    return "\n".join(md), n
 
 
 def main():
@@ -105,7 +109,10 @@ def main():
     path = sys.argv[1]
     out, n = compact(path)
     if "-o" in sys.argv:
-        dst = sys.argv[sys.argv.index("-o") + 1]
+        oi = sys.argv.index("-o")
+        if oi + 1 >= len(sys.argv):
+            sys.exit("usage: compact_transcript.py <transcript.jsonl> [-o out.md]")
+        dst = sys.argv[oi + 1]
         open(dst, "w", encoding="utf-8").write(out)
         sys.stderr.write(f"[compact] {n} 줄 → {dst} ({len(out)}자 ~{len(out)//4} 토큰)\n")
     else:

@@ -38,8 +38,9 @@ TODO_MESSAGE = "⚠️  TODO/FIXME 남아있음 — 작업 완료 후 제거 필
 
 
 def _project_dir():
-    return (os.environ.get("CLAUDE_PROJECT_DIR")
-            or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    # 플러그인 배포 시 이 스크립트는 프로젝트 밖(플러그인 루트)에 있으므로 __file__ 기반
+    # fallback 은 프로젝트가 아닌 플러그인 dir 을 가리킨다. cwd(훅 실행 위치=프로젝트)로 fallback.
+    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
 def _load_config(memory_dir):

@@ -125,8 +125,22 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 
 ---
 
+## 알려진 한계 (auto-reflect 켤 때만)
+
+자동 회고(`HARNESS_AUTO_REFLECT=1`)를 켰을 때만 해당되는 두 한계가 있다. 기본 off 라 일상 사용엔 영향 없다.
+
+- **회고 잡은 "스폰 성공 = seen" 으로 처리한다.** `reflect.py` 는 detached 로 뜨고, 그 안의
+  `claude -p`(또는 API 백엔드)가 스폰 후 실패(PATH 없음·타임아웃·비정상 종료)하면 초안이 0개여도
+  그 세션은 이미 seen 이라 **다음 스윕에서 재시도되지 않는다** → 그 머지/세션 회고가 유실될 수 있다.
+  실패는 `.claude/.cache/reflect.log` 에 남는다. (완료-확인 후 seen 처리 = 상태 콜백은 후속 과제.)
+- **초안 파서는 중첩 코드펜스에서 잘릴 수 있다.** `reflect.py` 의 `_split_drafts` 는 non-greedy
+  ` ``` ` 펜스 매칭이라, LLM 초안 본문에 ` ``` ` 예시 블록이 들어가면 그 지점에서 잘려 저장될 수 있다.
+  → `/memory-update` 검토 시 잘린 초안은 폐기·재작성한다.
+
 ## 검증 상태
 
 - **구현 + 스모크테스트 완료** — 각 훅의 no-op·매핑 주입·규칙 적용·MultiEdit·경로탈출 차단·suffix 보존 검증됨.
+  high-effort 코드리뷰(finder 4각 + 위치별 독립 검증) 반영: SessionStart gh 폴링을 `.claude/memory` 있을
+  때만 실행, 머지 감지 정규식·명령 매칭 강건화, CLI IndexError·트랜스크립트 메모리·경로 fallback 정리.
 - **live-fire 미검증** — 설치된 세션에서 훅이 실제로 발화하는지(discovery·matcher·`additionalContext` 도달·
   env 전파)는 이슈 #3 으로 이관. 현재 문서는 "구현됨"이지 "실세션 발화 검증됨"은 아니다.

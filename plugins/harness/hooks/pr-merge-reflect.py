@@ -341,16 +341,26 @@ def _pr_is_merged(project_dir, num):
         return False
 
 
+def _looks_like_merge(cmd):
+    """명령의 한 statement 가 실제로 `gh pr merge` 로 시작하는지 검사 — `echo "gh pr merge 5"`
+    나 `grep`, 주석 안의 문자열 매칭 오탐을 배제한다. `;`·개행·`&&`·`||`·`|` 로 분리해
+    각 조각의 앞부분(선행 공백 무시)만 본다."""
+    for stmt in re.split(r"[;\n]|&&|\|\|?", cmd):
+        if re.match(r"\s*gh\s+pr\s+merge\b", stmt):
+            return True
+    return False
+
+
 def _on_post_tool(data, project_dir, cache):
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    if "gh pr merge" not in cmd:
+    if not _looks_like_merge(cmd):
         return
-    m = re.search(r"gh pr merge\s+(\d+)", cmd)
+    # PR 번호는 플래그 앞/뒤 어디든 올 수 있다: `gh pr merge 42 --squash` / `gh pr merge --squash 42`.
+    m = re.search(r"gh\s+pr\s+merge\b[^\d]*(\d+)", cmd)
     num = int(m.group(1)) if m else None
-    # 명령에 문자열만 있어도(echo·따옴표·실패한 머지) 오탐이 되지 않도록, PR 이 실제
-    # MERGED 인지 확인 후에만 적재·스폰. 번호 없는 `gh pr merge`(현재 브랜치)는 검증 불가라 보류
+    # 실제 MERGED 인지 확인 후에만 적재·스폰. 번호 없는 `gh pr merge`(현재 브랜치)는 검증 불가라 보류
     # — SessionStart 스윕/사용자 "머지했어" 발화로 뒤늦게 잡힌다.
     if num is None or not _pr_is_merged(project_dir, num):
         return
@@ -404,8 +414,14 @@ def main():
         sys.exit(0)
 
     event = data.get("hook_event_name", "")
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    # normpath: 끝 슬래시 제거 등 정규화 (Codex in-project 매칭이 trailing sep 로 깨지지 않게).
+    project_dir = os.path.normpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     cache = _cache_path(project_dir)
+
+    # 이 프로젝트가 하네스 메모리 시스템을 안 쓰면(.claude/memory 없음) 전체 no-op.
+    # 미사용 repo 의 매 세션 시작마다 gh 폴링(수 초 블록)·Codex 디렉토리 walk 가 도는 걸 막는다.
+    if not os.path.isdir(os.path.join(project_dir, ".claude/memory")):
+        sys.exit(0)
 
     try:
         if event == "SessionStart":

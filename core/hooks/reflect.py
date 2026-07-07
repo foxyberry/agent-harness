@@ -129,11 +129,19 @@ def _slug(block):
 
 def main():
     args = sys.argv[1:]
-    if "--transcript" not in args:
-        sys.exit("usage: reflect.py --transcript <session.jsonl> [--backend ...]")
-    transcript = args[args.index("--transcript") + 1]
-    backend = (args[args.index("--backend") + 1] if "--backend" in args
-               else os.environ.get("REFLECT_BACKEND", "claude"))
+
+    def _flag_value(flag):
+        """--flag 뒤의 값. 플래그가 없거나 값이 안 붙으면 None (IndexError 방지)."""
+        if flag in args:
+            i = args.index(flag)
+            if i + 1 < len(args):
+                return args[i + 1]
+        return None
+
+    transcript = _flag_value("--transcript")
+    if transcript is None:
+        sys.exit("usage: reflect.py --transcript <session.jsonl> [--backend claude|deepseek|ollama]")
+    backend = _flag_value("--backend") or os.environ.get("REFLECT_BACKEND", "claude")
     if backend not in BACKENDS:
         sys.exit(f"unknown backend: {backend}")
     if not os.path.exists(transcript):
