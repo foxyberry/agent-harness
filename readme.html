@@ -64,6 +64,8 @@
   .note{border-radius:10px; padding:12px 16px; margin:14px 0; font-size:.92rem}
   .note.warn{background:var(--warn-soft); border:1px solid var(--border)}
   .note.warn b{color:var(--warn)}
+  .note.tip{background:var(--accent-soft); border:1px solid var(--border)}
+  .note.tip b{color:var(--accent)}
 
   ul{margin:12px 0; padding-left:20px} li{margin:5px 0}
   .status li{list-style:none; margin-left:-6px}
@@ -151,6 +153,24 @@
     설치만으로 몰래 AI가 돌지 않게 <code>HARNESS_AUTO_REFLECT=1</code>로 켜야 동작한다. 리마인더는 무관하게 항상 켜짐.
   </div>
 
+  <h2>돌고 있는지 어떻게 아나 <span class="muted">(관측성)</span></h2>
+  <p>훅은 <b>님 화면이 아니라 에이전트의 컨텍스트에 주입</b>한다 — 조용한 게 정상이라, 도는지 눈에 잘 안 보인다.
+    예: <code>*.kt</code>·<code>core/hooks/*</code>를 열면 관련 메모리가 에이전트에게 <em>몰래</em> 들어가고,
+    코드에 <code>!!</code>·<code>TODO</code>가 남으면 경고가 tool 결과 옆에 붙는다. 관측하려면 아래를 본다:</p>
+  <table>
+    <thead><tr><th>신호</th><th>어디</th><th>뜻</th></tr></thead>
+    <tbody>
+      <tr><td>훅 데이터</td><td><code>.claude/memory/*.json</code></td><td>있으면 이 프로젝트에 자가개선 <b>설치됨</b></td></tr>
+      <tr><td>회고 초안</td><td><code>.claude/memory/_pending/*.md</code></td><td>reflect가 만든 <b>승격 후보</b> — <code>/memory-update</code>로 검토</td></tr>
+      <tr><td>회고 로그</td><td><code>.claude/.cache/reflect.log</code></td><td>언제 뭘 회고했는지 (auto-reflect 켰을 때만)</td></tr>
+    </tbody>
+  </table>
+  <div class="note tip">
+    <b>초안이 실제 파일로 쌓이는 걸 보려면</b> 자동 회고를 켠다: <code>export HARNESS_AUTO_REFLECT=1</code>.
+    그럼 PR 머지마다 <code>.claude/memory/_pending/</code>에 회고 초안이 생겨 눈으로 확인·검토할 수 있다.
+    <span class="muted">(끄면 리마인더만 뜨고 회고는 사람이 직접 <code>/memory-update</code>로.)</span>
+  </div>
+
   <h2>설치</h2>
   <p><b>Claude Code</b> (플러그인 한 방):</p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
@@ -162,13 +182,19 @@
 
   <h2>명령 <span class="muted">(설치 후)</span></h2>
   <table>
+    <thead><tr><th>명령</th><th>언제 쓰나</th><th>하는 일</th></tr></thead>
     <tbody>
-      <tr><td><code>/handoff-save</code></td><td>넘기기 전 이식 가능한 상태를 커밋 파일로 저장</td></tr>
-      <tr><td><code>/handoff-load</code></td><td>이어받기 — 커밋된 핸드오프 1순위 + 현재 git 대조</td></tr>
-      <tr><td><code>/feedback-review</code></td><td>받은 지적을 규칙/스킬로 승격 검토</td></tr>
-      <tr><td><code>/memory-update</code></td><td>배운 것을 공유 메모리로 영속화 (<code>_pending</code> 검토·승격)</td></tr>
+      <tr><td><code>/handoff-save</code></td><td>세션 끝 · 툴/머신/사람 바꾸기 직전</td><td>이식 가능한 상태를 커밋 파일로 저장 (git 사실 자동수집)</td></tr>
+      <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프 읽고 현재 git과 대조</td></tr>
+      <tr><td><code>/feedback-review</code></td><td>머지 후 · 회고 시</td><td>받은 지적을 규칙/스킬로 승격 검토</td></tr>
+      <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 공유 메모리로 영속화 (<code>_pending</code> 검토·승격)</td></tr>
     </tbody>
   </table>
+  <div class="note tip">
+    <b>핸드오프 팁:</b> 로컬 대화기록(transcript)은 남이 못 읽는다. 핸드오프는 <b>git에 커밋되는 파일</b>이라
+    clone/pull 하는 누구나(다른 머신·Codex·동료)가 이어받는다. <code>save</code> 후 <b>커밋·푸시</b>해야 전달된다.
+    <span class="muted">— 이 저장소 작업도 <code>/handoff-load</code> 로 이어받아 시작했다.</span>
+  </div>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
