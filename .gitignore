@@ -7,3 +7,7 @@ __pycache__/
 
 # 로컬 실험/설치 산출물
 *.local
+
+# 자기개선 훅 런타임 산출물 (커밋 금지 — governance/머신별 상태)
+.claude/memory/_pending/
+.claude/.cache/

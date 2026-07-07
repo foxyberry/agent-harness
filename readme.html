@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-harness — 재사용 가능한 에이전트 하네스</title>
+<style>
+  :root{
+    --bg:#fbfbfa; --fg:#1e1e1c; --muted:#6b6b66; --card:#fff; --border:#e6e4df;
+    --accent:#7a5cff; --accent-soft:#efeaff; --ok:#1a9e6a; --ok-soft:#e6f6ee;
+    --warn:#c9820a; --warn-soft:#fbf1dd; --code-bg:#f2f0eb;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17171a; --fg:#e9e8e4; --muted:#9d9c96; --card:#1f1f23; --border:#2e2e33;
+      --accent:#a690ff; --accent-soft:#282142; --ok:#4fd39a; --ok-soft:#16302a;
+      --warn:#e0a842; --warn-soft:#33280f; --code-bg:#26262b;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    line-height:1.65; font-size:16px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:48px 24px 80px}
+  header h1{font-size:2.1rem; margin:0 0 6px; letter-spacing:-.02em}
+  header .tag{color:var(--muted); font-size:1.05rem; margin:0 0 8px}
+  .lead{font-size:1.05rem; background:var(--accent-soft); border:1px solid var(--border);
+    border-radius:12px; padding:16px 18px; margin:22px 0 8px}
+  h2{font-size:1.35rem; margin:44px 0 14px; letter-spacing:-.01em}
+  h2 .em{color:var(--accent)}
+  p{margin:12px 0}
+  code{background:var(--code-bg); padding:.12em .4em; border-radius:5px; font-size:.88em;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:var(--code-bg); border:1px solid var(--border); border-radius:10px;
+    padding:14px 16px; overflow-x:auto; font-size:.86rem; line-height:1.5}
+  pre code{background:none; padding:0}
+  a{color:var(--accent)}
+  .muted{color:var(--muted)}
+
+  /* loop diagram */
+  .loop{display:flex; flex-wrap:wrap; gap:10px; align-items:stretch; margin:20px 0}
+  .step{flex:1 1 150px; background:var(--card); border:1px solid var(--border);
+    border-radius:12px; padding:14px 16px; position:relative}
+  .step .n{font-size:.72rem; color:var(--accent); font-weight:700; letter-spacing:.04em}
+  .step .t{font-weight:650; margin:3px 0 2px; font-size:.98rem}
+  .step .d{font-size:.83rem; color:var(--muted)}
+  .arrow{align-self:center; color:var(--muted); font-size:1.2rem; flex:0 0 auto}
+  @media (max-width:640px){ .arrow{transform:rotate(90deg)} .step{flex-basis:100%} }
+
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:.92rem}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+  th{font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+  td code{white-space:nowrap}
+
+  .cards{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0}
+  @media (max-width:640px){ .cards{grid-template-columns:1fr} }
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px}
+  .card h3{margin:0 0 6px; font-size:1rem}
+  .card.engine{border-left:3px solid var(--accent)}
+  .card.data{border-left:3px solid var(--ok)}
+
+  .note{border-radius:10px; padding:12px 16px; margin:14px 0; font-size:.92rem}
+  .note.warn{background:var(--warn-soft); border:1px solid var(--border)}
+  .note.warn b{color:var(--warn)}
+
+  ul{margin:12px 0; padding-left:20px} li{margin:5px 0}
+  .status li{list-style:none; margin-left:-6px}
+  .badge{display:inline-block; font-size:.7rem; font-weight:700; padding:1px 7px; border-radius:20px; vertical-align:middle}
+  .badge.done{background:var(--ok-soft); color:var(--ok)}
+  .badge.soon{background:var(--warn-soft); color:var(--warn)}
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--border); color:var(--muted); font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>agent-harness</h1>
+    <p class="tag"><b>Claude Code + Codex</b>를 위한 재사용 가능한 에이전트 하네스</p>
+  </header>
+
+  <p class="lead">
+    <b>"에이전트가 실수에서 배우는 시스템"</b>을 특정 프로젝트에만 있던 것에서 →
+    어느 프로젝트에서나 <code>/plugin install</code> 한 번으로 쓸 수 있게 만든 도구.
+    핸드오프 · 자기개선 회고 · 커밋되어 공유되는 메모리 · 워크플로 스킬을 한 번에 배포한다.
+  </p>
+
+  <h2>왜 다른가 <span class="muted">(차별점)</span></h2>
+  <p>공개 하네스 대부분은 <i>세션 종료 시 캡처</i>까지만 한다. 이 하네스는:</p>
+  <ul>
+    <li><b>자기개선 훅 루프</b> — 편집 전 메모리 주입 → 편집 후 품질 경고 → 머지 시 회고 → 승격. 스킬보다 한 층 위의 <b>자동 루프</b>.</li>
+    <li><b>PR 머지 트리거 회고</b> — 세션 끝이 아니라 작업이 머지될 때 교훈을 남긴다.</li>
+    <li><b>커밋되어 공유되는 메모리</b> — 로컬 transcript 대신 git에 커밋되는 메모리로 다른 머신·사람·툴이 이어받는다.</li>
+    <li><b>governance 내장</b> — <code>_pending → 사람 승인 → committed</code>. 잘못된 교훈·민감정보가 자동으로 박히지 않는다.</li>
+  </ul>
+
+  <h2>자기개선 <span class="em">루프</span></h2>
+  <div class="loop">
+    <div class="step"><div class="n">01 · 편집 전</div><div class="t">memory-search</div><div class="d">이 파일 고칠 때 필요한 규칙·결정을 미리 꺼내 컨텍스트에 주입</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">02 · 편집 후</div><div class="t">reflection</div><div class="d">방금 쓴 코드에 <code>!!</code>·TODO 남았는지 즉시 경고</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">03 · 머지 시</div><div class="t">pr-merge-reflect</div><div class="d">이번 작업 교훈을 놓치지 않게 회고 리마인드 (+opt-in 자동 초안)</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">04 · 승격</div><div class="t">/memory-update</div><div class="d">초안을 검토해 메모리로 영속화 (사람 승인)</div></div>
+  </div>
+
+  <h2>자동 훅 3개 <span class="muted">(Claude 어댑터)</span></h2>
+  <table>
+    <thead><tr><th>언제</th><th>훅</th><th>하는 일</th><th>프로젝트 설정</th></tr></thead>
+    <tbody>
+      <tr><td>파일 고치기 직전</td><td><code>memory-search</code></td><td>파일에 맞는 메모리를 컨텍스트에 주입</td><td><code>routes.json</code></td></tr>
+      <tr><td>파일 고친 직후</td><td><code>reflection</code></td><td>코드 품질 경고 (정규식 규칙 + 내장 TODO/FIXME)</td><td><code>reflection-rules.json</code></td></tr>
+      <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>미회고 PR 리마인더 + (opt-in) 자동 회고 초안</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>핵심 설계 — <span class="em">엔진과 재료를 분리</span></h2>
+  <p>도넛 기계(엔진)와 반죽(재료)을 나눈 것에 비유할 수 있다. 기계는 만드는 법만 알고, 맛은 반죽이 정한다.</p>
+  <div class="cards">
+    <div class="card engine"><h3>🛠 엔진 (core)</h3>
+      <p class="muted" style="margin:0">툴·프로젝트 무관 generic 부품. "무엇을" 주입·경고할지는 하드코딩하지 않는다. 모든 프로젝트가 공유.</p></div>
+    <div class="card data"><h3>🧾 데이터 (프로젝트)</h3>
+      <p class="muted" style="margin:0"><code>.claude/memory/</code>의 <code>routes.json</code>·<code>reflection-rules.json</code>이 "우리 프로젝트는 이렇게"를 정한다. 프로젝트마다 다름.</p></div>
+  </div>
+  <p>전에는 기계 안에 "Kotlin 규칙"이 통째로 굳어 있었다(하드코딩). 그걸 빼내 <b>기계는 순수하게, 재료는 프로젝트가 넣도록</b> 분리했다. Java든 Python이든 자기 재료만 넣으면 같은 기계가 돈다. 설정이 없으면 훅은 <b>조용히 no-op</b>.</p>
+
+  <div class="note warn">
+    <b>⚠️ 자동 회고는 기본 꺼짐.</b> 자동 회고 잡은 <code>claude -p</code>(AI)를 백그라운드로 띄운다.
+    설치만으로 몰래 AI가 돌지 않게 <code>HARNESS_AUTO_REFLECT=1</code>로 켜야 동작한다. 리마인더는 무관하게 항상 켜짐.
+  </div>
+
+  <h2>설치</h2>
+  <p><b>Claude Code</b> (플러그인 한 방):</p>
+  <pre><code>/plugin marketplace add foxyberry/agent-harness
+/plugin install agent-harness@foxyberry</code></pre>
+  <p><b>Codex</b> <span class="muted">(skill-only — installer 구축 중)</span>:</p>
+  <pre><code>codex plugin marketplace add foxyberry/agent-harness   # 배포 후
+# 또는 로컬: codex plugin marketplace add ./</code></pre>
+  <p class="muted">공통: 프로젝트에 <code>project-template/</code> 복사 (AGENTS.md 정본 + <code>.claude/memory/</code> 템플릿).</p>
+
+  <h2>명령 <span class="muted">(설치 후)</span></h2>
+  <table>
+    <tbody>
+      <tr><td><code>/handoff-save</code></td><td>넘기기 전 이식 가능한 상태를 커밋 파일로 저장</td></tr>
+      <tr><td><code>/handoff-load</code></td><td>이어받기 — 커밋된 핸드오프 1순위 + 현재 git 대조</td></tr>
+      <tr><td><code>/feedback-review</code></td><td>받은 지적을 규칙/스킬로 승격 검토</td></tr>
+      <tr><td><code>/memory-update</code></td><td>배운 것을 공유 메모리로 영속화 (<code>_pending</code> 검토·승격)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>구조 <span class="muted">(3층)</span></h2>
+  <table>
+    <thead><tr><th>층</th><th>위치</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td><b>core</b></td><td><code>core/</code></td><td>툴 무관 정본 — 스킬·훅·스크립트·메모리 스키마</td></tr>
+      <tr><td><b>adapter</b></td><td><code>plugins/harness/</code>, <code>codex/</code></td><td>core를 각 툴로 포장 (<code>build.sh</code>로 복사 생성)</td></tr>
+      <tr><td><b>opinion pack</b></td><td><code>project-template/</code></td><td>개인/팀 워크플로·회고 방식 (취향 — 선택 채택)</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">core가 정본이고 어댑터는 생성물. 수정은 core에서 → <code>./build.sh</code> → 어댑터 재생성.</p>
+
+  <h2>상태</h2>
+  <ul class="status">
+    <li><span class="badge done">DONE</span> Claude 어댑터 — 핸드오프·feedback-review·memory-update 스킬 + 자기개선 훅 3개 구현·스모크테스트</li>
+    <li><span class="badge soon">NEXT</span> 훅 live-fire 검증 (설치 후 실발화) — 이슈 #3</li>
+    <li><span class="badge soon">NEXT</span> Codex 어댑터 훅 (버전 취약으로 defer) · installer · governance 자동화</li>
+  </ul>
+
+  <footer>
+    상세 문서: <code>docs/self-improvement-hooks.md</code> · 정본 지침: <code>AGENTS.md</code><br>
+    이 페이지는 문서 변경 시 함께 갱신된다. — foxyberry/agent-harness
+  </footer>
+
+</div>
+</body>
+</html>
