@@ -114,22 +114,22 @@
 
   <header>
     <h1>agent-harness</h1>
-    <p class="tag"><b>Claude Code + Codex</b>를 위한 재사용 가능한 에이전트 하네스</p>
+    <p class="tag"><b>Claude Code + Codex</b>에서 함께 쓰는 에이전트 도구묶음</p>
   </header>
 
   <p class="lead">
-    <b>"에이전트가 실수에서 배우는 시스템"</b>을 특정 프로젝트에만 있던 것에서 →
-    어느 프로젝트에서나 <code>/plugin install</code> 한 번으로 쓸 수 있게 만든 도구.
-    핸드오프 · 자기개선 회고 · 커밋되어 공유되는 메모리 · 워크플로 스킬을 한 번에 배포한다.
+    <b>"에이전트가 지난 실수에서 배울 수 있게 돕는 장치"</b>를 한 프로젝트 안에만 두지 않고,
+    어느 프로젝트에서나 <code>/plugin install</code> 한 번으로 가져다 쓸 수 있게 만든 도구다.
+    작업 넘겨주기, 회고, 함께 보는 메모리, 자주 쓰는 작업 명령을 한 번에 설치한다.
   </p>
 
   <h2>왜 다른가 <span class="muted">(차별점)</span></h2>
-  <p>공개 하네스 대부분은 <i>세션 종료 시 캡처</i>까지만 한다. 이 하네스는:</p>
+  <p>비슷한 도구들은 보통 <i>작업이 끝날 때 기록을 남기는 것</i>에서 멈춘다. 이 도구는 조금 더 이어서 도와준다:</p>
   <ul>
-    <li><b>자기개선 훅 루프</b> — 편집 전 메모리 주입 → 편집 후 품질 경고 → 머지 시 회고 → 승격. 스킬보다 한 층 위의 <b>자동 루프</b>.</li>
-    <li><b>PR 머지 트리거 회고</b> — 세션 끝이 아니라 작업이 머지될 때 교훈을 남긴다.</li>
-    <li><b>커밋되어 공유되는 메모리</b> — 로컬 transcript 대신 git에 커밋되는 메모리로 다른 머신·사람·툴이 이어받는다.</li>
-    <li><b>governance 내장</b> — <code>_pending → 사람 승인 → committed</code>. 잘못된 교훈·민감정보가 자동으로 박히지 않는다.</li>
+    <li><b>스스로 돌아보는 흐름</b> — 편집 전에 관련 메모리를 보여주고 → 편집 뒤에는 자주 나는 실수를 알려주고 → 머지할 때 회고를 남기고 → 사람이 확인한 뒤 공유 메모리로 올린다.</li>
+    <li><b>PR이 머지될 때 회고</b> — 대화가 끝나는 순간이 아니라, 실제 작업이 합쳐질 때 배운 점을 남긴다.</li>
+    <li><b>git으로 함께 보는 메모리</b> — 내 컴퓨터에만 있는 대화 기록 대신, git에 남는 메모리로 다른 머신·사람·툴이 이어받는다.</li>
+    <li><b>사람 확인 절차 포함</b> — <code>_pending → 사람 승인 → committed</code>. 잘못 배운 내용이나 민감한 정보가 자동으로 들어가지 않게 막는다.</li>
   </ul>
 
   <h2>자기개선 <span class="em">루프</span></h2>
@@ -138,120 +138,120 @@
     <div class="arrow">→</div>
     <div class="step"><div class="n">02 · 편집 후</div><div class="t">reflection</div><div class="d">방금 쓴 코드에서 흔한 실수·미완성 흔적을 찾아 즉시 경고</div></div>
     <div class="arrow">→</div>
-    <div class="step"><div class="n">03 · 머지 시</div><div class="t">pr-merge-reflect</div><div class="d">이번 작업 교훈을 놓치지 않게 회고 리마인드 (+opt-in 자동 초안)</div></div>
+    <div class="step"><div class="n">03 · 머지 시</div><div class="t">pr-merge-reflect</div><div class="d">이번 작업에서 배운 걸 놓치지 않게 회고 알림 (+켜두면 자동으로 초안)</div></div>
     <div class="arrow">→</div>
     <div class="step"><div class="n">04 · 승격</div><div class="t">/memory-update</div><div class="d">초안을 검토해 메모리로 영속화 (사람 승인)</div></div>
   </div>
 
-  <h2>자동 훅 3개 <span class="muted">(Claude 어댑터)</span></h2>
+  <h2>자동 훅 3개 <span class="muted">(Claude용 묶음)</span></h2>
   <table>
     <thead><tr><th>언제</th><th>훅</th><th>하는 일</th><th>프로젝트 설정</th></tr></thead>
     <tbody>
-      <tr><td>파일 고치기 직전</td><td><code>memory-search</code></td><td>파일에 맞는 메모리를 컨텍스트에 주입</td><td><code>routes.json</code></td></tr>
-      <tr><td>파일 고친 직후</td><td><code>reflection</code></td><td>코드 품질 경고 (정규식 규칙 + 내장 TODO/FIXME)</td><td><code>reflection-rules.json</code></td></tr>
-      <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>미회고 PR 리마인더 + (opt-in) 자동 회고 초안</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
+      <tr><td>파일 고치기 직전</td><td><code>memory-search</code></td><td>파일에 맞는 메모리를 에이전트에게 미리 알려줌</td><td><code>routes.json</code></td></tr>
+      <tr><td>파일 고친 직후</td><td><code>reflection</code></td><td>코드에서 자주 보이는 문제를 알려줌 (정규식 규칙 + 기본 TODO/FIXME 확인)</td><td><code>reflection-rules.json</code></td></tr>
+      <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>아직 회고하지 않은 PR을 알려주고, 원하면 자동 회고 초안도 만듦</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
     </tbody>
   </table>
 
   <h2>핵심 설계 — <span class="em">엔진과 재료를 분리</span></h2>
-  <p>도넛 기계(엔진)와 반죽(재료)을 나눈 것에 비유할 수 있다. 기계는 만드는 법만 알고, 맛은 반죽이 정한다.</p>
+  <p>도넛 기계와 반죽을 나눠 두었다고 보면 쉽다. 기계는 만드는 방법만 알고, 어떤 맛을 낼지는 각 프로젝트가 넣는 반죽이 정한다.</p>
   <div class="cards">
     <div class="card engine"><h3>🛠 엔진 (core)</h3>
-      <p class="muted" style="margin:0">툴·프로젝트 무관 generic 부품. "무엇을" 주입·경고할지는 하드코딩하지 않는다. 모든 프로젝트가 공유.</p></div>
+      <p class="muted" style="margin:0">툴이나 프로젝트가 달라도 함께 쓰는 기본 부품. "무엇을" 보여주고 경고할지는 코드에 박아두지 않는다. 모든 프로젝트가 공유한다.</p></div>
     <div class="card data"><h3>🧾 데이터 (프로젝트)</h3>
-      <p class="muted" style="margin:0"><code>.claude/memory/</code>의 <code>routes.json</code>·<code>reflection-rules.json</code>이 "우리 프로젝트는 이렇게"를 정한다. 프로젝트마다 다름.</p></div>
+      <p class="muted" style="margin:0"><code>.claude/memory/</code>의 <code>routes.json</code>·<code>reflection-rules.json</code>이 "우리 프로젝트에서는 이렇게 한다"를 정한다. 프로젝트마다 다를 수 있다.</p></div>
   </div>
-  <p>전에는 기계 안에 "Kotlin 규칙"이 통째로 굳어 있었다(하드코딩). 그걸 빼내 <b>기계는 순수하게, 재료는 프로젝트가 넣도록</b> 분리했다. Java든 Python이든 자기 재료만 넣으면 같은 기계가 돈다. 설정이 없으면 훅은 <b>조용히 no-op</b>.</p>
+  <p>전에는 기계 안에 "Kotlin 규칙"이 통째로 박혀 있었다. 이제 그 부분을 꺼내서 <b>기계는 공통으로 쓰고, 프로젝트마다 필요한 재료를 넣도록</b> 나눴다. Java든 Python이든 자기 프로젝트에 맞는 재료만 넣으면 같은 기계가 돈다. 설정이 없으면 훅은 <b>아무 일도 하지 않고 조용히 지나간다</b>.</p>
 
   <div class="note warn">
-    <b>⚠️ 자동 회고는 기본 꺼짐.</b> 자동 회고 잡은 <code>claude -p</code>(AI)를 백그라운드로 띄운다.
-    설치만으로 몰래 AI가 돌지 않게 <code>HARNESS_AUTO_REFLECT=1</code>로 켜야 동작한다. 리마인더는 무관하게 항상 켜짐.
+    <b>⚠️ 자동 회고는 기본으로 꺼져 있다.</b> 자동 회고 작업은 <code>claude -p</code>(AI)를 뒤에서 실행한다.
+    설치만 했는데 AI가 몰래 돌지 않도록, <code>HARNESS_AUTO_REFLECT=1</code>로 직접 켰을 때만 동작한다. 회고 알림은 이 설정과 상관없이 항상 켜져 있다.
   </div>
 
-  <h2>돌고 있는지 어떻게 아나 <span class="muted">(관측성)</span></h2>
-  <p>훅이 조용해서 "도는지 안 보이는" 건 <b>버그가 아니라 설계</b>다. 대부분은 님 화면이 아니라
-    <b>에이전트에게 직접</b> 들어간다. 관측하려면 어디를 볼지 알면 된다:</p>
+  <h2>돌고 있는지 어떻게 아나 <span class="muted">(확인 방법)</span></h2>
+  <p>훅이 조용해서 "정말 도는 건가?" 싶을 수 있다. 이건 고장이 아니라 의도한 방식이다. 대부분의 내용은 화면이 아니라
+    <b>에이전트에게 직접</b> 전달된다. 확인하려면 아래 위치를 보면 된다:</p>
   <div class="vis">
     <div class="col hide">
-      <h4>🙈 안 보이는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 에이전트에게</span></h4>
-      <p class="cap">화면엔 안 뜨고 에이전트 컨텍스트로 조용히 주입된다</p>
+      <h4>🙈 화면에 안 보이는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 에이전트에게 전달</span></h4>
+      <p class="cap">화면에는 뜨지 않고 에이전트가 참고할 내용으로 조용히 들어간다</p>
       <ul>
-        <li><b>memory-search</b> — 파일 열면 관련 메모리를 몰래 주입</li>
-        <li><b>reflection</b> — 방금 쓴 코드의 품질 문제를 tool 결과 옆에 경고</li>
-        <li><b>머지 리마인더</b> — "회고부터 하라"를 다음 발화에</li>
+        <li><b>memory-search</b> — 파일을 열면 관련 메모리를 에이전트에게 전달</li>
+        <li><b>reflection</b> — 방금 쓴 코드의 문제를 도구 결과 옆에 알려줌</li>
+        <li><b>머지 리마인더</b> — "회고부터 하자"는 알림을 다음 대화에 보여줌</li>
       </ul>
     </div>
     <div class="col show">
-      <h4>👀 볼 수 있는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 파일로 남음</span></h4>
-      <p class="cap">디스크에 실제 파일/로그로 남아 직접 확인 가능</p>
+      <h4>👀 직접 볼 수 있는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 파일로 남음</span></h4>
+      <p class="cap">디스크에 실제 파일이나 로그로 남아서 직접 확인할 수 있다</p>
       <ul>
-        <li><code>.claude/memory/*.json</code> — 있으면 <b>설치됨</b></li>
-        <li><code>_pending/*.md</code> — 회고 <b>초안</b> (<code>/memory-update</code>로 검토)</li>
+        <li><code>.claude/memory/*.json</code> — 있으면 <b>설치된 상태</b></li>
+        <li><code>_pending/*.md</code> — 회고 <b>초안</b> (<code>/memory-update</code>로 확인)</li>
         <li><code>.cache/reflect.log</code> — 회고 기록 (auto-reflect 켰을 때)</li>
       </ul>
     </div>
   </div>
   <div class="note tip">
-    <b>초안이 실제 파일로 쌓이는 걸 보고 싶으면</b> 자동 회고를 켠다 — <code>export HARNESS_AUTO_REFLECT=1</code>.
-    그럼 PR 머지마다 <code>_pending/</code>에 회고 초안이 생긴다. <span class="muted">(끄면 리마인더만; 회고는 <code>/memory-update</code>로 수동.)</span>
+    <b>초안이 실제 파일로 쌓이는 걸 보고 싶다면</b> 자동 회고를 켠다 — <code>export HARNESS_AUTO_REFLECT=1</code>.
+    그러면 PR이 머지될 때마다 <code>_pending/</code>에 회고 초안이 생긴다. <span class="muted">(끄면 알림만 뜨고, 회고는 <code>/memory-update</code>로 직접 한다.)</span>
   </div>
 
   <h2>설치</h2>
-  <p><b>Claude Code</b> (플러그인 한 방):</p>
+  <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(skill-only — installer 구축 중)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(현재는 스킬만 제공 — 설치 도구는 만드는 중)</span>:</p>
   <pre><code>codex plugin marketplace add foxyberry/agent-harness   # 배포 후
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
-  <p class="muted">공통: 프로젝트에 <code>project-template/</code> 복사 (AGENTS.md 정본 + <code>.claude/memory/</code> 템플릿).</p>
+  <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
 
   <h2>명령 <span class="muted">(설치 후)</span></h2>
   <table>
     <thead><tr><th>명령</th><th>언제 쓰나</th><th>하는 일</th></tr></thead>
     <tbody>
-      <tr><td><code>/handoff-save</code></td><td>세션 끝 · 툴/머신/사람 바꾸기 직전</td><td>이식 가능한 상태를 커밋 파일로 저장 (git 사실 자동수집)</td></tr>
-      <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프 읽고 현재 git과 대조</td></tr>
-      <tr><td><code>/feedback-review</code></td><td>머지 후 · 회고 시</td><td>받은 지적을 규칙/스킬로 승격 검토</td></tr>
-      <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 공유 메모리로 영속화 (<code>_pending</code> 검토·승격)</td></tr>
+      <tr><td><code>/handoff-save</code></td><td>세션 끝 · 툴/머신/사람 바꾸기 직전</td><td>다음 사람이 이어받기 쉽게 현재 상태를 커밋 파일로 저장 (git 정보 자동수집)</td></tr>
+      <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프를 읽고 현재 git 상태와 비교</td></tr>
+      <tr><td><code>/feedback-review</code></td><td>머지 후 · 회고 시</td><td>받은 지적을 다음에 쓸 규칙이나 스킬로 남길지 검토</td></tr>
+      <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 함께 보는 메모리로 저장 (<code>_pending</code> 확인·반영)</td></tr>
     </tbody>
   </table>
-  <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람을 건너</b> 작업을 넘기는 방법이다 — 이렇게 흐른다:</p>
+  <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람이 바뀌어도</b> 작업을 이어가기 위한 방법이다 — 흐름은 이렇다:</p>
   <div class="arch">
     <div class="node"><b>세션 A</b><span>지금 작업 중 → <code>/handoff-save "한 줄 요약"</code></span></div>
     <div class="flow">▼ &nbsp;git <b>commit · push</b> &nbsp;(<code>.claude/handoff/&lt;브랜치&gt;.md</code> — git 사실 자동수집)</div>
     <div class="node use"><b>세션 B</b><span>다른 머신 · Codex · 동료가 <code>/handoff-load</code> 로 이어받음</span></div>
   </div>
   <div class="note tip">
-    <b>왜 파일인가:</b> 로컬 대화기록(transcript)은 남이 못 읽는다. 커밋되는 핸드오프 파일만 clone/pull 하는
-    누구에게나 전달된다. <span class="muted">이 저장소 작업도 <code>/handoff-load</code> 로 이어받아 시작했다.</span>
+    <b>왜 파일로 남기나:</b> 내 컴퓨터에만 있는 대화 기록은 다른 사람이 읽기 어렵다. git에 커밋되는 핸드오프 파일은 clone/pull 하는
+    누구에게나 전달된다. <span class="muted">이 저장소 작업도 <code>/handoff-load</code>로 이어받아 시작했다.</span>
   </div>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
     <thead><tr><th>층</th><th>위치</th><th>내용</th></tr></thead>
     <tbody>
-      <tr><td><b>core</b></td><td><code>core/</code></td><td>툴 무관 정본 — 스킬·훅·스크립트·메모리 스키마</td></tr>
-      <tr><td><b>adapter</b></td><td><code>plugins/harness/</code>, <code>codex/</code></td><td>core를 각 툴로 포장 (<code>build.sh</code>로 복사 생성)</td></tr>
-      <tr><td><b>opinion pack</b></td><td><code>project-template/</code></td><td>개인/팀 워크플로·회고 방식 (취향 — 선택 채택)</td></tr>
+      <tr><td><b>core</b></td><td><code>core/</code></td><td>마스터 원고 — 스킬·훅·스크립트·메모리 형식이 여기서 시작</td></tr>
+      <tr><td><b>도구별 사본</b></td><td><code>plugins/harness/</code>, <code>codex/</code></td><td>각 도구에 맞게 포장된 사본 (<code>build.sh</code>로 자동 복사)</td></tr>
+      <tr><td><b>선택 템플릿</b></td><td><code>project-template/</code></td><td>개인/팀의 작업 방식과 회고 방식 (필요할 때 선택해서 사용)</td></tr>
     </tbody>
   </table>
-  <p class="muted">core가 정본이고 어댑터는 생성물. 수정은 core에서 → <code>./build.sh</code> → 어댑터 재생성.</p>
+  <p class="muted"><code>core/</code>는 마스터 원고이고, <code>plugins/harness/</code>와 <code>codex/</code>는 내보내기 버튼을 누르면 찍혀 나오는 사본이다. 고칠 때는 마스터 원고인 <code>core/</code>를 먼저 고치고 → <code>./build.sh</code>를 눌러 내보내고 → 사본을 다시 만든다. 사본을 직접 고치면 다음 내보내기 때 덮어써진다.</p>
 
   <div class="arch">
-    <div class="node core"><b>core/</b><span>정본 — 훅 · 스킬 · 스크립트 · 메모리 스키마 (한 곳에서만 수정)</span></div>
+    <div class="node core"><b>core/</b><span>마스터 원고 — 훅 · 스킬 · 스크립트 · 메모리 형식 (여기서만 고친다)</span></div>
     <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
     <div class="split">
-      <div class="node"><b>plugins/harness/</b><span>Claude 어댑터 · <code>hooks.json</code> 자동발견</span></div>
-      <div class="node"><b>codex/</b><span>Codex 어댑터 · skill-only (훅 defer)</span></div>
+      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · <code>hooks.json</code> 자동발견</span></div>
+      <div class="node"><b>codex/</b><span>Codex용 사본 · 스킬만 (훅은 나중에)</span></div>
     </div>
     <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
     <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
   </div>
-  <p class="muted">core 한 곳을 고치면 두 어댑터가 함께 생성된다. CI가 "core↔어댑터 동기화"를 강제 — <code>build.sh</code> 안 돌린 채 커밋하면 실패.</p>
+  <p class="muted"><code>core/</code> 한 곳을 고치면 두 사본이 함께 만들어진다. CI가 "마스터 원고와 사본이 같은지" 확인하므로, <code>build.sh</code>를 안 돌린 채 커밋하면 실패한다.</p>
 
   <h2>폴더 구조</h2>
 <pre class="tree">agent-harness/
-├─ <span class="d">core/</span>                     <span class="c">← 정본 (single source of truth)</span>
+├─ <span class="d">core/</span>                     <span class="c">← 마스터 원고 (원본은 여기 하나)</span>
 │  ├─ <span class="d">hooks/</span>                 <span class="c">자기개선 훅 엔진</span>
 │  │  ├─ memory-search.py       <span class="c">편집 전 메모리 주입</span>
 │  │  ├─ reflection.py          <span class="c">편집 후 품질 경고</span>
@@ -263,12 +263,12 @@
 │  │  └─ feedback-review · memory-update
 │  └─ <span class="d">scripts/</span>handoff.py
 │
-├─ <span class="d">plugins/harness/</span>          <span class="c">← Claude 어댑터 (build.sh 생성물)</span>
+├─ <span class="d">plugins/harness/</span>          <span class="c">← Claude용 사본 (build.sh가 만듦)</span>
 │  ├─ hooks/  <span class="c">(hooks.json + *.py)</span>
 │  ├─ skills/
 │  └─ bin/agent-handoff
 │
-├─ <span class="d">codex/</span>                    <span class="c">← Codex 어댑터 (build.sh 생성물)</span>
+├─ <span class="d">codex/</span>                    <span class="c">← Codex용 사본 (build.sh가 만듦)</span>
 │  ├─ .codex-plugin/plugin.json
 │  └─ skills/*/scripts/handoff.py
 │
@@ -277,7 +277,7 @@
 │
 ├─ <span class="d">.claude/memory/</span>           <span class="c">← 자기 dogfooding (이 repo에도 훅 적용)</span>
 ├─ <span class="d">docs/</span>self-improvement-hooks.md
-├─ build.sh                  <span class="c">core → 어댑터 렌더</span>
+├─ build.sh                  <span class="c">core → 사본 만들기</span>
 ├─ .claude-plugin/marketplace.json    <span class="c">Claude 배포</span>
 ├─ .agents/plugins/marketplace.json   <span class="c">Codex 배포</span>
 └─ AGENTS.md · README.md · readme.html
@@ -285,14 +285,14 @@
 
   <h2>상태</h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Claude 어댑터 — 핸드오프·feedback-review·memory-update 스킬 + 자기개선 훅 3개 구현·스모크테스트</li>
-    <li><span class="badge soon">NEXT</span> 훅 live-fire 검증 (설치 후 실발화) — 이슈 #3</li>
-    <li><span class="badge soon">NEXT</span> Codex 어댑터 훅 (버전 취약으로 defer) · installer · governance 자동화</li>
+    <li><span class="badge done">DONE</span> Claude용 사본 — 핸드오프·feedback-review·memory-update 스킬 + 스스로 돌아보는 훅 3개 구현·간단 테스트 완료</li>
+    <li><span class="badge soon">NEXT</span> 훅 실제 사용 검증 (설치 후 실제 대화에서 확인) — 이슈 #3</li>
+    <li><span class="badge soon">NEXT</span> Codex용 훅 (버전 변화에 약해 나중에 진행) · 설치 도구 · 사람 확인 절차 자동화</li>
   </ul>
 
   <footer>
-    상세 문서: <code>docs/self-improvement-hooks.md</code> · 정본 지침: <code>AGENTS.md</code><br>
-    이 페이지는 문서 변경 시 함께 갱신된다. — foxyberry/agent-harness
+    상세 문서: <code>docs/self-improvement-hooks.md</code> · 기준 지침: <code>AGENTS.md</code><br>
+    이 페이지는 문서가 바뀔 때 함께 갱신된다. — foxyberry/agent-harness
   </footer>
 
 </div>
