@@ -92,6 +92,21 @@
   pre.tree{font-size:.79rem; line-height:1.6}
   pre.tree .d{color:var(--accent); font-weight:600}
   pre.tree .c{color:var(--muted)}
+
+  /* visible vs invisible contrast */
+  .vis{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:18px 0 6px}
+  @media(max-width:640px){ .vis{grid-template-columns:1fr} }
+  .vis .col{border:1px solid var(--border); border-radius:14px; padding:16px 18px}
+  .vis .hide{background:var(--code-bg)}
+  .vis .show{background:var(--accent-soft)}
+  .vis h4{margin:0 0 4px; font-size:1rem; display:flex; align-items:center; gap:7px}
+  .vis .cap{font-size:.78rem; color:var(--muted); margin:0 0 11px}
+  .vis ul{margin:0; padding-left:2px; list-style:none}
+  .vis li{font-size:.88rem; margin:9px 0; padding-left:20px; position:relative; line-height:1.45}
+  .vis li::before{position:absolute; left:0; top:0}
+  .vis .hide li::before{content:"·"; color:var(--muted); font-weight:700}
+  .vis .show li::before{content:"→"; color:var(--accent)}
+  .vis code{font-size:.82em}
 </style>
 </head>
 <body>
@@ -154,21 +169,31 @@
   </div>
 
   <h2>돌고 있는지 어떻게 아나 <span class="muted">(관측성)</span></h2>
-  <p>훅은 <b>님 화면이 아니라 에이전트의 컨텍스트에 주입</b>한다 — 조용한 게 정상이라, 도는지 눈에 잘 안 보인다.
-    예: <code>*.kt</code>·<code>core/hooks/*</code>를 열면 관련 메모리가 에이전트에게 <em>몰래</em> 들어가고,
-    코드에 <code>!!</code>·<code>TODO</code>가 남으면 경고가 tool 결과 옆에 붙는다. 관측하려면 아래를 본다:</p>
-  <table>
-    <thead><tr><th>신호</th><th>어디</th><th>뜻</th></tr></thead>
-    <tbody>
-      <tr><td>훅 데이터</td><td><code>.claude/memory/*.json</code></td><td>있으면 이 프로젝트에 자가개선 <b>설치됨</b></td></tr>
-      <tr><td>회고 초안</td><td><code>.claude/memory/_pending/*.md</code></td><td>reflect가 만든 <b>승격 후보</b> — <code>/memory-update</code>로 검토</td></tr>
-      <tr><td>회고 로그</td><td><code>.claude/.cache/reflect.log</code></td><td>언제 뭘 회고했는지 (auto-reflect 켰을 때만)</td></tr>
-    </tbody>
-  </table>
+  <p>훅이 조용해서 "도는지 안 보이는" 건 <b>버그가 아니라 설계</b>다. 대부분은 님 화면이 아니라
+    <b>에이전트에게 직접</b> 들어간다. 관측하려면 어디를 볼지 알면 된다:</p>
+  <div class="vis">
+    <div class="col hide">
+      <h4>🙈 안 보이는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 에이전트에게</span></h4>
+      <p class="cap">화면엔 안 뜨고 에이전트 컨텍스트로 조용히 주입된다</p>
+      <ul>
+        <li><b>memory-search</b> — 파일 열면 관련 메모리를 몰래 주입</li>
+        <li><b>reflection</b> — <code>!!</code>·<code>TODO</code> 남으면 경고를 tool 결과 옆에</li>
+        <li><b>머지 리마인더</b> — "회고부터 하라"를 다음 발화에</li>
+      </ul>
+    </div>
+    <div class="col show">
+      <h4>👀 볼 수 있는 것 <span class="muted" style="font-weight:400;font-size:.8rem">— 파일로 남음</span></h4>
+      <p class="cap">디스크에 실제 파일/로그로 남아 직접 확인 가능</p>
+      <ul>
+        <li><code>.claude/memory/*.json</code> — 있으면 <b>설치됨</b></li>
+        <li><code>_pending/*.md</code> — 회고 <b>초안</b> (<code>/memory-update</code>로 검토)</li>
+        <li><code>.cache/reflect.log</code> — 회고 기록 (auto-reflect 켰을 때)</li>
+      </ul>
+    </div>
+  </div>
   <div class="note tip">
-    <b>초안이 실제 파일로 쌓이는 걸 보려면</b> 자동 회고를 켠다: <code>export HARNESS_AUTO_REFLECT=1</code>.
-    그럼 PR 머지마다 <code>.claude/memory/_pending/</code>에 회고 초안이 생겨 눈으로 확인·검토할 수 있다.
-    <span class="muted">(끄면 리마인더만 뜨고 회고는 사람이 직접 <code>/memory-update</code>로.)</span>
+    <b>초안이 실제 파일로 쌓이는 걸 보고 싶으면</b> 자동 회고를 켠다 — <code>export HARNESS_AUTO_REFLECT=1</code>.
+    그럼 PR 머지마다 <code>_pending/</code>에 회고 초안이 생긴다. <span class="muted">(끄면 리마인더만; 회고는 <code>/memory-update</code>로 수동.)</span>
   </div>
 
   <h2>설치</h2>
@@ -190,10 +215,15 @@
       <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 공유 메모리로 영속화 (<code>_pending</code> 검토·승격)</td></tr>
     </tbody>
   </table>
+  <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람을 건너</b> 작업을 넘기는 방법이다 — 이렇게 흐른다:</p>
+  <div class="arch">
+    <div class="node"><b>세션 A</b><span>지금 작업 중 → <code>/handoff-save "한 줄 요약"</code></span></div>
+    <div class="flow">▼ &nbsp;git <b>commit · push</b> &nbsp;(<code>.claude/handoff/&lt;브랜치&gt;.md</code> — git 사실 자동수집)</div>
+    <div class="node use"><b>세션 B</b><span>다른 머신 · Codex · 동료가 <code>/handoff-load</code> 로 이어받음</span></div>
+  </div>
   <div class="note tip">
-    <b>핸드오프 팁:</b> 로컬 대화기록(transcript)은 남이 못 읽는다. 핸드오프는 <b>git에 커밋되는 파일</b>이라
-    clone/pull 하는 누구나(다른 머신·Codex·동료)가 이어받는다. <code>save</code> 후 <b>커밋·푸시</b>해야 전달된다.
-    <span class="muted">— 이 저장소 작업도 <code>/handoff-load</code> 로 이어받아 시작했다.</span>
+    <b>왜 파일인가:</b> 로컬 대화기록(transcript)은 남이 못 읽는다. 커밋되는 핸드오프 파일만 clone/pull 하는
+    누구에게나 전달된다. <span class="muted">이 저장소 작업도 <code>/handoff-load</code> 로 이어받아 시작했다.</span>
   </div>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
