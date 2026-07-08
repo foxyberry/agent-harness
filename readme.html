@@ -107,6 +107,34 @@
   .vis .hide li::before{content:"·"; color:var(--muted); font-weight:700}
   .vis .show li::before{content:"→"; color:var(--accent)}
   .vis code{font-size:.82em}
+
+  /* cycle diagram */
+  .cycle{display:grid; grid-template-columns:300px 1fr; gap:24px; align-items:center; margin:18px 0 8px}
+  @media(max-width:680px){ .cycle{grid-template-columns:1fr; justify-items:center} }
+  .cycle svg{width:300px; max-width:100%; height:auto}
+  .cyc-ring{fill:none; stroke:var(--border); stroke-width:1.5; stroke-dasharray:3 8}
+  @media(prefers-reduced-motion:no-preference){ .cyc-ring{animation:cyc-spin 30s linear infinite; transform-box:view-box; transform-origin:260px 190px} }
+  @keyframes cyc-spin{to{transform:rotate(360deg)}}
+  .cyc-arrow{fill:none; stroke:var(--accent); stroke-width:2.5; stroke-linecap:round}
+  .cyc-head{fill:var(--accent)}
+  .cyc-pill{fill:var(--card); stroke:var(--accent); stroke-width:1.5}
+  .cyc-name{fill:var(--fg); font-size:12.5px; font-weight:600; font-family:"SF Mono",ui-monospace,Menlo,monospace}
+  .cyc-c1{fill:var(--fg); font-size:15px; font-weight:700}
+  .cyc-c2{fill:var(--muted); font-size:11.5px}
+  .cyc-leg{list-style:none; margin:0; padding:0}
+  .cyc-leg li{display:flex; gap:10px; align-items:flex-start; margin:12px 0; font-size:.9rem; padding-left:0}
+  .cyc-leg .b{flex:0 0 auto; color:var(--accent); font-weight:800; font-size:1rem; width:16px}
+
+  /* off/on toggle */
+  .toggle{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:18px 0 6px}
+  @media(max-width:640px){ .toggle{grid-template-columns:1fr} }
+  .tg{border:1px solid var(--border); border-radius:14px; padding:15px 18px}
+  .tg.off{background:var(--code-bg)}
+  .tg.on{background:var(--accent-soft)}
+  .tg .k{font-weight:700; font-size:.92rem; margin-bottom:6px}
+  .tg .k span{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:.7rem; font-weight:600; color:var(--muted); margin-left:5px}
+  .tg.on .k{color:var(--accent)}
+  .tg p{margin:0; font-size:.87rem; color:var(--muted)}
 </style>
 </head>
 <body>
@@ -133,14 +161,45 @@
   </ul>
 
   <h2>자기개선 <span class="em">루프</span></h2>
-  <div class="loop">
-    <div class="step"><div class="n">01 · 편집 전</div><div class="t">memory-search</div><div class="d">이 파일 고칠 때 필요한 규칙·결정을 미리 꺼내 컨텍스트에 주입</div></div>
-    <div class="arrow">→</div>
-    <div class="step"><div class="n">02 · 편집 후</div><div class="t">reflection</div><div class="d">방금 쓴 코드에서 흔한 실수·미완성 흔적을 찾아 즉시 경고</div></div>
-    <div class="arrow">→</div>
-    <div class="step"><div class="n">03 · 머지 시</div><div class="t">pr-merge-reflect</div><div class="d">이번 작업에서 배운 걸 놓치지 않게 회고 알림 (+켜두면 자동으로 초안)</div></div>
-    <div class="arrow">→</div>
-    <div class="step"><div class="n">04 · 승격</div><div class="t">/memory-update</div><div class="d">초안을 검토해 메모리로 영속화 (사람 승인)</div></div>
+  <p>한 번 쓰고 끝이 아니라, 작업할 때마다 이 네 단계가 <b>계속 돌면서</b> 조금씩 똑똑해진다.
+    마지막 단계(④)에서 남긴 메모리가 다음 바퀴의 첫 단계(①)로 다시 쓰인다.</p>
+  <div class="cycle">
+    <svg viewBox="0 0 520 380" role="img" aria-label="자가개선 루프 순환도 — memory-search → reflection → pr-merge-reflect → memory-update 가 반복">
+      <defs>
+        <marker id="cyc-ah" markerWidth="10" markerHeight="8" refX="6.5" refY="3" orient="auto">
+          <path class="cyc-head" d="M0,0 L7,3 L0,6 Z"/>
+        </marker>
+      </defs>
+      <circle class="cyc-ring" cx="260" cy="190" r="96"/>
+      <path class="cyc-arrow" marker-end="url(#cyc-ah)" d="M323 61 A144 144 0 0 1 389 127"/>
+      <path class="cyc-arrow" marker-end="url(#cyc-ah)" d="M389 253 A144 144 0 0 1 323 319"/>
+      <path class="cyc-arrow" marker-end="url(#cyc-ah)" d="M197 319 A144 144 0 0 1 131 253"/>
+      <path class="cyc-arrow" marker-end="url(#cyc-ah)" d="M131 127 A144 144 0 0 1 197 61"/>
+      <text class="cyc-c1" x="260" y="185" text-anchor="middle">자기개선 루프</text>
+      <text class="cyc-c2" x="260" y="206" text-anchor="middle">계속 반복 ↻</text>
+      <g><rect class="cyc-pill" x="185" y="24" width="150" height="44" rx="22"/><text class="cyc-name" x="260" y="51" text-anchor="middle">① memory-search</text></g>
+      <g><rect class="cyc-pill" x="329" y="168" width="150" height="44" rx="22"/><text class="cyc-name" x="404" y="195" text-anchor="middle">② reflection</text></g>
+      <g><rect class="cyc-pill" x="185" y="312" width="150" height="44" rx="22"/><text class="cyc-name" x="260" y="339" text-anchor="middle">③ pr-merge-reflect</text></g>
+      <g><rect class="cyc-pill" x="41" y="168" width="150" height="44" rx="22"/><text class="cyc-name" x="116" y="195" text-anchor="middle">④ memory-update</text></g>
+    </svg>
+    <ul class="cyc-leg">
+      <li><span class="b">①</span><span><b>편집 전</b> — 이 파일에 필요한 규칙·결정을 미리 꺼내 보여준다</span></li>
+      <li><span class="b">②</span><span><b>편집 후</b> — 방금 쓴 코드의 흔한 실수·미완성 흔적을 바로 알려준다</span></li>
+      <li><span class="b">③</span><span><b>머지 시</b> — 이번 작업에서 배운 걸 회고하라고 알린다</span></li>
+      <li><span class="b">④</span><span><b>승격</b> — 사람이 확인해 메모리로 남긴다 → 다음 바퀴 ①로 이어진다</span></li>
+    </ul>
+  </div>
+
+  <p class="muted">③~④ 회고를 <b>사람이 직접</b> 하느냐, <b>뒷단에서 자동으로</b> 하느냐는 옵션 하나로 갈린다:</p>
+  <div class="toggle">
+    <div class="tg off">
+      <div class="k">옵션 꺼짐 <span>기본값</span></div>
+      <p>머지되면 "회고하라"고 <b>알림만</b> 뜬다. 회고는 사람이 <code>/memory-update</code>로 직접.</p>
+    </div>
+    <div class="tg on">
+      <div class="k">옵션 켜짐 <span>HARNESS_AUTO_REFLECT=1</span></div>
+      <p>머지될 때마다 <b>뒷단에서 자동으로</b> 대화를 돌아봐 회고 초안을 만들어 <code>_pending/</code>에 쌓아둔다. 사람은 <b>검토만</b> 하면 된다.</p>
+    </div>
   </div>
 
   <h2>자동 훅 3개 <span class="muted">(Claude용 묶음)</span></h2>
