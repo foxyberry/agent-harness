@@ -136,7 +136,7 @@
   <div class="loop">
     <div class="step"><div class="n">01 · 편집 전</div><div class="t">memory-search</div><div class="d">이 파일 고칠 때 필요한 규칙·결정을 미리 꺼내 컨텍스트에 주입</div></div>
     <div class="arrow">→</div>
-    <div class="step"><div class="n">02 · 편집 후</div><div class="t">reflection</div><div class="d">방금 쓴 코드에 <code>!!</code>·TODO 남았는지 즉시 경고</div></div>
+    <div class="step"><div class="n">02 · 편집 후</div><div class="t">reflection</div><div class="d">방금 쓴 코드에서 흔한 실수·미완성 흔적을 찾아 즉시 경고</div></div>
     <div class="arrow">→</div>
     <div class="step"><div class="n">03 · 머지 시</div><div class="t">pr-merge-reflect</div><div class="d">이번 작업 교훈을 놓치지 않게 회고 리마인드 (+opt-in 자동 초안)</div></div>
     <div class="arrow">→</div>
@@ -177,7 +177,7 @@
       <p class="cap">화면엔 안 뜨고 에이전트 컨텍스트로 조용히 주입된다</p>
       <ul>
         <li><b>memory-search</b> — 파일 열면 관련 메모리를 몰래 주입</li>
-        <li><b>reflection</b> — <code>!!</code>·<code>TODO</code> 남으면 경고를 tool 결과 옆에</li>
+        <li><b>reflection</b> — 방금 쓴 코드의 품질 문제를 tool 결과 옆에 경고</li>
         <li><b>머지 리마인더</b> — "회고부터 하라"를 다음 발화에</li>
       </ul>
     </div>
