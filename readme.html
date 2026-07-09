@@ -285,6 +285,72 @@
     누구에게나 전달된다. <span class="muted">이 저장소 작업도 <code>/handoff-load</code>로 이어받아 시작했다.</span>
   </div>
 
+  <h2>무엇이 기록되나</h2>
+  <p>이 도구가 남기는 건 전부 <b>평범한 마크다운 파일</b>이다 — 특별한 데이터베이스도, 특정 툴 전용 형식도 아니다.
+    그래서 git에 올라가고, 어느 머신·어느 툴에서나 그대로 열린다. 세 종류가 쌓인다:</p>
+  <div class="cards" style="grid-template-columns:1fr">
+    <div class="card">
+      <h3>📋 핸드오프 <span class="muted" style="font-weight:400">— <code>.claude/handoff/&lt;브랜치&gt;.md</code></span></h3>
+      <p class="muted" style="margin:2px 0 10px">"지금 어디까지 했는지" 작업 상태. 브랜치·커밋·바뀐 파일 같은 git 사실은 <b>자동으로</b> 채워진다.</p>
+      <pre><code># 작업 핸드오프 — main
+## 요약         이 작업이 뭐였는지 한두 줄
+## 완료한 것     이미 끝낸 항목
+## 남은 것       이어받는 사람이 바로 할 일
+## 검증 상태     테스트·빌드 결과
+## Git 사실(자동)  브랜치 · 커밋 · 바뀐 파일</code></pre>
+    </div>
+    <div class="card">
+      <h3>🧠 공유 메모리 <span class="muted" style="font-weight:400">— <code>.claude/memory/*.md</code></span></h3>
+      <p class="muted" style="margin:2px 0 10px">"앞으로도 기억할 규칙·결정". 사람이 확인해 올린 것만 여기 남는다.</p>
+      <pre><code>---
+name: engine-data-separation
+description: 한 줄 설명 (목록에 표시됨)
+type: feedback | project | reference
+---
+핵심 내용 + Why(왜 이렇게) · How to apply(어떻게 적용)</code></pre>
+    </div>
+    <div class="card">
+      <h3>📝 회고 초안 <span class="muted" style="font-weight:400">— <code>.claude/memory/_pending/*.md</code></span></h3>
+      <p class="muted" style="margin:2px 0 0">자동 회고가 만든 <b>후보</b>. 메모리와 같은 형식이지만, 사람이 <code>/memory-update</code>로 확인하기 전까지는 여기서 대기한다(잘못된 내용이 바로 안 박히게).</p>
+    </div>
+  </div>
+
+  <h2>다른 머신에서 이어받기</h2>
+  <p>비결은 딱 하나 — <b>대화 기록은 두고, 커밋된 파일만 넘긴다.</b> 무엇이 넘어가고 안 넘어가는지가 핵심이다:</p>
+  <div class="vis">
+    <div class="col hide">
+      <h4>❌ 안 넘어가는 것</h4>
+      <p class="cap">내 컴퓨터·내 툴에만 있어 남이 못 읽는다</p>
+      <ul>
+        <li><b>대화 기록</b> (<code>.jsonl</code>) — 세션 로그, 로컬 전용</li>
+        <li>임시 캐시 (<code>.claude/.cache/</code>)</li>
+      </ul>
+    </div>
+    <div class="col show">
+      <h4>✅ 넘어가는 것</h4>
+      <p class="cap">git에 올라가 clone/pull 하면 어디서든</p>
+      <ul>
+        <li><b>핸드오프</b> (<code>.claude/handoff/*.md</code>)</li>
+        <li><b>공유 메모리</b> (<code>.claude/memory/*.md</code>)</li>
+      </ul>
+    </div>
+  </div>
+  <p class="muted"><b>머신 A</b>에서 <code>/handoff-save</code> → commit·push 하고, <b>머신 B</b>에서 pull → <code>/handoff-load</code> 하면
+    저장된 상태를 읽고 <b>지금 git과 대조</b>한 뒤 그대로 이어받는다. 대화 기록이 없어도 되는 이유다.</p>
+
+  <h2>다른 툴에서 쓰기 <span class="muted">(Codex ↔ Claude Code)</span></h2>
+  <p>같은 하네스를 Codex에서도 Claude Code에서도 쓸 수 있고, <b>서로 작업을 넘길 수도</b> 있다. 되는 이유:</p>
+  <ul>
+    <li><b>파일 형식이 툴을 안 가린다</b> — 핸드오프·메모리 <code>.md</code>는 그냥 마크다운이라 Codex도 Claude도 똑같이 읽는다.</li>
+    <li><b>명령 이름이 같다</b> — 설치 방법은 툴마다 달라도 <code>/handoff-save</code>·<code>/memory-update</code> 같은 이름은 양쪽 통일돼 있다.</li>
+    <li><b>한 곳에서 관리</b> — 스킬은 <code>core/</code>에서 두 툴용 사본으로 자동 생성되니(<code>build.sh</code>), 고칠 땐 한 곳만 고치면 둘 다 바뀐다.</li>
+    <li><b>회고도 양쪽을 이해</b> — 자동 회고는 Claude 대화 기록과 Codex 세션 기록을 <b>둘 다</b> 읽어 요약한다.</li>
+  </ul>
+  <div class="note tip">
+    <b>예:</b> 낮에 <b>Codex</b>로 작업하다 <code>/handoff-save</code> → 커밋. 저녁에 <b>Claude Code</b>로 <code>/handoff-load</code> →
+    Codex가 남긴 상태를 그대로 받아 계속. <b>툴이 바뀌어도 작업은 안 끊긴다.</b>
+  </div>
+
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
     <thead><tr><th>층</th><th>위치</th><th>내용</th></tr></thead>
