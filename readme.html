@@ -135,6 +135,15 @@
   .tg .k span{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:.7rem; font-weight:600; color:var(--muted); margin-left:5px}
   .tg.on .k{color:var(--accent)}
   .tg p{margin:0; font-size:.87rem; color:var(--muted)}
+
+  /* big category banner */
+  .cat{margin:64px 0 10px; padding:20px 24px; border-radius:16px; background:var(--accent-soft); display:flex; gap:18px; align-items:center}
+  .cat.plain{background:var(--code-bg)}
+  .cat .no{font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:1.7rem; font-weight:800; color:var(--accent); line-height:1; flex:0 0 auto}
+  .cat.plain .no{color:var(--muted)}
+  .cat .t{font-size:1.5rem; font-weight:750; letter-spacing:-.015em; line-height:1.15}
+  .cat .tx p{margin:4px 0 0; color:var(--muted); font-size:.95rem}
+  .cat + h2{margin-top:26px}
 </style>
 </head>
 <body>
@@ -159,6 +168,14 @@
     <li><b>git으로 함께 보는 메모리</b> — 내 컴퓨터에만 있는 대화 기록 대신, git에 남는 메모리로 다른 머신·사람·툴이 이어받는다.</li>
     <li><b>사람 확인 절차 포함</b> — <code>_pending → 사람 승인 → committed</code>. 잘못 배운 내용이나 민감한 정보가 자동으로 들어가지 않게 막는다.</li>
   </ul>
+
+  <div class="cat">
+    <div class="no">01</div>
+    <div class="tx">
+      <div class="t">자가 개선</div>
+      <p>작업하는 동안 스스로 배우고, 다음엔 더 잘한다 — 편집 전 힌트 · 편집 후 점검 · 머지 후 회고</p>
+    </div>
+  </div>
 
   <h2>자기개선 <span class="em">루프</span></h2>
   <p>한 번 쓰고 끝이 아니라, 작업할 때마다 이 네 단계가 <b>계속 돌면서</b> 조금씩 똑똑해진다.
@@ -255,23 +272,29 @@
     그러면 PR이 머지될 때마다 <code>_pending/</code>에 회고 초안이 생긴다. <span class="muted">(끄면 알림만 뜨고, 회고는 <code>/memory-update</code>로 직접 한다.)</span>
   </div>
 
-  <h2>설치</h2>
-  <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
-  <pre><code>/plugin marketplace add foxyberry/agent-harness
-/plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(현재는 스킬만 제공 — 설치 도구는 만드는 중)</span>:</p>
-  <pre><code>codex plugin marketplace add foxyberry/agent-harness   # 배포 후
-# 또는 로컬: codex plugin marketplace add ./</code></pre>
-  <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
+  <h2>자가개선 관련 명령</h2>
+  <table>
+    <thead><tr><th>명령</th><th>언제 쓰나</th><th>하는 일</th></tr></thead>
+    <tbody>
+      <tr><td><code>/feedback-review</code></td><td>머지 후 · 회고 시</td><td>받은 지적을 다음에 쓸 규칙이나 스킬로 남길지 검토</td></tr>
+      <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 함께 보는 메모리로 저장 (<code>_pending</code> 확인·반영)</td></tr>
+    </tbody>
+  </table>
 
-  <h2>명령 <span class="muted">(설치 후)</span></h2>
+  <div class="cat">
+    <div class="no">02</div>
+    <div class="tx">
+      <div class="t">Handoff</div>
+      <p>세션·머신·툴·사람이 바뀌어도 작업을 끊김 없이 이어받는다</p>
+    </div>
+  </div>
+
+  <h2>핸드오프 명령</h2>
   <table>
     <thead><tr><th>명령</th><th>언제 쓰나</th><th>하는 일</th></tr></thead>
     <tbody>
       <tr><td><code>/handoff-save</code></td><td>세션 끝 · 툴/머신/사람 바꾸기 직전</td><td>다음 사람이 이어받기 쉽게 현재 상태를 커밋 파일로 저장 (git 정보 자동수집)</td></tr>
       <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프를 읽고 현재 git 상태와 비교</td></tr>
-      <tr><td><code>/feedback-review</code></td><td>머지 후 · 회고 시</td><td>받은 지적을 다음에 쓸 규칙이나 스킬로 남길지 검토</td></tr>
-      <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 함께 보는 메모리로 저장 (<code>_pending</code> 확인·반영)</td></tr>
     </tbody>
   </table>
   <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람이 바뀌어도</b> 작업을 이어가기 위한 방법이다 — 흐름은 이렇다:</p>
@@ -350,6 +373,23 @@ type: feedback | project | reference
     <b>예:</b> 낮에 <b>Codex</b>로 작업하다 <code>/handoff-save</code> → 커밋. 저녁에 <b>Claude Code</b>로 <code>/handoff-load</code> →
     Codex가 남긴 상태를 그대로 받아 계속. <b>툴이 바뀌어도 작업은 안 끊긴다.</b>
   </div>
+
+  <div class="cat plain">
+    <div class="no">＋</div>
+    <div class="tx">
+      <div class="t">설치 · 구조</div>
+      <p>어떻게 깔고, 저장소가 어떻게 구성돼 있나</p>
+    </div>
+  </div>
+
+  <h2>설치</h2>
+  <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
+  <pre><code>/plugin marketplace add foxyberry/agent-harness
+/plugin install agent-harness@foxyberry</code></pre>
+  <p><b>Codex</b> <span class="muted">(현재는 스킬만 제공 — 설치 도구는 만드는 중)</span>:</p>
+  <pre><code>codex plugin marketplace add foxyberry/agent-harness   # 배포 후
+# 또는 로컬: codex plugin marketplace add ./</code></pre>
+  <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
