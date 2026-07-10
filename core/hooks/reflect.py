@@ -45,8 +45,7 @@ PROMPT = """너는 "자가 개선 회고 시스템"이다. 아래는 한 작업 
 ---
 name: <kebab-case-slug>
 description: <한 줄 요약>
-metadata:
-  type: feedback | project | user | reference
+type: feedback | project | user | reference
 ---
 <핵심 내용. feedback/project 면 **Why:** 와 **How to apply:** 줄 포함>
 ```
@@ -118,7 +117,7 @@ BACKENDS = {
 def _split_drafts(text):
     """LLM 출력에서 frontmatter 를 가진 ``` 블록들을 추출."""
     blocks = re.findall(r"```[a-zA-Z]*\n(.*?)```", text, re.S)
-    return [b.strip() for b in blocks if "name:" in b and "metadata:" in b]
+    return [b.strip() for b in blocks if "name:" in b and re.search(r"^type:", b, re.M)]
 
 
 def _slug(block):

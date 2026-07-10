@@ -31,8 +31,13 @@ import re
 import subprocess
 import sys
 
-# "머지를 끝냈다"는 완료형만 매칭. 제안/질문/부정("머지하자/머지 언제해?/머지하지마")은 제외.
-MERGE_DONE = re.compile(r"(머지|병합)\s*(을|를)?\s*(했|함|완료|끝|됐|되었)|\bmerged\b", re.I)
+# "머지를 끝냈다"는 완료형만 매칭. 제안/질문/부정("머지하자/머지 언제해?/머지하지마",
+# "is this merged?", "not merged yet")은 제외.
+MERGE_DONE = re.compile(
+    r"(머지|병합)\s*(을|를)?\s*(했|함|완료|끝|됐|되었)"
+    r"|\b(merge\s+(is\s+)?done|merge\s+completed|it('?s| is| has)?\s+merged|pr\s+#?\d+\s+(is\s+)?merged)\b",
+    re.I,
+)
 
 REMIND = (
     "머지된 PR{detail} 의 회고가 아직 진행되지 않았습니다. "
