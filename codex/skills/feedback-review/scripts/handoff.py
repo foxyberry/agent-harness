@@ -116,7 +116,7 @@ def transcript_hint(root):
     home = os.path.expanduser("~")
     hints = []
     # Claude: ~/.claude/projects/<cwd '/'→'-'>/*.jsonl
-    proj_key = root.replace("/", "-")
+    proj_key = _claude_project_key(root)
     claude_dir = os.path.join(home, ".claude", "projects", proj_key)
     if os.path.isdir(claude_dir):
         jsonls = [f for f in os.listdir(claude_dir) if f.endswith(".jsonl")]
@@ -142,8 +142,13 @@ def transcript_hint(root):
 
 def _claude_project_dir(root):
     """Claude Code project transcript dir for this repo, if present."""
-    proj_key = root.replace("/", "-")
+    proj_key = _claude_project_key(root)
     return os.path.join(os.path.expanduser("~"), ".claude", "projects", proj_key)
+
+
+def _claude_project_key(path):
+    """Claude Code project dir key. Current Claude Code replaces path separators and dots."""
+    return path.replace("/", "-").replace(".", "-")
 
 
 def _recent_claude_transcripts(root, limit=2):

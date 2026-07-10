@@ -38,25 +38,25 @@ done
 mkdir -p plugins/harness/hooks
 cp core/hooks/*.py plugins/harness/hooks/
 chmod +x plugins/harness/hooks/*.py
-cat > plugins/harness/hooks/hooks.json <<'HOOKS_JSON'
 {
-  "hooks": {
-    "PreToolUse": [
-      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] },
-      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
-    ],
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }
-    ]
-  }
-}
-HOOKS_JSON
+  printf '%s\n' '{'
+  printf '%s\n' '  "hooks": {'
+  printf '%s\n' '    "PreToolUse": ['
+  printf '%s\n' '      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }'
+  printf '%s\n' '    ],'
+  printf '%s\n' '    "PostToolUse": ['
+  printf '%s\n' '      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] },'
+  printf '%s\n' '      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '%s\n' '    ],'
+  printf '%s\n' '    "SessionStart": ['
+  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '%s\n' '    ],'
+  printf '%s\n' '    "UserPromptSubmit": ['
+  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '%s\n' '    ]'
+  printf '%s\n' '  }'
+  printf '%s\n' '}'
+} > plugins/harness/hooks/hooks.json
 
 # ── Codex 어댑터: codex/ (skill-only plugin) ────────────────────
 # 스크립트는 스킬 폴더에 번들(scripts/) — bin PATH 가정 회피(Codex 미검증 영역).

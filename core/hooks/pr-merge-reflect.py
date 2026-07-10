@@ -155,7 +155,7 @@ def _transcript_path(data, project_dir):
     sid = data.get("session_id")
     if not sid:
         return None
-    enc = project_dir.replace("/", "-")  # /a/b → -a-b (Claude Code projects 디렉토리 규칙)
+    enc = project_dir.replace("/", "-").replace(".", "-")  # /a/b.c → -a-b-c
     cand = os.path.expanduser(f"~/.claude/projects/{enc}/{sid}.jsonl")
     return cand if os.path.exists(cand) else None
 
@@ -346,24 +346,29 @@ def _pr_is_merged(project_dir, num):
         return False
 
 
-def _looks_like_merge(cmd):
-    """명령의 한 statement 가 실제로 `gh pr merge` 로 시작하는지 검사 — `echo "gh pr merge 5"`
+def _merge_statement(cmd):
+    """실제로 `gh pr merge` 로 시작하는 statement 를 반환 — `echo "gh pr merge 5"`
     나 `grep`, 주석 안의 문자열 매칭 오탐을 배제한다. `;`·개행·`&&`·`||`·`|` 로 분리해
     각 조각의 앞부분(선행 공백 무시)만 본다."""
     for stmt in re.split(r"[;\n]|&&|\|\|?", cmd):
         if re.match(r"\s*gh\s+pr\s+merge\b", stmt):
-            return True
-    return False
+            return stmt
+    return ""
+
+
+def _looks_like_merge(cmd):
+    return bool(_merge_statement(cmd))
 
 
 def _on_post_tool(data, project_dir, cache):
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    if not _looks_like_merge(cmd):
+    stmt = _merge_statement(cmd)
+    if not stmt:
         return
     # PR 번호는 플래그 앞/뒤 어디든 올 수 있다: `gh pr merge 42 --squash` / `gh pr merge --squash 42`.
-    m = re.search(r"gh\s+pr\s+merge\b[^\d]*(\d+)", cmd)
+    m = re.search(r"gh\s+pr\s+merge\b[^\d]*(\d+)", stmt)
     num = int(m.group(1)) if m else None
     # 실제 MERGED 인지 확인 후에만 적재·스폰. 번호 없는 `gh pr merge`(현재 브랜치)는 검증 불가라 보류
     # — SessionStart 스윕/사용자 "머지했어" 발화로 뒤늦게 잡힌다.
