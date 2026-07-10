@@ -18,17 +18,21 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ### 2. 핸드오프 + 현재 git 사실 로드
 
 ```bash
-{{HANDOFF}} load
+{{HANDOFF}} load --deep
 ```
 {{PATH_NOTE}}
 출력에서 확인할 것:
 - **커밋된 핸드오프**: 요약/완료/남은것/다음액션/검증 — 이게 이식 가능한 1순위 정보
 - **현재 git 사실**: 핸드오프 작성 이후 바뀐 게 있는지 **대조** (git 이 우선)
 - **깊은 복구 힌트**: 같은 머신에 로컬 transcript 가 있으면 표시됨
+- **Claude JSONL 빠른 복구**: 최근 Claude Code `.jsonl` 의 마지막 프롬프트/응답/task output 경로를 확인해,
+  방금 끊긴 작업이나 백그라운드 리뷰 결과를 이어받음
 
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
-핸드오프만으로 부족하고 로컬 transcript 가 있으면 {{DEEP_RECOVERY}}
-로 .jsonl 을 직접 읽어 더 자세히 복원한다. (다른 머신이면 생략 — 파일이 없음)
+`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 {{DEEP_RECOVERY}}
+로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
+`{{HANDOFF}} load --deep --transcript <path/to/session.jsonl>` 를 사용한다.
+(다른 머신이면 생략 — 파일이 없음)
 
 ### 4. "이미 완료 / 남은 것 / 바로 할 액션" 으로 정리한 뒤,
 다음 액션이 명확하고 위험하지 않으면 멈추지 말고 진행한다.

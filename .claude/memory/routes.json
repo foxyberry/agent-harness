@@ -1,0 +1,10 @@
+{
+  "//": "memory-search 훅 데이터 (agent-harness 자기 dogfooding). 편집 파일 → 주입할 메모리.",
+  "rules": [
+    { "glob": "*/core/hooks/*", "memory": ["engine-data-separation.md", "hooks-live-dir-gotcha.md"] },
+    { "contains": ["hook"], "memory": ["engine-data-separation.md", "hooks-live-dir-gotcha.md"] },
+    { "contains": ["build.sh"], "memory": ["build-drift.md"] },
+    { "glob": "*/core/*", "memory": ["build-drift.md"] },
+    { "glob": "*SKILL.md", "memory": ["build-drift.md"] }
+  ]
+}

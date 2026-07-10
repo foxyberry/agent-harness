@@ -5,11 +5,27 @@
 
 ## 3층 구조 (핵심 설계)
 
-- **core/** — 툴 무관 정본: Agent Skills(표준 `SKILL.md`), 공유 스크립트, 메모리 스키마, 핸드오프 포맷.
+- **core/** — 툴 무관 정본: Agent Skills(표준 `SKILL.md`), 자기개선 훅(`core/hooks/`), 공유 스크립트, 메모리 스키마, 핸드오프 포맷.
 - **adapters** — core 를 각 툴로 포장:
   - `plugins/harness/` = Claude 플러그인 (루트 `.claude-plugin/marketplace.json` 로 배포)
   - `codex/` = Codex skill-only plugin + `config.toml` merge (검증 후 채움)
-- **opinion pack** (`project-template/`, 문서) — 개인/팀 워크플로·커밋 규칙·회고 방식. 취향이라 분리해 선택 채택.
+- **opinion pack** (`project-template/`, 문서) — 개인/팀 워크플로·커밋 규칙·회고 방식 + **훅 데이터**(`routes.json`·`reflection-rules.json`). 취향이라 분리해 선택 채택.
+
+## 자기개선 훅 루프 (엔진=core, 데이터=프로젝트)
+
+이 하네스의 차별점은 스킬 위의 **자기개선 루프**다: memory-search(편집 전 관련 메모리 주입)
+→ reflection(편집 후 품질 경고) → pr-merge-reflect(머지 시 회고) → `/memory-update` 승격.
+
+- **엔진**(`core/hooks/`)은 툴 무관·generic. "무엇을" 주입·경고할지는 하드코딩하지 않는다.
+- **데이터**는 프로젝트의 `.claude/memory/` 에 산다: `routes.json`(파일→메모리 매핑),
+  `reflection-rules.json`(정규식 품질 규칙). 없으면 훅은 조용히 no-op(내장 TODO/FIXME 만).
+  예시 데이터는 `project-template/.claude/memory/` 에.
+- **훅은 pass 1 에서 Claude 만** 배포(`plugins/harness/hooks/hooks.json`, `${CLAUDE_PLUGIN_ROOT}`
+  참조, 자동 발견). Codex 훅은 버전 취약(openai/codex#19385·#21639)으로 defer — 스킬은 양쪽 배포.
+- **자동 회고 잡**(`reflect.py` 가 `claude -p` 로 초안 생성)은 **기본 꺼짐**. 설치만으로
+  백그라운드 LLM 잡이 뜨지 않게 `HARNESS_AUTO_REFLECT=1` opt-in 뒤에 게이트. 리마인더는 항상 켜짐.
+- 경로 규약: **스크립트**는 `${CLAUDE_PLUGIN_ROOT}`(플러그인 루트, co-located),
+  **데이터**는 `$CLAUDE_PROJECT_DIR`(프로젝트 루트). 플러그인에선 이 둘이 갈린다 — 혼동 금지.
 
 ## 빌드
 

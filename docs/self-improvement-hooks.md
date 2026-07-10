@@ -1,0 +1,146 @@
+# 자기개선 훅 (Self-improvement hooks)
+
+이 하네스의 차별점은 스킬 위의 **자기개선 루프**다. 작업이 진행되는 동안 관련 지식을
+자동으로 꺼내 보여주고(주입), 방금 쓴 코드에 대해 경고하고(회고), 머지될 때 교훈을
+남겨(반영) 다음 세션이 더 잘하게 만든다.
+
+```
+memory-search  ──▶  reflection  ──▶  pr-merge-reflect  ──▶  /memory-update
+(편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
+```
+
+훅은 **Claude 어댑터에만** 배포된다(`plugins/harness/hooks/`). Codex 훅은 버전 취약
+(openai/codex#19385·#21639)으로 defer — 스킬(`/feedback-review`, `/memory-update`)은 양쪽 배포된다.
+
+---
+
+## 설계 원칙: 엔진(core) ↔ 데이터(프로젝트)
+
+훅 스크립트는 **툴·프로젝트 무관 generic 엔진**이다. "무엇을" 주입·경고할지는
+core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이터 파일**이 정한다.
+
+| | 엔진 (core) | 데이터 (프로젝트) |
+|---|---|---|
+| memory-search | glob/substring 매칭 → 메모리 주입 | `routes.json` (파일→메모리 매핑) |
+| reflection | 정규식 규칙 적용 → 경고 | `reflection-rules.json` (패턴→경고문) |
+
+데이터 파일이 없으면 훅은 **조용히 no-op** 한다(reflection 은 내장 TODO/FIXME 규칙만).
+예시 데이터는 `project-template/.claude/memory/` 에 있다(Kotlin/Spring 기준 — 네 프로젝트에 맞게 고쳐라).
+
+### 경로 규약 (중요)
+
+플러그인에선 **스크립트 위치와 데이터 위치가 갈린다**:
+
+- **스크립트** → `${CLAUDE_PLUGIN_ROOT}/hooks/` (플러그인 설치 위치). 훅끼리 co-locate 돼
+  `pr-merge-reflect` 가 `reflect.py` 를, `reflect.py` 가 `compact_transcript.py` 를 `dirname(__file__)` 로 찾는다.
+- **데이터** → `$CLAUDE_PROJECT_DIR/.claude/memory/` (프로젝트 루트). routes/rules/메모리/`_pending`/캐시 전부 여기.
+
+---
+
+## 훅별 상세
+
+### memory-search — 편집 전 관련 메모리 주입
+- **이벤트**: PreToolUse `Edit|Write|MultiEdit`
+- **동작**: 편집하려는 파일 경로를 `routes.json` 규칙과 매칭 → 매칭된 메모리 파일을 읽어
+  `additionalContext` 로 컨텍스트에 주입. "이 파일 고칠 땐 이 규칙·결정을 기억하라."
+- **보안**: routes.json 은 프로젝트 제어 데이터라, 경로 탈출(절대경로·`..`·symlink)로 `.claude/memory`
+  밖 파일을 주입하려는 시도를 차단한다(untrusted repo 유출 방지).
+
+`routes.json` 형식:
+```json
+{
+  "rules": [
+    { "glob": "*.kt", "memory": ["patterns/code-quality.md"] },
+    { "contains": ["batch", "etl"], "memory": ["decisions/issue-workflow.md"] },
+    { "contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"] }
+  ]
+}
+```
+- `glob`: 파일 경로에 fnmatch. `contains`: 부분문자열(대소문자 무시) 중 하나라도 포함.
+- `match_empty`: 경로 없는 편집도 매칭. `memory`: `.claude/memory/` 기준 상대경로.
+
+### reflection — 편집 후 품질 경고
+- **이벤트**: PostToolUse `Edit|Write|MultiEdit` (MultiEdit 은 `edits[*].new_string` 을 합쳐 검사)
+- **동작**: 방금 쓴 코드에 `reflection-rules.json` 정규식 규칙을 적용 → 경고를 tool result 옆에 주입.
+- **내장 규칙**: TODO/FIXME 잔존 경고(모든 파일, 언어 무관). 끄려면 `"builtins": {"todo_fixme": false}`.
+
+`reflection-rules.json` 형식:
+```json
+{
+  "rules": [
+    { "glob": "*.kt", "regex": "!!",
+      "message": "`!!` 사용 {count}곳 — requireNotNull 또는 ?: return 검토" },
+    { "glob": "*.kt", "regex": "(?m)^\\s*var ", "min_count": 3,
+      "message": "var 선언 다수({count}) — fold/associate/sumOf 검토" }
+  ]
+}
+```
+- `glob`: 적용 파일(생략 시 전체). `regex`: Python re 패턴. `min_count`: 이 수 이상일 때만(기본 1).
+- `message`: `{count}` 는 매칭 수로 치환.
+
+### pr-merge-reflect — 머지 회고 루프 (핵심)
+- **이벤트**: PostToolUse `Bash`, SessionStart, UserPromptSubmit
+- **두 역할**:
+
+  **A) 리마인더 (항상 켜짐, LLM 안 씀)** — 머지됐는데 회고 안 한 PR 을 큐에 쌓고, 다음 발화 때
+  "회고부터 하라(`/feedback-review`·`/memory-update`)" 지시를 주입한다. 감지 경로:
+  - SessionStart 폴링(외부 머지 포함) · PostToolUse(`gh pr merge` — **실제 MERGED 확인 후에만**) ·
+    UserPromptSubmit("머지했어" 발화)
+
+  **B) 자동 회고 잡 (opt-in, 기본 꺼짐)** — 아래 참조.
+
+### reflect.py + compact_transcript.py — 자동 회고 잡
+`pr-merge-reflect` 가 스폰하는 백그라운드 잡. 세션 트랜스크립트(Claude `.jsonl` / Codex rollout 둘 다)를
+압축 → LLM 으로 분석 → 영속할 교훈을 `.claude/memory/_pending/*.md` 에 **초안**으로 저장.
+detached 라 세션을 닫아도 완료된다. 같은 slug 초안은 덮어쓰지 않고 suffix 로 보존한다.
+
+---
+
+## ⚠️ 자동 회고는 opt-in (기본 꺼짐)
+
+자동 회고 잡은 `claude -p`(또는 deepseek/ollama) **백그라운드 LLM 프로세스**를 띄운다.
+플러그인 설치만으로 모든 프로젝트의 머지마다 조용히 LLM 잡이 뜨는 걸 막기 위해, **기본 꺼짐**이다.
+
+```bash
+export HARNESS_AUTO_REFLECT=1          # 켜기 — 머지 시 회고 초안 자동 생성
+export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
+```
+켜도 **리마인더(역할 A)는 무관하게 항상 동작**한다. 끄면 회고를 사람이 직접 `/memory-update` 로 하면 된다.
+
+`_pending/` 초안은 `/memory-update` 로 검토 → **승격 / 병합 / 폐기**. governance:
+초안은 자동으로 메모리에 박히지 않고 사람 승인을 거친다(`_pending → 승인 → committed`).
+
+---
+
+## 설정 요약
+
+| 무엇 | 어디 | 없으면 |
+|------|------|--------|
+| 파일→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
+| 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
+| 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |
+| 회고 백엔드 | env `REFLECT_BACKEND` | `claude` |
+
+전부 fail-open — `.claude/memory/` 가 없는 프로젝트에서도 훅은 조용히 통과하며 세션을 막지 않는다.
+
+---
+
+## 알려진 한계 (auto-reflect 켤 때만)
+
+자동 회고(`HARNESS_AUTO_REFLECT=1`)를 켰을 때만 해당되는 두 한계가 있다. 기본 off 라 일상 사용엔 영향 없다.
+
+- **회고 잡은 "스폰 성공 = seen" 으로 처리한다.** `reflect.py` 는 detached 로 뜨고, 그 안의
+  `claude -p`(또는 API 백엔드)가 스폰 후 실패(PATH 없음·타임아웃·비정상 종료)하면 초안이 0개여도
+  그 세션은 이미 seen 이라 **다음 스윕에서 재시도되지 않는다** → 그 머지/세션 회고가 유실될 수 있다.
+  실패는 `.claude/.cache/reflect.log` 에 남는다. (완료-확인 후 seen 처리 = 상태 콜백은 후속 과제.)
+- **초안 파서는 중첩 코드펜스에서 잘릴 수 있다.** `reflect.py` 의 `_split_drafts` 는 non-greedy
+  ` ``` ` 펜스 매칭이라, LLM 초안 본문에 ` ``` ` 예시 블록이 들어가면 그 지점에서 잘려 저장될 수 있다.
+  → `/memory-update` 검토 시 잘린 초안은 폐기·재작성한다.
+
+## 검증 상태
+
+- **구현 + 스모크테스트 완료** — 각 훅의 no-op·매핑 주입·규칙 적용·MultiEdit·경로탈출 차단·suffix 보존 검증됨.
+  high-effort 코드리뷰(finder 4각 + 위치별 독립 검증) 반영: SessionStart gh 폴링을 `.claude/memory` 있을
+  때만 실행, 머지 감지 정규식·명령 매칭 강건화, CLI IndexError·트랜스크립트 메모리·경로 fallback 정리.
+- **live-fire 미검증** — 설치된 세션에서 훅이 실제로 발화하는지(discovery·matcher·`additionalContext` 도달·
+  env 전파)는 이슈 #3 으로 이관. 현재 문서는 "구현됨"이지 "실세션 발화 검증됨"은 아니다.

@@ -10,6 +10,7 @@
 ## 왜 다른가 (차별점)
 
 공개 하네스 대부분은 *세션 종료 시 캡처*까지만 한다. 이 하네스는:
+- **자기개선 훅 루프** — 편집 전 관련 메모리 주입 → 편집 후 품질 경고 → 머지 시 회고 → 승격. 스킬보다 한 층 위의 자동 루프. ([상세](docs/self-improvement-hooks.md))
 - **PR 머지 트리거 회고** — 세션 끝이 아니라 작업이 머지될 때 교훈을 남긴다.
 - **커밋되어 크로스머신/툴 공유되는 메모리** — transcript(로컬·툴 종속) 대신 git 에 커밋되는 메모리·핸드오프로 다른 머신·사람·툴이 이어받는다.
 - **governance 내장** — `_pending → 사람 승인 → committed`. 잘못된 교훈·민감정보가 자동으로 박히지 않는다.
@@ -52,6 +53,19 @@ codex plugin marketplace add foxyberry/agent-harness   # (배포 후)
 | `/feedback-review` | 받은 지적을 규칙/스킬로 승격 검토 |
 | `/memory-update` | 배운 것을 공유 메모리로 영속화 (`_pending` 검토·승격) |
 
+## 자동 훅 (Claude 어댑터)
+
+명령과 별개로, 배경에서 도는 **자기개선 훅**이 있다 ([상세 가이드](docs/self-improvement-hooks.md)):
+
+| 훅 | 이벤트 | 하는 일 | 프로젝트 설정 |
+|----|--------|---------|---------------|
+| memory-search | 편집 전 | 파일에 맞는 메모리를 컨텍스트에 주입 | `.claude/memory/routes.json` |
+| reflection | 편집 후 | 코드 품질 경고(정규식 규칙 + 내장 TODO/FIXME) | `.claude/memory/reflection-rules.json` |
+| pr-merge-reflect | 머지·세션시작·발화 | 미회고 PR 리마인더 + (opt-in) 자동 회고 초안 | env `HARNESS_AUTO_REFLECT=1` |
+
+엔진은 core, "무엇을" 주입·경고할지는 프로젝트 데이터가 정한다. 설정이 없으면 조용히 no-op.
+자동 회고 잡은 `claude -p` 를 띄우므로 **기본 꺼짐**(`HARNESS_AUTO_REFLECT` opt-in). Codex 훅은 defer.
+
 ## 개발
 
 ```bash
@@ -61,4 +75,7 @@ CI(`.github/workflows/validate.yml`)가 JSON·스크립트 문법 + **core↔ada
 
 ## 상태
 
-구축 중. Claude 어댑터 + handoff 스킬부터 동작. Codex 어댑터·자기개선 훅·installer 는 진행 중.
+구축 중.
+- ✅ Claude 어댑터 — handoff·feedback-review·memory-update 스킬 + 자기개선 훅(memory-search·reflection·pr-merge-reflect) 구현·스모크테스트 완료
+- 🔜 훅 live-fire 검증(설치 후 실발화) — 이슈 #3
+- 🔜 Codex 어댑터 훅(버전 취약으로 defer)·installer(config merge)·governance 자동화
