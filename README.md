@@ -27,9 +27,24 @@
 ### Codex (skill-only plugin) — *installer 구축 중*
 ```
 codex plugin marketplace add foxyberry/agent-harness   # (배포 후)
+codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./
 ```
 `installers/install-codex.sh`(config.toml merge)는 아직 미구현 — 현재는 위 marketplace 방식.
+
+### 업데이트
+
+일반 사용자는 설치 후 계속 쓰면 된다. 새 릴리스가 필요할 때만 marketplace snapshot 을 갱신하고
+플러그인 캐시를 다시 받는다.
+
+```bash
+codex plugin marketplace upgrade foxyberry
+codex plugin remove agent-harness@foxyberry
+codex plugin add agent-harness@foxyberry
+```
+
+개발 중 로컬 dogfooding 은 repo 루트에서 `./build.sh` 후 `codex plugin marketplace add ./` 를 쓰고,
+사용자에게는 버전된 릴리스 단위로 업데이트를 안내한다.
 
 ### 공통 (프로젝트 층)
 프로젝트 repo 에 `project-template/` 를 복사 — `AGENTS.md`(정본) + `CLAUDE.md`(@import) + `.claude/memory/` 템플릿.
