@@ -2,6 +2,7 @@
 
 **Claude Code + Codex** 를 위한 재사용 가능한 에이전트 하네스.
 핸드오프, 자기개선 회고, 커밋되어 공유되는 메모리, 워크플로 스킬을 한 번에 배포한다.
+시각 개요(그림 포함)는 [docs/overview.html](docs/overview.html) 참고.
 
 > 설치 방식은 툴마다 다르다(**아래 비대칭 참고**). 호출 모델도 다르다 —
 > **Claude**는 슬래시 커맨드(`/handoff-save` …), **Codex**는 설명(description) 매칭으로 트리거되는 skill.

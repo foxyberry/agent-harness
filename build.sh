@@ -6,12 +6,13 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # SKILL.md 의 {{PLACEHOLDER}} 를 어댑터별 값으로 치환 (sed 구분자 | — 값에 / 포함 대비)
-render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE)
+render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE PERSONAL_TIER_NOTE)
   sed -e "s|{{AGENT}}|$AGENT|g" \
       -e "s|{{RULES_FILE}}|$RULES_FILE|g" \
       -e "s|{{HANDOFF}}|$HANDOFF|g" \
       -e "s|{{DEEP_RECOVERY}}|$DEEP_RECOVERY|g" \
       -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
+      -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
       "$1" > "$2"
 }
 
@@ -26,6 +27,7 @@ chmod +x plugins/harness/bin/agent-handoff
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff
 DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
+PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
 for s in $SKILLS; do
   mkdir -p "plugins/harness/skills/$s"
   render "core/skills/$s/SKILL.md" "plugins/harness/skills/$s/SKILL.md"
@@ -65,6 +67,8 @@ AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
 DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 실행 workdir 를 그 폴더로
 PATH_NOTE='> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. Bash 실행 시 workdir 를 그 스킬 폴더로 두고 실행하라.'
+# Codex: 개인 tier 경로는 Claude auto-memory — Codex 는 다음 세션에서 자동 로드하지 못함
+PERSONAL_TIER_NOTE='  > ⚠️ Codex 세션 주의: 위 개인 tier 경로는 **Claude auto-memory** 라 Claude 만 다음 세션에서 자동 로드한다. Codex 는 재로딩 메커니즘이 없으므로, Codex 에서도 필요할 항목이면 공유 tier(커밋 메모리 + INDEX.md)로 저장을 우선 검토하라.'
 for s in $SKILLS; do
   mkdir -p "codex/skills/$s/scripts"
   cp core/scripts/handoff.py "codex/skills/$s/scripts/handoff.py"
