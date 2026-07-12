@@ -63,6 +63,7 @@ reflect 잡이 **과거 여러 머지에서 미리 생성**해 둔 초안이다(
 
 **저장 위치 (scope별):**
 - **개인** → `~/.claude/projects/<프로젝트 인코딩>/memory/<name>.md` + 그곳 `MEMORY.md` 인덱스 (per-machine, 커밋 무관 — step 1 의 읽기 경로와 동일해야 이후 세션에서 로드됨)
+  > ⚠️ Codex 세션 주의: 위 개인 tier 경로는 **Claude auto-memory** 라 Claude 만 다음 세션에서 자동 로드한다. Codex 는 재로딩 메커니즘이 없으므로, Codex 에서도 필요할 항목이면 공유 tier(커밋 메모리 + INDEX.md)로 저장을 우선 검토하라.
 - **공유(프로젝트)** → 둘 중 성격에 맞게:
   - "반드시 매번 지킬 하드 규칙" → **`AGENTS.md`** 해당 섹션에 추가
   - "참고 사실·패턴·설계 결정" → repo **`$CLAUDE_PROJECT_DIR/.claude/memory/<name>.md`** (frontmatter; [[memory-search]] 훅이 Edit/Write 시 노출)

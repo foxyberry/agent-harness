@@ -2,11 +2,9 @@
   "//": "memory-search 훅 데이터 — '어떤 파일을 편집할 때 어떤 메모리를 주입할지' 매핑.",
   "//engine": "엔진(core)은 하드코딩하지 않는다. 이 파일이 프로젝트별 데이터다. 지우면 훅은 no-op.",
   "//format": "glob=fnmatch, contains=부분문자열(대소문자무시), match_empty=경로없는 편집도 매칭, memory=.claude/memory/ 기준 상대경로",
-  "//example": "아래는 Kotlin/Spring 프로젝트 예시. 네 프로젝트에 맞게 고쳐라.",
+  "//example": "아래는 Kotlin/Spring 프로젝트 예시. 네 프로젝트에 맞게 고쳐라. memory 가 가리키는 파일이 실제로 있어야 주입된다(없으면 조용히 skip).",
   "rules": [
     { "glob": "*.kt", "memory": ["patterns/code-quality.md"] },
-    { "contains": ["batch", "etl", "service"], "memory": ["decisions/issue-workflow.md"] },
-    { "contains": ["docker-compose", "env.", "application.yml"], "memory": ["decisions/env-sync.md"] },
     { "contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"] }
   ]
 }
