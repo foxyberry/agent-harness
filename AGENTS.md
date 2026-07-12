@@ -43,6 +43,14 @@
 
 설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/feedback-review`, `/memory-update`.
 
+### 업데이트/릴리스 운영
+
+- 일반 사용자는 자주 업데이트하지 않게 한다. 로컬 dogfooding 과 사용자-facing 릴리스를 분리한다.
+- 사용자-facing 변경을 배포할 때는 `codex/.codex-plugin/plugin.json` 버전을 올린다(`0.1.0` 그대로 캐시 갱신 요구 금지).
+- Codex 는 현재 `plugin update` 가 없으므로 업데이트 안내는 `marketplace upgrade` 후 `remove`/`add` 로 캐시를 새로 받는 방식이다.
+- 로컬 개발 검증은 `./build.sh` → `codex plugin marketplace add ./` → `codex plugin remove/add agent-harness@foxyberry` 로 한다.
+- README 에는 사용자 설치/업데이트 명령만 짧게 유지하고, 절차가 길어지면 `docs/release.md` 로 분리한다.
+
 ## 규칙
 
 - core 수정 → `build.sh` → 어댑터 재생성분까지 함께 커밋.
