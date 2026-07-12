@@ -93,5 +93,6 @@ CI(`.github/workflows/validate.yml`)가 JSON·스크립트 문법 + **core↔ada
 
 구축 중.
 - ✅ Claude 어댑터 — handoff·feedback-review·memory-update 스킬 + 자기개선 훅(memory-search·reflection·pr-merge-reflect) 구현·스모크테스트 완료
-- 🔜 훅 live-fire 검증(설치 후 실발화) — 이슈 #3
+- ✅ Codex 스킬 로드 live 검증 — 4개 스킬 정상 노출, Claude 전용 frontmatter 필드는 무해(무시됨) ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3) 기록)
+- 🔜 훅 live-fire 검증(설치 후 실발화)·Codex 스킬 실행 검증 — 이슈 #3
 - 🔜 Codex 어댑터 훅(버전 취약으로 defer)·installer(config merge)·governance 자동화

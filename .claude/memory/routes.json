@@ -5,6 +5,7 @@
     { "contains": ["hook"], "memory": ["engine-data-separation.md", "hooks-live-dir-gotcha.md"] },
     { "contains": ["build.sh"], "memory": ["build-drift.md"] },
     { "glob": "*/core/*", "memory": ["build-drift.md"] },
-    { "glob": "*SKILL.md", "memory": ["build-drift.md"] }
+    { "glob": "*SKILL.md", "memory": ["build-drift.md", "plugin-release-updates.md"] },
+    { "contains": ["codex/"], "memory": ["plugin-release-updates.md"] }
   ]
 }
