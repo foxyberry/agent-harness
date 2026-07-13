@@ -18,9 +18,9 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ### 2. 핸드오프 + 현재 git 사실 로드
 
 ```bash
-python3 scripts/handoff.py load --deep
+python3 scripts/handoff.py load --deep --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" 
 ```
-> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, **반드시 `--project-dir "<지금 작업 중인 사용자 프로젝트의 절대경로>"` 를 함께 넘겨라** — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
+> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, 위 예시의 `--project-dir` 를 **지금 작업 중인 사용자 프로젝트의 실제 절대경로로 바꿔서** 넘겨라 — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
 출력에서 확인할 것:
 - **커밋된 핸드오프**: 요약/완료/남은것/다음액션/검증 — 이게 이식 가능한 1순위 정보
 - **현재 git 사실**: 핸드오프 작성 이후 바뀐 게 있는지 **대조** (git 이 우선)
@@ -31,7 +31,7 @@ python3 scripts/handoff.py load --deep
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
 `load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 `~/.codex/sessions` 의 최근 세션 로그
 로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
-`python3 scripts/handoff.py load --deep --transcript <path/to/session.jsonl>` 를 사용한다.
+`python3 scripts/handoff.py load --deep --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" --transcript <path/to/session.jsonl>` 를 사용한다.
 (다른 머신이면 생략 — 파일이 없음)
 
 ### 4. "이미 완료 / 남은 것 / 바로 할 액션" 으로 정리한 뒤,

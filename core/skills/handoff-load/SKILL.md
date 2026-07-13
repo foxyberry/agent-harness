@@ -18,7 +18,7 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ### 2. 핸드오프 + 현재 git 사실 로드
 
 ```bash
-{{HANDOFF}} load --deep
+{{HANDOFF}} load --deep {{PROJECT_DIR_ARG}}
 ```
 {{PATH_NOTE}}
 출력에서 확인할 것:
@@ -31,7 +31,7 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
 `load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 {{DEEP_RECOVERY}}
 로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
-`{{HANDOFF}} load --deep --transcript <path/to/session.jsonl>` 를 사용한다.
+`{{HANDOFF}} load --deep {{PROJECT_DIR_ARG}}--transcript <path/to/session.jsonl>` 를 사용한다.
 (다른 머신이면 생략 — 파일이 없음)
 
 ### 4. "이미 완료 / 남은 것 / 바로 할 액션" 으로 정리한 뒤,

@@ -25,7 +25,7 @@ clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
 ### 2. 스크립트 실행 (서술은 실제 개행 포함 마크다운)
 
 ```bash
-python3 scripts/handoff.py save \
+python3 scripts/handoff.py save --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" \
   --agent codex \
   --summary "한두 줄 요약" \
   --done "- 끝낸 것 1
@@ -34,7 +34,7 @@ python3 scripts/handoff.py save \
 - 다음 액션 2" \
   --verify "검증 상태"
 ```
-> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, **반드시 `--project-dir "<지금 작업 중인 사용자 프로젝트의 절대경로>"` 를 함께 넘겨라** — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
+> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, 위 예시의 `--project-dir` 를 **지금 작업 중인 사용자 프로젝트의 실제 절대경로로 바꿔서** 넘겨라 — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
 git 사실(브랜치·origin/main 대비 커밋·변경 파일·열린 PR)은 스크립트가 **자동 수집**한다.
 파일은 `.claude/handoff/<브랜치명>.md` 에 생성/갱신된다 (브랜치당 1개).
 
