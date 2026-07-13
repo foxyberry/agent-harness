@@ -20,7 +20,7 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ```bash
 python3 scripts/handoff.py load --deep
 ```
-> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. Bash 실행 시 workdir 를 그 스킬 폴더로 두고 실행하라.
+> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, **반드시 `--project-dir "<지금 작업 중인 사용자 프로젝트의 절대경로>"` 를 함께 넘겨라** — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
 출력에서 확인할 것:
 - **커밋된 핸드오프**: 요약/완료/남은것/다음액션/검증 — 이게 이식 가능한 1순위 정보
 - **현재 git 사실**: 핸드오프 작성 이후 바뀐 게 있는지 **대조** (git 이 우선)
