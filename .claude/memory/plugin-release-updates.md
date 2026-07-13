@@ -17,3 +17,7 @@ Codex 플러그인은 설치 캐시가 남기 때문에, 변경을 배포할 때
 `codex plugin marketplace upgrade foxyberry` 후 `codex plugin remove/add agent-harness@foxyberry`
 흐름이다. 로컬 검증은 `./build.sh` 와 로컬 marketplace 로 dogfooding 하되, 그 절차를
 일반 사용자 업데이트 방식처럼 안내하지 않는다.
+
+**실증 (2026-07-12):** dev 설치(marketplace 가 repo 직접 참조)에서도 `codex plugin list` 의
+VERSION 은 install 시점 스냅샷에 머문다 — 스킬 내용은 live 반영되지만 버전 표기는
+remove/add 전까지 0.1.0 그대로였다. "버전 bump + remove/add 안내"가 필요한 이유의 실측 근거.
