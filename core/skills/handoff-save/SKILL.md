@@ -25,7 +25,7 @@ clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
 ### 2. 스크립트 실행 (서술은 실제 개행 포함 마크다운)
 
 ```bash
-{{HANDOFF}} save \
+{{HANDOFF}} save {{PROJECT_DIR_ARG}}\
   --agent {{AGENT}} \
   --summary "한두 줄 요약" \
   --done "- 끝낸 것 1

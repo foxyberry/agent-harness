@@ -55,7 +55,19 @@ def run(cmd, cwd=None):
         return "", False
 
 
-def repo_root():
+def repo_root(explicit=None):
+    """핸드오프를 저장/조회할 프로젝트 루트. 우선순위:
+    1) 명시 인자(--project-dir) — cwd 무관하게 확정. Codex 처럼 스크립트를 스킬 폴더에서
+       실행할 때, 사용자 프로젝트를 명시하기 위한 것(스킬 폴더는 플러그인 캐시라 repo 밖일 수 있음).
+    2) CLAUDE_PROJECT_DIR env — Claude 훅/플러그인이 세팅.
+    3) git toplevel(cwd 기준) — cwd 가 사용자 프로젝트 안일 때.
+    4) cwd 폴백.
+    명시/env 경로가 git repo(또는 그 하위)면 toplevel 로 정규화한다."""
+    cand = explicit or os.environ.get("CLAUDE_PROJECT_DIR")
+    if cand:
+        cand = os.path.abspath(os.path.expanduser(cand))
+        out, ok = run(["git", "rev-parse", "--show-toplevel"], cwd=cand)
+        return out if ok and out else cand
     out, ok = run(["git", "rev-parse", "--show-toplevel"])
     return out if ok and out else os.getcwd()
 
@@ -347,7 +359,7 @@ def _format_claude_deep_recovery(root, limit=2, transcript=None):
 
 
 def cmd_save(args):
-    root = repo_root()
+    root = repo_root(getattr(args, "project_dir", None))
     branch = current_branch(root)
     if branch in ("DETACHED", "HEAD"):
         print("⚠️  DETACHED HEAD 상태 — 브랜치를 먼저 체크아웃하세요.", file=sys.stderr)
@@ -412,7 +424,7 @@ def cmd_save(args):
 
 
 def cmd_load(args):
-    root = repo_root()
+    root = repo_root(getattr(args, "project_dir", None))
     branch = current_branch(root)
     target = handoff_path(root, branch)
     out = []
@@ -466,6 +478,9 @@ def main():
     s.add_argument("--done", help="완료한 것 (마크다운 불릿 가능)")
     s.add_argument("--next", dest="next", help="남은 것/다음 액션 (마크다운 불릿 가능)")
     s.add_argument("--verify", help="검증 상태 (테스트/빌드/리뷰 결과)")
+    s.add_argument("--project-dir", dest="project_dir",
+                   help="핸드오프를 저장할 사용자 프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR "
+                        "env → cwd 의 git 루트 순. 스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
     s.set_defaults(func=cmd_save)
 
     l = sub.add_parser("load", help="현재 브랜치 핸드오프 + git 사실 출력")
@@ -473,6 +488,9 @@ def main():
                    help="같은 머신의 최근 Claude Code JSONL 을 짧게 요약해 이어받기 단서를 함께 출력")
     l.add_argument("--transcript",
                    help="직접 지정한 Claude Code JSONL 경로를 요약 (세션 UUID 대신 전체 경로 권장)")
+    l.add_argument("--project-dir", dest="project_dir",
+                   help="핸드오프를 찾을 사용자 프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR "
+                        "env → cwd 의 git 루트 순. 스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
     l.set_defaults(func=cmd_load)
 
     args = p.parse_args()

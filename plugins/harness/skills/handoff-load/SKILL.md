@@ -18,7 +18,7 @@ argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
 ### 2. 핸드오프 + 현재 git 사실 로드
 
 ```bash
-agent-handoff load --deep
+agent-handoff load --deep 
 ```
 
 출력에서 확인할 것:
