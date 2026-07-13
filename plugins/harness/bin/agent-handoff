@@ -37,7 +37,7 @@ import re
 import socket
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 HANDOFF_DIR = ".claude/handoff"
 AUTO_MARK = "<!-- handoff:auto -->"
@@ -358,6 +358,146 @@ def _format_claude_deep_recovery(root, limit=2, transcript=None):
     return out
 
 
+# ---------- Codex rollout 탐지·요약 (fw 용) ----------
+
+def _codex_sessions_dir():
+    return os.path.join(os.path.expanduser("~"), ".codex", "sessions")
+
+
+def _codex_rollout_meta(path):
+    """rollout 첫 줄 session_meta → (session_id, cwd). 아니면 (None, None)."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.loads(f.readline())
+        if d.get("type") == "session_meta":
+            p = d.get("payload") or {}
+            return p.get("id"), p.get("cwd")
+    except Exception:
+        pass
+    return None, None
+
+
+def _recent_codex_rollouts(root, limit=2, days=30):
+    """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
+    [(mtime, size, path)]. 최근 `days` 일 날짜 디렉토리만 순회해 시작 비용을 제한한다
+    (~/.codex/sessions 는 YYYY/MM/DD 로 분할 저장). +2일 버퍼: 자정 넘긴 세션 포함."""
+    base = _codex_sessions_dir()
+    if not os.path.isdir(base):
+        return []
+    today = datetime.now()
+    date_dirs = [
+        os.path.join(base, f"{d.year:04d}", f"{d.month:02d}", f"{d.day:02d}")
+        for d in (today - timedelta(days=i) for i in range(days + 2))
+    ]
+    rows = []
+    for dd in date_dirs:
+        if not os.path.isdir(dd):
+            continue
+        try:
+            names = os.listdir(dd)
+        except OSError:
+            continue
+        for fn in names:
+            if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
+                continue
+            fp = os.path.join(dd, fn)
+            _sid, cwd = _codex_rollout_meta(fp)
+            in_project = cwd == root or bool(cwd and cwd.startswith(root + os.sep))
+            if not in_project:
+                continue
+            try:
+                rows.append((os.path.getmtime(fp), os.path.getsize(fp), fp))
+            except OSError:
+                continue
+    rows.sort(reverse=True)
+    return rows[:limit]
+
+
+def _summarize_codex_rollout(path):
+    """Codex rollout JSONL 에서 이어받기 신호(최근 user/assistant 텍스트, 도구명)만 요약."""
+    summary = {"last_users": [], "last_assistants": [], "last_tools": []}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if d.get("type") != "response_item":
+                    continue
+                p = d.get("payload") or {}
+                pt = p.get("type")
+                if pt == "message":
+                    role = p.get("role")
+                    texts = [
+                        b.get("text", "")
+                        for b in (p.get("content") or [])
+                        if isinstance(b, dict)
+                        and b.get("type") in ("input_text", "output_text", "text")
+                        and (b.get("text") or "").strip()
+                    ]
+                    if not texts:
+                        continue
+                    joined = _clip("\n".join(texts))
+                    if role == "user":
+                        summary["last_users"].append(joined)
+                        summary["last_users"] = summary["last_users"][-3:]
+                    elif role == "assistant":
+                        summary["last_assistants"].append(joined)
+                        summary["last_assistants"] = summary["last_assistants"][-3:]
+                elif pt == "function_call":
+                    name = p.get("name", "")
+                    if name:
+                        summary["last_tools"].append(_clip(name, 120))
+                        summary["last_tools"] = summary["last_tools"][-5:]
+    except OSError:
+        pass
+    return summary
+
+
+def _format_codex_deep_recovery(root, limit=1, session=None):
+    if session:
+        paths = [(0, 0, os.path.expanduser(session))]
+    else:
+        paths = _recent_codex_rollouts(root, limit=limit)
+    if not paths:
+        return ["## 🧩 Codex rollout: 이 프로젝트의 최근 세션 로그 없음 (이 머신 한정)"]
+    out = ["## 🧩 Codex rollout 빠른 복구 (이 머신 한정)"]
+    for _mt, _size, path in paths:
+        if not os.path.exists(path):
+            out.append(f"- 없음: `{path}`")
+            continue
+        when = datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="seconds")
+        out.append(f"### `{os.path.basename(path)}`")
+        out.append(f"- 경로: `{path}`")
+        out.append(f"- 갱신: {when} · 크기: {os.path.getsize(path)} bytes")
+        s = _summarize_codex_rollout(path)
+        if s["last_users"]:
+            out.append("- 최근 사용자 입력:")
+            for item in s["last_users"]:
+                out.append(f"  - {item}")
+        if s["last_assistants"]:
+            out.append("- 최근 assistant 응답:")
+            for item in s["last_assistants"]:
+                out.append(f"  - {item}")
+        if s["last_tools"]:
+            out.append("- 최근 도구 호출:")
+            for item in s["last_tools"]:
+                out.append(f"  - `{item}`")
+    return out
+
+
+def _facts_lines(facts, header):
+    """git_facts dict 를 사람이 읽는 마크다운 줄로 (load·fw 공용)."""
+    return [
+        header,
+        f"- 브랜치: `{facts['branch']}`",
+        "- origin/main 대비 커밋:", "```", facts["ahead"] or "(없음)", "```",
+        "- 변경 파일 (status -sb):", "```", facts["status"] or "(없음)", "```",
+        f"- 열린 PR: {facts['pr']}",
+    ]
+
+
 def cmd_save(args):
     root = repo_root(getattr(args, "project_dir", None))
     branch = current_branch(root)
@@ -440,18 +580,7 @@ def cmd_load(args):
         out.append(f"   (이 브랜치엔 `{os.path.relpath(target, root)}` 가 아직 없음)")
     out.append("")
     out.append("---")
-    out.append("## 🔎 현재 git 사실 (핸드오프와 대조용)")
-    facts = git_facts(root)
-    out.append(f"- 브랜치: `{facts['branch']}`")
-    out.append("- origin/main 대비 커밋:")
-    out.append("```")
-    out.append(facts["ahead"] or "(없음)")
-    out.append("```")
-    out.append("- 변경 파일 (status -sb):")
-    out.append("```")
-    out.append(facts["status"] or "(없음)")
-    out.append("```")
-    out.append(f"- 열린 PR: {facts['pr']}")
+    out.extend(_facts_lines(git_facts(root), "## 🔎 현재 git 사실 (핸드오프와 대조용)"))
     out.append("")
     hints = transcript_hint(root)
     if hints:
@@ -467,8 +596,56 @@ def cmd_load(args):
     return 0
 
 
+def cmd_fw(args):
+    """세션 로그(Claude .jsonl / Codex rollout)에서 작업을 자동 복원 — 툴 전환 이어받기.
+    handoff-load 와 달리 명시적 save 없이도 로그로 복원한다(보조 경로). git 사실이 우선.
+
+    소스 선택: --session(직접 지정) > --from(툴) > auto(양쪽 최신).
+    렌더된 스킬은 **반대 툴**을 --from 기본값으로 넘긴다(Claude→codex, Codex→claude) —
+    방금 켠 현재 세션 로그가 최신이라 자기 자신을 고르는 사고를 구조적으로 막는다."""
+    root = repo_root(getattr(args, "project_dir", None))
+    src = (args.from_tool or "auto").lower()
+    limit = max(1, int(getattr(args, "limit", 1) or 1))
+
+    out = [
+        f"# 툴 전환 이어받기 (fw) — source: {src}",
+        "",
+        "> ⚠️ fw 는 **저장 안 한 세션 로그**에서 자동 복원하는 보조 경로다. 커밋된 핸드오프"
+        "(`load`)가 있으면 그게 정본이고, **현재 git 상태가 로그보다 항상 우선**이다.",
+        "",
+    ]
+
+    if args.session:
+        # 포맷 자동 판별: 첫 줄이 session_meta 면 Codex rollout, 아니면 Claude .jsonl.
+        sid, _cwd = _codex_rollout_meta(args.session)
+        if sid:
+            out.extend(_format_codex_deep_recovery(root, session=args.session))
+        else:
+            out.extend(_format_claude_deep_recovery(root, transcript=args.session))
+    elif src == "codex":
+        out.extend(_format_codex_deep_recovery(root, limit=limit))
+    elif src == "claude":
+        out.extend(_format_claude_deep_recovery(root, limit=limit))
+    else:  # auto — 양쪽 통틀어 최신 세션 하나
+        cand = [("claude",) + r for r in _recent_claude_transcripts(root, limit=1)]
+        cand += [("codex",) + r for r in _recent_codex_rollouts(root, limit=1)]
+        cand.sort(key=lambda t: t[1], reverse=True)  # t[1]=mtime
+        if not cand:
+            out.append("## 🧩 이 프로젝트의 최근 세션 로그 없음 (Claude·Codex 양쪽, 이 머신 한정)")
+        elif cand[0][0] == "codex":
+            out.extend(_format_codex_deep_recovery(root, session=cand[0][3]))
+        else:
+            out.extend(_format_claude_deep_recovery(root, transcript=cand[0][3]))
+
+    out.append("")
+    out.append("---")
+    out.extend(_facts_lines(git_facts(root), "## 🔎 현재 git 사실 (로그와 대조 — git 우선)"))
+    print("\n".join(out))
+    return 0
+
+
 def main():
-    p = argparse.ArgumentParser(description="작업 핸드오프 (save/load)")
+    p = argparse.ArgumentParser(description="작업 핸드오프 (save/load/fw)")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("save", help="현재 작업 상태를 핸드오프 파일로 저장")
@@ -492,6 +669,20 @@ def main():
                    help="핸드오프를 찾을 사용자 프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR "
                         "env → cwd 의 git 루트 순. 스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
     l.set_defaults(func=cmd_load)
+
+    fw = sub.add_parser("fw", help="세션 로그에서 작업 자동 복원 — 툴 전환 이어받기(저장 안 했어도)")
+    fw.add_argument("--from", dest="from_tool", default="auto",
+                    choices=["claude", "codex", "auto"],
+                    help="복원 소스 툴. 렌더된 스킬은 반대 툴을 기본 지정(Claude→codex, Codex→claude) "
+                         "— 현재 세션 자기선택 방지. auto=양쪽 최신.")
+    fw.add_argument("--session",
+                    help="특정 세션 로그 경로 직접 지정 (Claude .jsonl 또는 Codex rollout). "
+                         "포맷은 자동 판별.")
+    fw.add_argument("--limit", type=int, default=1, help="요약할 최근 세션 수 (기본 1)")
+    fw.add_argument("--project-dir", dest="project_dir",
+                    help="프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR env → cwd 의 git 루트 순. "
+                         "스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
+    fw.set_defaults(func=cmd_fw)
 
     args = p.parse_args()
     sys.exit(args.func(args))

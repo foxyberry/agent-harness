@@ -41,7 +41,9 @@
 - **Codex**: `codex plugin marketplace add foxyberry/agent-harness` (배포 후) / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
 - **공통**: 프로젝트에 `project-template/` 복사 (AGENTS.md 정본 + `.claude/memory` 템플릿)
 
-설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/feedback-review`, `/memory-update`.
+설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/fw`, `/feedback-review`, `/memory-update`.
+
+**handoff vs fw**: `handoff-save/load` = 사람이 명시적으로 커밋하는 이식 정본(크로스머신). `fw` = 저장 안 했어도 세션 로그(Claude `.jsonl`/Codex rollout)에서 자동 복원하는 보조(같은 머신, 툴 전환용). 렌더된 `fw` 는 **반대 툴**을 `--from` 기본값으로 넘겨 현재 세션 자기선택을 막는다. 둘 다 **현재 git 이 우선**.
 
 ### 업데이트/릴리스 운영
 
