@@ -8,7 +8,7 @@
 - **core/** — 툴 무관 정본: Agent Skills(표준 `SKILL.md`), 자기개선 훅(`core/hooks/`), 공유 스크립트, 메모리 스키마, 핸드오프 포맷.
 - **adapters** — core 를 각 툴로 포장:
   - `plugins/harness/` = Claude 플러그인 (루트 `.claude-plugin/marketplace.json` 로 배포)
-  - `codex/` = Codex skill-only plugin + `config.toml` merge (검증 후 채움)
+  - `plugins/codex/` = Codex skill-only plugin (`.agents/plugins/marketplace.json` 로 배포) + `config.toml` merge (검증 후 채움)
 - **opinion pack** (`project-template/`, 문서) — 개인/팀 워크플로·커밋 규칙·회고 방식 + **훅 데이터**(`routes.json`·`reflection-rules.json`). 취향이라 분리해 선택 채택.
 
 ## 자기개선 훅 루프 (엔진=core, 데이터=프로젝트)
@@ -32,7 +32,7 @@
 `core/` 를 정본으로 두고, 어댑터는 **복사 생성**한다(심링크 X — 크로스플랫폼·외부배포 안전).
 
 ```bash
-./build.sh   # core/ → plugins/harness (Claude) + codex/ (Codex). 커밋 전 항상 실행.
+./build.sh   # core/ → plugins/harness (Claude) + plugins/codex (Codex). 커밋 전 항상 실행.
 ```
 
 ## 배포 (비대칭 — 숨기지 말 것)
@@ -46,7 +46,7 @@
 ### 업데이트/릴리스 운영
 
 - 일반 사용자는 자주 업데이트하지 않게 한다. 로컬 dogfooding 과 사용자-facing 릴리스를 분리한다.
-- 사용자-facing 변경을 배포할 때는 `codex/.codex-plugin/plugin.json` 버전을 올린다(`0.1.0` 그대로 캐시 갱신 요구 금지).
+- 사용자-facing 변경을 배포할 때는 `plugins/codex/.codex-plugin/plugin.json` 버전을 올린다(`0.1.0` 그대로 캐시 갱신 요구 금지).
 - Codex 는 현재 `plugin update` 가 없으므로 업데이트 안내는 `marketplace upgrade` 후 `remove`/`add` 로 캐시를 새로 받는 방식이다.
 - 로컬 개발 검증은 `./build.sh` → `codex plugin marketplace add ./` → `codex plugin remove/add agent-harness@foxyberry` 로 한다.
 - README 에는 사용자 설치/업데이트 명령만 짧게 유지하고, 절차가 길어지면 `docs/release.md` 로 분리한다.

@@ -62,9 +62,10 @@ chmod +x plugins/harness/hooks/*.py
   printf '%s\n' '}'
 } > plugins/harness/hooks/hooks.json
 
-# ── Codex 어댑터: codex/ (skill-only plugin) ────────────────────
+# ── Codex 어댑터: plugins/codex/ (skill-only plugin) ────────────
+# canonical 관례(plugins/<name>) 정렬 — OpenAI 마켓·Claude 어댑터와 동일 위치(이슈 #4).
 # 스크립트는 스킬 폴더에 번들(scripts/) — bin PATH 가정 회피(Codex 미검증 영역).
-rm -rf codex/skills codex/bin
+rm -rf plugins/codex/skills plugins/codex/bin
 AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
 DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 스킬 폴더로 cd 해 실행하되,
@@ -77,13 +78,13 @@ PROJECT_DIR_ARG='--project-dir "<지금 작업 중인 사용자 프로젝트 절
 # Codex: 개인 tier 경로는 Claude auto-memory — Codex 는 다음 세션에서 자동 로드하지 못함
 PERSONAL_TIER_NOTE='  > ⚠️ Codex 세션 주의: 위 개인 tier 경로는 **Claude auto-memory** 라 Claude 만 다음 세션에서 자동 로드한다. Codex 는 재로딩 메커니즘이 없으므로, Codex 에서도 필요할 항목이면 공유 tier(커밋 메모리 + INDEX.md)로 저장을 우선 검토하라.'
 for s in $SKILLS; do
-  mkdir -p "codex/skills/$s/scripts"
-  cp core/scripts/handoff.py "codex/skills/$s/scripts/handoff.py"
-  render "core/skills/$s/SKILL.md" "codex/skills/$s/SKILL.md"
+  mkdir -p "plugins/codex/skills/$s/scripts"
+  cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
+  render "core/skills/$s/SKILL.md" "plugins/codex/skills/$s/SKILL.md"
 done
 
 # 렌더 후 미치환 placeholder 가드
-if grep -rl '{{' plugins/harness/skills codex/skills 2>/dev/null | grep -q .; then
-  echo "ERROR: 미치환 placeholder 남음"; grep -rn '{{' plugins/harness/skills codex/skills; exit 1
+if grep -rl '{{' plugins/harness/skills plugins/codex/skills 2>/dev/null | grep -q .; then
+  echo "ERROR: 미치환 placeholder 남음"; grep -rn '{{' plugins/harness/skills plugins/codex/skills; exit 1
 fi
-echo "빌드 완료: core → Claude(plugins/harness, bin PATH) + Codex(codex/, skill별 scripts 번들)"
+echo "빌드 완료: core → Claude(plugins/harness, bin PATH) + Codex(plugins/codex, skill별 scripts 번들)"

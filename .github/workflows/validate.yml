@@ -14,7 +14,7 @@ jobs:
       - name: Validate JSON manifests (Claude + Codex)
         run: |
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json \
-                   .agents/plugins/marketplace.json codex/.codex-plugin/plugin.json; do
+                   .agents/plugins/marketplace.json plugins/codex/.codex-plugin/plugin.json; do
             echo "checking $f"; python3 -m json.tool "$f" > /dev/null
           done
           # 필수 필드 최소 가드 (Codex validator 미설치 CI 대비)
@@ -22,7 +22,7 @@ jobs:
           import json,sys
           m=json.load(open('.agents/plugins/marketplace.json'))
           assert isinstance(m.get('name'),str) and m['name'], "Codex marketplace: top-level 'name' 필요"
-          p=json.load(open('codex/.codex-plugin/plugin.json')); i=p.get('interface',{})
+          p=json.load(open('plugins/codex/.codex-plugin/plugin.json')); i=p.get('interface',{})
           assert i.get('longDescription'), "Codex plugin: interface.longDescription 필요"
           assert i.get('defaultPrompt'), "Codex plugin: interface.defaultPrompt 필요"
           print("Codex manifest 필수 필드 OK")
