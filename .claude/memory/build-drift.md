@@ -4,7 +4,7 @@ description: core/ 가 정본, 어댑터는 생성물. core 수정 후 항상 ./
 type: project
 ---
 
-`core/` 가 single source of truth 이고 `plugins/harness/`·`codex/` 는 build.sh 가 만드는 **생성물**이다.
+`core/` 가 single source of truth 이고 `plugins/harness/`·`plugins/codex/` 는 build.sh 가 만드는 **생성물**이다.
 core 를 고쳤으면 `./build.sh` 를 돌려 어댑터 재생성분까지 **같은 커밋**에 담아야 한다.
 
 **Why:** CI(`.github/workflows/validate.yml`)가 build.sh 를 돌린 뒤 `git diff` 로 drift 를 검사한다 —

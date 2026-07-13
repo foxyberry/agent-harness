@@ -55,7 +55,7 @@ codex plugin add agent-harness@foxyberry
 | 층 | 위치 | 내용 |
 |----|------|------|
 | **core** | `core/` | 툴 무관 정본 — Agent Skills(`SKILL.md`), 스크립트, 메모리 스키마, 핸드오프 포맷 |
-| **adapter** | `plugins/harness/` (Claude), `codex/` (Codex) | core 를 각 툴로 포장 (build.sh 로 **복사 생성**) |
+| **adapter** | `plugins/harness/` (Claude), `plugins/codex/` (Codex) | core 를 각 툴로 포장 (build.sh 로 **복사 생성**) |
 | **opinion pack** | `project-template/`, 문서 | 개인/팀 워크플로·회고 방식 (취향 — 선택 채택) |
 
 `core/` 가 정본이고 어댑터는 생성물이다. 수정은 core 에서 → `./build.sh` → 어댑터 재생성.

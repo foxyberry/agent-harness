@@ -1,12 +1,20 @@
 {
   "name": "agent-harness",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "핸드오프·자기개선 회고·워크플로 스킬 (Codex 어댑터). 정본은 repo core/ 에서 생성됨.",
-  "author": { "name": "foxyberry", "url": "https://github.com/foxyberry" },
+  "author": {
+    "name": "foxyberry",
+    "url": "https://github.com/foxyberry"
+  },
   "homepage": "https://github.com/foxyberry/agent-harness",
   "repository": "https://github.com/foxyberry/agent-harness",
   "license": "MIT",
-  "keywords": ["handoff", "memory", "reflection", "workflow"],
+  "keywords": [
+    "handoff",
+    "memory",
+    "reflection",
+    "workflow"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Agent Harness",
@@ -14,7 +22,12 @@
     "longDescription": "세션·툴(Codex↔Claude)·머신·사람을 넘어 작업을 이어받기 위한 재사용 하네스. 커밋되는 핸드오프 파일과 워크플로 스킬을 제공한다.",
     "developerName": "foxyberry",
     "category": "Productivity",
-    "capabilities": ["Read", "Write"],
-    "defaultPrompt": ["넘기기 전에 handoff-save 로 현재 작업 상태를 저장해줘"]
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "넘기기 전에 handoff-save 로 현재 작업 상태를 저장해줘"
+    ]
   }
 }

@@ -5,7 +5,7 @@ type: project
 ---
 
 agent-harness 를 사용자에게 배포할 때는 로컬 dogfooding 과 사용자-facing 릴리스를 분리한다.
-Codex 플러그인은 설치 캐시가 남기 때문에, 변경을 배포할 때 `codex/.codex-plugin/plugin.json`
+Codex 플러그인은 설치 캐시가 남기 때문에, 변경을 배포할 때 `plugins/codex/.codex-plugin/plugin.json`
 버전을 올리고 README 의 업데이트 명령을 함께 유지한다.
 
 **Why:** 같은 `0.1.0` 버전으로 계속 배포하면 사용자가 "내가 최신인가"를 확인하기 어렵고,
