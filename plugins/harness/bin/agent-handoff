@@ -163,8 +163,10 @@ def _claude_project_key(path):
     return path.replace("/", "-").replace(".", "-")
 
 
-def _recent_claude_transcripts(root, limit=2):
-    """최근 Claude Code top-level transcript 목록. subagents 는 보조 로그라 기본 제외."""
+def _recent_claude_transcripts(root, limit=2, exclude_stem=None):
+    """최근 Claude Code top-level transcript 목록. subagents 는 보조 로그라 기본 제외.
+    exclude_stem: 파일명 stem(=세션 UUID)이 이것과 같으면 제외 — fw both 에서 현재
+    실행 중인 Claude 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
     claude_dir = _claude_project_dir(root)
     if not os.path.isdir(claude_dir):
         return []
@@ -172,6 +174,8 @@ def _recent_claude_transcripts(root, limit=2):
     try:
         for fn in os.listdir(claude_dir):
             if not fn.endswith(".jsonl"):
+                continue
+            if exclude_stem and os.path.splitext(fn)[0] == exclude_stem:
                 continue
             fp = os.path.join(claude_dir, fn)
             try:
@@ -298,12 +302,12 @@ def _summarize_claude_transcript(path):
     return summary
 
 
-def _format_claude_deep_recovery(root, limit=2, transcript=None):
+def _format_claude_deep_recovery(root, limit=2, transcript=None, exclude_stem=None):
     paths = []
     if transcript:
         paths = [(0, 0, os.path.expanduser(transcript))]
     else:
-        paths = _recent_claude_transcripts(root, limit=limit)
+        paths = _recent_claude_transcripts(root, limit=limit, exclude_stem=exclude_stem)
     if not paths:
         return []
 
@@ -377,10 +381,12 @@ def _codex_rollout_meta(path):
     return None, None
 
 
-def _recent_codex_rollouts(root, limit=2, days=30):
+def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
     """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
     [(mtime, size, path)]. 최근 `days` 일 날짜 디렉토리만 순회해 시작 비용을 제한한다
-    (~/.codex/sessions 는 YYYY/MM/DD 로 분할 저장). +2일 버퍼: 자정 넘긴 세션 포함."""
+    (~/.codex/sessions 는 YYYY/MM/DD 로 분할 저장). +2일 버퍼: 자정 넘긴 세션 포함.
+    exclude_sid: session_meta.id 가 이것과 같으면 제외 — fw both 에서 현재 실행 중인
+    Codex 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
     base = _codex_sessions_dir()
     if not os.path.isdir(base):
         return []
@@ -401,9 +407,11 @@ def _recent_codex_rollouts(root, limit=2, days=30):
             if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
                 continue
             fp = os.path.join(dd, fn)
-            _sid, cwd = _codex_rollout_meta(fp)
+            sid, cwd = _codex_rollout_meta(fp)
             in_project = cwd == root or bool(cwd and cwd.startswith(root + os.sep))
             if not in_project:
+                continue
+            if exclude_sid and sid == exclude_sid:
                 continue
             try:
                 rows.append((os.path.getmtime(fp), os.path.getsize(fp), fp))
@@ -455,11 +463,11 @@ def _summarize_codex_rollout(path):
     return summary
 
 
-def _format_codex_deep_recovery(root, limit=1, session=None):
+def _format_codex_deep_recovery(root, limit=1, session=None, exclude_sid=None):
     if session:
         paths = [(0, 0, os.path.expanduser(session))]
     else:
-        paths = _recent_codex_rollouts(root, limit=limit)
+        paths = _recent_codex_rollouts(root, limit=limit, exclude_sid=exclude_sid)
     if not paths:
         return ["## 🧩 Codex rollout: 이 프로젝트의 최근 세션 로그 없음 (이 머신 한정)"]
     out = ["## 🧩 Codex rollout 빠른 복구 (이 머신 한정)"]
@@ -596,6 +604,46 @@ def cmd_load(args):
     return 0
 
 
+def _live_session_excludes(root, current):
+    """현재 툴의 live 세션(지금 이 fw 를 부른 그 세션)을 배제할 식별자를 계산.
+    반대 툴은 실행 중이 아니므로 배제하지 않는다(그 최신 로그가 진짜 직전 작업).
+    반환: (claude_exclude_stem, codex_exclude_sid) — 해당 없으면 None.
+
+    규칙: **live 세션을 이 프로젝트 로그에서 positive 식별할 때만 배제한다.** env 가 가리키는 id 가
+    실제 프로젝트 로그와 매칭될 때만 그 id 를 반환하고, 매칭 안 되면 (None → 아무것도 안 숨김).
+    - claude: env `CLAUDE_CODE_SESSION_ID`(=transcript 파일 stem) 가 이 프로젝트 transcript 중 하나와 일치할 때.
+    - codex : env `CODEX_THREAD_ID`(추정: rollout session_meta.id) 또는 `CODEX_SESSION_ID` 가
+      이 프로젝트 rollout 중 하나와 일치할 때.
+
+    왜 매칭 안 되면 '아무것도 안 숨김'인가(=최신 배제 fallback 을 쓰지 않는가): env 가 무엇을 가리키는지
+    확증 못 하는 상황(예: Codex 가 rollout id 와 다른 CODEX_THREAD_ID 를 export)에서 최신 로그를 무턱대고
+    배제하면, 그 최신이 실은 복원해야 할 **직전 작업**일 때 그걸 숨긴다(더 나쁜 실패). 반대로 안 숨기면
+    최악이라도 목록에 내 live 세션이 한 줄 더 보일 뿐이고, 이어받기는 현재 git 이 우선이라 안전하다."""
+    claude_stem = codex_sid = None
+    cur = (current or "").lower()
+    if cur == "claude":
+        env_stem = os.environ.get("CLAUDE_CODE_SESSION_ID")
+        if env_stem:
+            rows = _recent_claude_transcripts(root, limit=50)
+            stems = {os.path.splitext(os.path.basename(r[2]))[0] for r in rows}
+            if env_stem in stems:
+                claude_stem = env_stem
+    elif cur == "codex":
+        # 현재 Codex 는 CODEX_THREAD_ID 를 export(추정: session_meta.id). CODEX_SESSION_ID 는 보조.
+        # 두 후보를 모두 프로젝트 rollout id 와 대조한다 — `A or B` 로 하면 A 가 truthy 지만
+        # 매칭 안 될 때 B 를 아예 안 보고 short-circuit 되어, B 가 맞는 env 에서 live 세션을 놓친다.
+        candidates = [c for c in (os.environ.get("CODEX_THREAD_ID"),
+                                  os.environ.get("CODEX_SESSION_ID")) if c]
+        if candidates:
+            rows = _recent_codex_rollouts(root, limit=50)
+            ids = {_codex_rollout_meta(r[2])[0] for r in rows}
+            for c in candidates:
+                if c in ids:
+                    codex_sid = c
+                    break
+    return claude_stem, codex_sid
+
+
 def cmd_fw(args):
     """세션 로그(Claude .jsonl / Codex rollout)에서 작업을 자동 복원 — 툴 전환 이어받기.
     handoff-load 와 달리 명시적 save 없이도 로그로 복원한다(보조 경로). git 사실이 우선.
@@ -626,6 +674,11 @@ def cmd_fw(args):
         out.extend(_format_codex_deep_recovery(root, limit=limit))
     elif src == "claude":
         out.extend(_format_claude_deep_recovery(root, limit=limit))
+    elif src == "both":  # 양쪽 로그를 한 번에 — 현재 툴의 live 세션만 배제
+        claude_stem, codex_sid = _live_session_excludes(root, getattr(args, "current", None))
+        out.extend(_format_codex_deep_recovery(root, limit=limit, exclude_sid=codex_sid))
+        out.append("")
+        out.extend(_format_claude_deep_recovery(root, limit=limit, exclude_stem=claude_stem))
     else:  # auto — 양쪽 통틀어 최신 세션 하나
         cand = [("claude",) + r for r in _recent_claude_transcripts(root, limit=1)]
         cand += [("codex",) + r for r in _recent_codex_rollouts(root, limit=1)]
@@ -672,9 +725,13 @@ def main():
 
     fw = sub.add_parser("fw", help="세션 로그에서 작업 자동 복원 — 툴 전환 이어받기(저장 안 했어도)")
     fw.add_argument("--from", dest="from_tool", default="auto",
-                    choices=["claude", "codex", "auto"],
+                    choices=["claude", "codex", "auto", "both"],
                     help="복원 소스 툴. 렌더된 스킬은 반대 툴을 기본 지정(Claude→codex, Codex→claude) "
-                         "— 현재 세션 자기선택 방지. auto=양쪽 최신.")
+                         "— 현재 세션 자기선택 방지. auto=양쪽 최신 하나. "
+                         "both=Claude·Codex 양쪽 로그를 함께(현재 툴의 live 세션만 배제, --current 로 지정).")
+    fw.add_argument("--current", choices=["claude", "codex"],
+                    help="지금 fw 를 실행 중인 툴. --from both 에서 이 툴의 live 세션(방금 켠 현재 "
+                         "세션)을 직전 작업으로 오인하지 않게 배제한다. 렌더된 스킬이 자동으로 넘긴다.")
     fw.add_argument("--session",
                     help="특정 세션 로그 경로 직접 지정 (Claude .jsonl 또는 Codex rollout). "
                          "포맷은 자동 판별.")
