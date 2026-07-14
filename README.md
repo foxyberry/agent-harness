@@ -66,6 +66,7 @@ codex plugin add agent-harness@foxyberry
 |------|---------|
 | `/handoff-save` | 넘기기 전 이식 가능한 상태를 커밋 파일로 저장 |
 | `/handoff-load` | 이어받기 — 커밋된 핸드오프 1순위 + 현재 git 대조 |
+| `/fw` | 툴 전환 이어받기 — **저장 안 했어도** 반대 툴(Codex↔Claude) 세션 로그에서 자동 복원 (같은 머신 한정, 요금제 소진 시) |
 | `/feedback-review` | 받은 지적을 규칙/스킬로 승격 검토 |
 | `/memory-update` | 배운 것을 공유 메모리로 영속화 (`_pending` 검토·승격) |
 

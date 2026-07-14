@@ -14,6 +14,7 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
       -e "s|{{PROJECT_DIR_ARG}}|$PROJECT_DIR_ARG|g" \
+      -e "s|{{FW_FROM_DEFAULT}}|$FW_FROM_DEFAULT|g" \
       "$1" > "$2"
 }
 
@@ -30,6 +31,7 @@ DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
 PROJECT_DIR_ARG=''   # Claude: CLAUDE_PROJECT_DIR env 로 자동 해석 — 명령에 인자 불필요
+FW_FROM_DEFAULT='codex'   # Claude fw 는 반대 툴(codex) 로그를 복원 — 현재 Claude 세션 자기선택 방지
 for s in $SKILLS; do
   mkdir -p "plugins/harness/skills/$s"
   render "core/skills/$s/SKILL.md" "plugins/harness/skills/$s/SKILL.md"
@@ -75,6 +77,7 @@ DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
 PATH_NOTE='> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, 위 예시의 `--project-dir` 를 **지금 작업 중인 사용자 프로젝트의 실제 절대경로로 바꿔서** 넘겨라 — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.'
 # Codex 명령 예시에 실제로 --project-dir 를 넣는다(각주만으론 복붙 시 누락 — 리뷰 지적). 후행 공백 유지.
 PROJECT_DIR_ARG='--project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" '
+FW_FROM_DEFAULT='claude'   # Codex fw 는 반대 툴(claude) 로그를 복원 — 현재 Codex 세션 자기선택 방지
 # Codex: 개인 tier 경로는 Claude auto-memory — Codex 는 다음 세션에서 자동 로드하지 못함
 PERSONAL_TIER_NOTE='  > ⚠️ Codex 세션 주의: 위 개인 tier 경로는 **Claude auto-memory** 라 Claude 만 다음 세션에서 자동 로드한다. Codex 는 재로딩 메커니즘이 없으므로, Codex 에서도 필요할 항목이면 공유 tier(커밋 메모리 + INDEX.md)로 저장을 우선 검토하라.'
 for s in $SKILLS; do
