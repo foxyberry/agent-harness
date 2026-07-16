@@ -60,6 +60,7 @@ type: feedback | project | user | reference
 ```
 ---
 name: <kebab-case-slug>
+description: <한 줄 요약 — INDEX/검색 요약에 쓰인다. 꼭 채운다>
 type: decision
 proposed_chain: <기존 chain slug 또는 new:새이름>
 proposed_supersedes: [<기존 id>, ...]   # 이 결정이 대체한 이전 결정 id. 없으면 []

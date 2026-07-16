@@ -8,3 +8,8 @@
 - [plugin-release-updates](plugin-release-updates.md) — 사용자-facing 플러그인 배포는 버전 bump 와 업데이트 안내를 릴리스 단위로 관리
 - [adapter-cross-project-testing](adapter-cross-project-testing.md) — 어댑터 동작은 harness repo 밖 별도 프로젝트에서 검증 (dev 설치가 버그 가림)
 - [skill-command-examples](skill-command-examples.md) — SKILL.md 필수 인자는 각주 말고 복붙되는 명령 예시 자체에
+
+## 결정 기록 (ADR)
+
+승격된 ADR 을 한 줄씩 등록한다: `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>`.
+(스키마는 `project-template/.claude/memory/decisions/README.md`. 아직 승격된 실 ADR 없음.)

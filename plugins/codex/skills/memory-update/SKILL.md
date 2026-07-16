@@ -43,9 +43,10 @@ reflect 잡이 **과거 여러 머지에서 미리 생성**해 둔 초안이다(
    - `id: adr-YYYYMMDD-NNN` **부여**(그 날짜의 다음 순번). 한 번 정하면 불변 — 링크 대상이다.
    - frontmatter 값은 **한 줄로** 쓴다(`keywords: [a, b]` 인라인). 인덱스 파서가 줄 단위로 읽는다.
    - `proposed_chain` → `chain`, `proposed_supersedes` → `supersedes`(**단방향만** — `superseded_by` 는 저장하지 말 것, 조회 시 계산), `status: active` 추가, `confidence`·`proposed_*` 제거.
+   - `description`(한 줄 요약)을 반드시 둔다 — INDEX·검색 요약이 여기서 나온다. 초안에 있으면 유지, 없으면 `name`·Context 에서 한 줄 생성.
    - `keywords` 는 반드시 채운다(검색 성공이 여기 달림) — 부실하면 보강.
 4. **대체 관계 처리(단방향)**: 이 ADR 이 기존 결정을 대체하면, **기존 파일을 수정하지 말고** 새 파일의 `supersedes` 에만 기존 id 를 적는다. 기존 결정의 `status` 는 조회 시점에 "이 id 를 supersedes 하는 게 있으면 superseded" 로 계산(파일 양방향 수정 회피 — 오래된 파일 편집·충돌 방지).
-5. **INDEX 등록**: `.claude/memory/INDEX.md` 의 "결정 기록(ADR)" 섹션에 `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>` 한 줄 추가.
+5. **INDEX 등록**: `.claude/memory/INDEX.md` 의 "결정 기록 (ADR)" 섹션에 `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>` 한 줄 추가. **섹션이 없으면**(첫 ADR 이거나 구버전 INDEX) 파일 끝에 `## 결정 기록 (ADR)` 헤더를 새로 만들고 그 아래 추가한다.
 6. 처리한 초안은 `_pending/decisions/` 에서 삭제. **공유 tier 라 커밋 필요**(브랜치+PR).
 
 ⚠️ v1 한계: 폐기한 초안은 메모리에 안 남아 이후 세션 트랜스크립트에서 **재생성될 수 있다**(재등장 시 다시 폐기). 생성-시 dedup은 name 중복만 막는다.
