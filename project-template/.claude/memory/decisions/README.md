@@ -9,6 +9,7 @@ Record)이다. 회고 루프가 초안을 만들고(`_pending/decisions/`), 사�
 ```yaml
 ---
 name: <slug>                 # 기존 메모리 관례 (파일명과 일치)
+description: <한 줄 요약>      # INDEX·검색 요약에 쓰인다 — 반드시 채운다
 type: decision               # 이 파일이 ADR 임을 표시
 id: adr-YYYYMMDD-NNN         # 안정적 링크 대상 (승격 시 확정, 이후 불변)
 chain: <chain-slug>          # 축(topic). 같은 chain 끼리만 supersedes 로 연결
