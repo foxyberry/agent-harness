@@ -33,26 +33,13 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compact_transcript import compact  # noqa: E402
 
-PROMPT = """너는 "자가 개선 회고 시스템"이다. 아래는 한 작업 세션의 압축된 대화 트랜스크립트다.
-여기서 **두 종류**를 각각 뽑아 초안을 작성하라: (A) 영속할 교훈(memory), (B) 중요한 의사결정(ADR).
-
-## (A) 교훈 memory
-- 사용자가 준 지적·교정·결정(특히 "~하지 마", "~로 해", 방식 변경)을 우선 추출.
-- 이 세션에만 해당하는 일회성 사실(특정 PR 번호, 특정 파일 경로)은 제외. 일반화되는 패턴만. 애매하면 빼라.
-- 0~5개. 각 초안은 코드블록 하나:
-
-```
----
-name: <kebab-case-slug>
-description: <한 줄 요약>
-type: feedback | project | user | reference
----
-<핵심 내용. feedback/project 면 **Why:** 와 **How to apply:** 줄 포함>
-```
-
-## (B) 의사결정 ADR
+# 생성기 공유 — ADR 초안 계약(게이트 + frontmatter 필드 + 본문 섹션).
+# reflect(세션 회고)·mine(git 소급) 두 생성기가 이걸 합성해 쓴다. 둘 다 같은 _split_drafts →
+# 같은 _pending/decisions 라우팅 → 같은 /memory-update 승격 경로를 타므로, 필드가 어긋나면
+# 초안이 잘못 라우팅된다. 계약 정의는 여기 한 곳에만 둔다(이슈 #19 재발 방지).
+ADR_DRAFT_CONTRACT = """\
 "왜 그렇게 했나"가 중요한 **결정**만. 반드시 게이트를 통과해야 한다:
-- **안 고른 대안(Alternatives)** 과 **결과(Consequence)** 가 둘 다 있어야 ADR 이다. 없으면 ADR 아님 → (A) 로 보내거나 버려라.
+- **안 고른 대안(Alternatives)** 과 **결과(Consequence)** 가 둘 다 있어야 ADR 이다. 없으면 ADR 아님 → 교훈 memory 로 돌리거나 버려라.
 - 기준: 기각한 대안이 있거나 / 방향을 바꿨거나 / 되돌리기 비싼 결정. **0~3개, 각각 하나의 결정만(작게)**.
 - **체인 배정은 확정하지 말고 제안만** 하라 — 아래 "기존 결정 체인 인덱스"를 참고해, 이어지는 축이면 그 chain slug 를, 새 축이면 `new:<이름>` 을 쓴다. 확신 없으면 confidence 를 낮춰라.
 - 각 초안은 코드블록 하나:
@@ -72,10 +59,31 @@ keywords: [<검색어>, ...]                 # 검색 표면 — 꼭 채운다
 ## Alternatives
 ## Consequence
 ## Evidence
+```"""
+
+
+PROMPT = ("""너는 "자가 개선 회고 시스템"이다. 아래는 한 작업 세션의 압축된 대화 트랜스크립트다.
+여기서 **두 종류**를 각각 뽑아 초안을 작성하라: (A) 영속할 교훈(memory), (B) 중요한 의사결정(ADR).
+
+## (A) 교훈 memory
+- 사용자가 준 지적·교정·결정(특히 "~하지 마", "~로 해", 방식 변경)을 우선 추출.
+- 이 세션에만 해당하는 일회성 사실(특정 PR 번호, 특정 파일 경로)은 제외. 일반화되는 패턴만. 애매하면 빼라.
+- 0~5개. 각 초안은 코드블록 하나:
+
+```
+---
+name: <kebab-case-slug>
+description: <한 줄 요약>
+type: feedback | project | user | reference
+---
+<핵심 내용. feedback/project 면 **Why:** 와 **How to apply:** 줄 포함>
 ```
 
+## (B) 의사결정 ADR
+""" + ADR_DRAFT_CONTRACT + """
+
 설명 없이 (A)·(B) 초안 코드블록들만 출력하라. 뽑을 게 없으면 아무것도 출력하지 마라.
-"""
+""")
 
 
 def _project_dir():
