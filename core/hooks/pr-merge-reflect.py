@@ -56,11 +56,23 @@ def _auto_reflect_enabled():
     return os.environ.get("HARNESS_AUTO_REFLECT", "").strip().lower() in ("1", "true", "on", "yes")
 
 
-def _draft_count(project_dir):
+def _pending_drafts(project_dir):
+    """_pending/ 아래 모든 초안(.md) 상대경로 목록. 하위 디렉토리까지 재귀 —
+    reflect 가 결정 초안을 `_pending/decisions/` 에 넣으므로 non-recursive listdir 로는 놓친다."""
+    d = _pending_dir(project_dir)
+    out = []
     try:
-        return len([f for f in os.listdir(_pending_dir(project_dir)) if f.endswith(".md")])
+        for root, _dirs, files in os.walk(d):
+            for f in files:
+                if f.endswith(".md"):
+                    out.append(os.path.relpath(os.path.join(root, f), d))
     except Exception:
-        return 0
+        return []
+    return out
+
+
+def _draft_count(project_dir):
+    return len(_pending_drafts(project_dir))
 
 
 def _remind_text(project_dir, detail):
@@ -200,7 +212,7 @@ def _announce_pending_drafts(project_dir):
     d = _pending_dir(project_dir)
     if not os.path.isdir(d):
         return
-    drafts = [f for f in os.listdir(d) if f.endswith(".md")]
+    drafts = _pending_drafts(project_dir)  # 재귀 — decisions/ 하위 초안 포함
     if not drafts:
         return
     escalate = " ⚠️ 누적이 많으니 새 작업 전에 정리 권장." if len(drafts) >= DRAFT_BACKLOG_THRESHOLD else ""
@@ -208,7 +220,8 @@ def _announce_pending_drafts(project_dir):
         "SessionStart",
         f"자가 개선 회고 초안 {len(drafts)}개가 `.claude/memory/_pending/` 에 대기 중입니다 "
         f"({', '.join(sorted(drafts)[:5])}).{escalate} 사용자에게 검토를 제안하세요 — "
-        f"`/memory-update` 로 검토·승격(또는 폐기)하면 auto-memory + MEMORY.md 로 정리됩니다.",
+        f"`/memory-update` 로 검토·승격(또는 폐기)합니다. 교훈은 auto-memory/MEMORY.md 로, "
+        f"결정(ADR, `decisions/`) 초안은 공유 memory(`decisions/`+INDEX)로 정리됩니다.",
     )
 
 

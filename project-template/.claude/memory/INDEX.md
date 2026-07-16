@@ -5,3 +5,7 @@
 
 - [code-quality](patterns/code-quality.md) — 코드 품질 규칙 (예시 — 교체하라)
 - [git-workflow](decisions/git-workflow.md) — git 작업 규칙 (예시 — 교체하라)
+
+## 결정 기록 (ADR — decisions/, 스키마는 decisions/README.md)
+승격된 ADR 을 여기 한 줄씩 등록한다: `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>`.
+(형식 예시는 `decisions/adr-EXAMPLE-*.md` 참조 — 그 예시 파일은 실제 결정이 아니므로 이 목록에 넣지 않는다.)

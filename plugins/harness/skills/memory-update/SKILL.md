@@ -20,13 +20,33 @@ auto-memory 디렉토리의 `MEMORY.md` 를 읽는다.
 
 ### 1.5 대기 초안(_pending) 수집 — reflect 잡이 미리 만든 초안
 
-`$CLAUDE_PROJECT_DIR/.claude/memory/_pending/*.md` (프로젝트 루트 기준 `.claude/memory/_pending/`) 를 모두 읽는다.
+`$CLAUDE_PROJECT_DIR/.claude/memory/_pending/` 아래 초안을 **재귀로** 모두 읽는다(하위 디렉토리 포함):
+- `_pending/*.md` = 교훈 memory 초안 (type: feedback|project|user|reference)
+- `_pending/decisions/*.md` = **의사결정 ADR 초안** (type: decision) → 승격은 아래 **1.6 절** 참조
 reflect 잡이 **과거 여러 머지에서 미리 생성**해 둔 초안이다(현재 세션 것만이 아니라 누적분).
 
 - 이 초안들 + 3단계의 현세션 추출 항목을 **하나의 후보 풀로 합쳐 함께 dedup** 한다.
 - dedup: (a) 후보끼리 같은 주제면 하나로 병합(예: 거의 동일한 두 초안), (b) 기존 MEMORY.md/메모리 파일과 겹치면 새로 안 만들고 기존 파일 보강.
 - 각 후보 판정 = **승격 / 병합 / 폐기**. 사용자에게 간단히 제시하고 확정.
-- 처리한 초안은 `_pending/` 에서 **삭제**(승격이든 폐기든). 미결정분만 남긴다.
+- 처리한 초안은 `_pending/`(및 `_pending/decisions/`) 에서 **삭제**(승격이든 폐기든). 미결정분만 남긴다.
+
+### 1.6 결정(ADR) 초안 승격 — `_pending/decisions/`
+
+`type: decision` 초안은 교훈과 다르게 처리한다(스키마 정본: `.claude/memory/decisions/README.md`).
+
+1. **ADR 게이트 확인**: 본문에 `## Alternatives`(안 고른 대안)와 `## Consequence`(결과)가 **둘 다** 있어야 ADR 이다. 없으면 ADR 로 승격하지 말고 일반 memory 로 돌리거나 폐기.
+2. **`proposed_*` 는 제안일 뿐 — 사람이 확정**: 초안의 `proposed_chain`·`proposed_supersedes`·`confidence` 를 사용자에게 제시하고 고르게 한다:
+   - **체인(축)**: **"기존 체인 `<slug>` 계속 / 새 체인 `new:<name>` / 폐기"**. **모든 ADR 은 정확히 하나의 `chain` 을 가진다** — 독립 결정이면 새 체인 하나를 판다("체인 없음" 상태는 없다). (잘못된 계보가 최악의 실패 — 자동 확정 금지.)
+   - **대체(supersedes)**: 이전 결정을 대체하면 그 `id` 를 `supersedes` 에, 대체 안 하면 `supersedes: []`. (체인 배정과 별개다.)
+3. **확정 frontmatter 로 변환** 후 `$CLAUDE_PROJECT_DIR/.claude/memory/decisions/<name>.md` 에 저장:
+   - **파일명 = `<name>.md`** (설명적 kebab slug, 초안의 name 유지·정리). `id` 는 **파일명과 별개**의 frontmatter 필드다 — 파일명은 사람이 읽는 이름, `id` 는 링크·supersedes 가 무는 안정적 키.
+   - `id: adr-YYYYMMDD-NNN` **부여**(그 날짜의 다음 순번). 한 번 정하면 불변 — 링크 대상이다.
+   - frontmatter 값은 **한 줄로** 쓴다(`keywords: [a, b]` 인라인). 인덱스 파서가 줄 단위로 읽는다.
+   - `proposed_chain` → `chain`, `proposed_supersedes` → `supersedes`(**단방향만** — `superseded_by` 는 저장하지 말 것, 조회 시 계산), `status: active` 추가, `confidence`·`proposed_*` 제거.
+   - `keywords` 는 반드시 채운다(검색 성공이 여기 달림) — 부실하면 보강.
+4. **대체 관계 처리(단방향)**: 이 ADR 이 기존 결정을 대체하면, **기존 파일을 수정하지 말고** 새 파일의 `supersedes` 에만 기존 id 를 적는다. 기존 결정의 `status` 는 조회 시점에 "이 id 를 supersedes 하는 게 있으면 superseded" 로 계산(파일 양방향 수정 회피 — 오래된 파일 편집·충돌 방지).
+5. **INDEX 등록**: `.claude/memory/INDEX.md` 의 "결정 기록(ADR)" 섹션에 `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>` 한 줄 추가.
+6. 처리한 초안은 `_pending/decisions/` 에서 삭제. **공유 tier 라 커밋 필요**(브랜치+PR).
 
 ⚠️ v1 한계: 폐기한 초안은 메모리에 안 남아 이후 세션 트랜스크립트에서 **재생성될 수 있다**(재등장 시 다시 폐기). 생성-시 dedup은 name 중복만 막는다.
 
