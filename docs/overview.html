@@ -225,7 +225,7 @@
     <tbody>
       <tr><td>파일 고치기 직전</td><td><code>memory-search</code></td><td>파일에 맞는 메모리를 에이전트에게 미리 알려줌</td><td><code>routes.json</code></td></tr>
       <tr><td>파일 고친 직후</td><td><code>reflection</code></td><td>코드에서 자주 보이는 문제를 알려줌 (정규식 규칙 + 기본 TODO/FIXME 확인)</td><td><code>reflection-rules.json</code></td></tr>
-      <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>아직 회고하지 않은 PR을 알려주고, 원하면 자동 회고 초안도 만듦</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
+      <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>아직 회고하지 않은 PR을 알려주고, 원하면 자동 회고 초안(교훈 + 결정 ADR)도 만듦</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
     </tbody>
   </table>
 
@@ -280,6 +280,25 @@
       <tr><td><code>/memory-update</code></td><td>머지 후 · 초안 쌓였을 때</td><td>배운 것을 함께 보는 메모리로 저장 (<code>_pending</code> 확인·반영)</td></tr>
     </tbody>
   </table>
+
+  <h2>의사결정 기록 <span class="em">(ADR)</span></h2>
+  <p>회고 루프는 "무엇을 배웠나"(교훈 메모리)뿐 아니라 <b>"왜 그렇게 결정했나"</b>도 남긴다.
+    코드는 "무엇을 했나"만 보여준다 — 6개월 뒤 사람 머릿속에서 증발하는 <b>결정의 이유</b>를
+    한 건씩 기록하는 게 ADR(Architecture Decision Record)이다.</p>
+  <div class="cards">
+    <div class="card">
+      <h3>⏩ 앞으로 <span class="muted" style="font-weight:400">— 회고가 초안</span></h3>
+      <p class="muted" style="margin:0">자동 회고가 교훈과 함께 <b>결정 ADR 초안</b>도 만들어 <code>_pending/decisions/</code>에 쌓는다. 결정끼리의 계보(체인)·대체 관계는 <b>제안</b>만 하고, 사람이 <code>/memory-update</code>로 확정한다 — 잘못 이어붙인 가짜 역사를 막기 위해서다.</p>
+    </div>
+    <div class="card">
+      <h3>⏪ 과거 <span class="muted" style="font-weight:400">— git에서 소급</span></h3>
+      <p class="muted" style="margin:0"><code>mine.py</code>가 <b>git 히스토리</b>(커밋 메시지)에서 이미 내린 결정을 뽑아 같은 ADR 초안으로 떨군다. 커밋에 "왜"가 안 적혀 있으면 초안을 <b>만들지 않는다</b> — 없는 이유를 지어내지 않는다.</p>
+    </div>
+  </div>
+  <p class="muted">둘 다 <b>같은 승격 경로</b>를 탄다 — <code>_pending/decisions/</code> → 사람이 <code>/memory-update</code>로 확정 → <code>.claude/memory/decisions/</code>. 과거는 마이닝으로 씨앗을 깔고, 이후는 회고로 이어 붙여 하나의 <b>결정 계보</b>가 된다.</p>
+  <div class="note tip">
+    <b>ADR 게이트:</b> 본문에 <code>Alternatives</code>(안 고른 대안)와 <code>Consequence</code>(결과)가 <b>둘 다</b> 있어야 ADR로 인정한다. 없으면 그냥 교훈 메모리로 보낸다 — 아무 선택이나 결정 기록으로 만들면 검색이 무너지기 때문이다.
+  </div>
 
   <div class="cat">
     <div class="no">02</div>
@@ -421,7 +440,8 @@ type: feedback | project | reference
 │  │  ├─ memory-search.py       <span class="c">편집 전 메모리 주입</span>
 │  │  ├─ reflection.py          <span class="c">편집 후 품질 경고</span>
 │  │  ├─ pr-merge-reflect.py    <span class="c">머지 회고 (핵심)</span>
-│  │  ├─ reflect.py             <span class="c">회고 잡 (LLM 백엔드)</span>
+│  │  ├─ reflect.py             <span class="c">회고 잡 — 교훈 + 결정 ADR 초안</span>
+│  │  ├─ mine.py                <span class="c">git 히스토리에서 결정 소급 마이닝</span>
 │  │  └─ compact_transcript.py  <span class="c">트랜스크립트 압축</span>
 │  ├─ <span class="d">skills/</span>                <span class="c">스킬 (SKILL.md)</span>
 │  │  ├─ handoff-save · handoff-load
@@ -438,7 +458,7 @@ type: feedback | project | reference
 │  └─ skills/*/scripts/handoff.py
 │
 ├─ <span class="d">project-template/</span>         <span class="c">← opinion pack (프로젝트가 복사)</span>
-│  └─ .claude/memory/  <span class="c">routes.json · reflection-rules.json (예시)</span>
+│  └─ .claude/memory/  <span class="c">routes.json · reflection-rules.json · decisions/ (예시)</span>
 │
 ├─ <span class="d">.claude/memory/</span>           <span class="c">← 자기 dogfooding (이 repo에도 훅 적용)</span>
 ├─ <span class="d">docs/</span>self-improvement-hooks.md
@@ -451,6 +471,7 @@ type: feedback | project | reference
   <h2>상태</h2>
   <ul class="status">
     <li><span class="badge done">DONE</span> Claude용 사본 — 핸드오프·feedback-review·memory-update 스킬 + 스스로 돌아보는 훅 3개 구현·간단 테스트 완료</li>
+    <li><span class="badge done">DONE</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
     <li><span class="badge soon">NEXT</span> 훅 실제 사용 검증 (설치 후 실제 대화에서 확인) — 이슈 #3</li>
     <li><span class="badge soon">NEXT</span> Codex용 훅 (버전 변화에 약해 나중에 진행) · 설치 도구 · 사람 확인 절차 자동화</li>
   </ul>
