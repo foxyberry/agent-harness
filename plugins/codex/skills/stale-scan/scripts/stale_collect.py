@@ -124,11 +124,13 @@ def partition(repo, min_age_days, exclude_labels, limit, now=None):
     candidates, excluded = [], []
     for it in fetch_open_issues(repo, limit):
         row = _row(it, now)
+        # 나이 범위 필터는 분기 전에 **공통** 적용한다 — --min-age-days 는 스캔 "범위"라
+        # 후보든 정책제외든 같은 범위를 봐야 리포트가 일관된다(정렬/판정 신호 아님).
+        if min_age_days is not None and (row["age_days"] is None or row["age_days"] < min_age_days):
+            continue
         if any(n.strip().lower() in excl for n in row["labels"]):
             excluded.append(row)  # 정책 라벨 → 후보에서 제외(하지만 별도 보존)
             continue
-        if min_age_days is not None and (row["age_days"] is None or row["age_days"] < min_age_days):
-            continue  # 수집 범위 축소(정렬/판정 아님)
         candidates.append(row)
     return _sort_oldest_first(candidates), _sort_oldest_first(excluded)
 
