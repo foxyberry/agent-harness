@@ -48,7 +48,7 @@ def judge(repo, min_age_days, exclude_labels, limit):
     각 후보 row 에 'linked_prs' 를 붙인다.
     """
     owner, name = _split_repo(repo)
-    candidates, excluded = partition(repo, min_age_days, exclude_labels, limit)
+    candidates, excluded, fetched = partition(repo, min_age_days, exclude_labels, limit)
 
     numbers = [c["issue"] for c in candidates if isinstance(c.get("issue"), int)]
     linked = resolve(owner, name, numbers) if numbers else {}
@@ -59,7 +59,15 @@ def judge(repo, min_age_days, exclude_labels, limit):
         row = dict(c, linked_prs=prs)
         (closable if prs else keep).append(row)
 
-    return {"repo": repo, "closable": closable, "keep": keep, "excluded": excluded}
+    return {
+        "repo": repo,
+        "closable": closable,
+        "keep": keep,
+        "excluded": excluded,
+        # gh 가 limit 만큼 돌려줬으면 그 밖(더 최신 쪽)은 안 봤다는 뜻 — 조용한 절단 경고.
+        "truncated": fetched >= limit,
+        "limit": limit,
+    }
 
 
 def _age(row):
@@ -80,6 +88,11 @@ def render_text(result):
         "판정: 연결된 merged PR 이 있으면 '닫기후보', 없으면 '유지/불확실'. "
         "자동 close 안 함 — 사람이 판단."
     )
+    if result.get("truncated"):
+        lines.append(
+            f"⚠ gh 조회가 limit({result.get('limit')})에 도달 — 더 최신 이슈는 스캔 안 됨"
+            " (oldest-first 라 오래된 쪽은 봤다). 전체를 보려면 --limit 를 올려라."
+        )
     lines.append("")
 
     lines.append(f"■ 닫기후보 ({len(closable)})  ← 연결된 merged PR 존재")

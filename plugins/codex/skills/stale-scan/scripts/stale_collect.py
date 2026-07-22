@@ -114,15 +114,17 @@ def _sort_oldest_first(rows):
 
 
 def partition(repo, min_age_days, exclude_labels, limit, now=None):
-    """open 이슈를 (검토대상 후보, 정책 제외) 로 나눠 반환한다.
+    """open 이슈를 (검토대상 후보, 정책 제외, fetched_count) 로 나눠 반환한다.
 
     C(리포트)가 '제외 라벨 별도 표시'를 하려면 제외된 이슈도 알아야 하므로,
     한 번의 fetch 로 둘 다 돌려준다. 둘 다 나이 내림차순.
+    fetched_count 는 gh 가 실제로 돌려준 이슈 수 — limit 도달(절단 가능) 판단용.
     """
     now = now or datetime.now(timezone.utc)
     excl = {lbl.strip().lower() for lbl in exclude_labels}  # 대소문자 무시 정확 일치
     candidates, excluded = [], []
-    for it in fetch_open_issues(repo, limit):
+    fetched = fetch_open_issues(repo, limit)
+    for it in fetched:
         row = _row(it, now)
         # 나이 범위 필터는 분기 전에 **공통** 적용한다 — --min-age-days 는 스캔 "범위"라
         # 후보든 정책제외든 같은 범위를 봐야 리포트가 일관된다(정렬/판정 신호 아님).
@@ -132,12 +134,12 @@ def partition(repo, min_age_days, exclude_labels, limit, now=None):
             excluded.append(row)  # 정책 라벨 → 후보에서 제외(하지만 별도 보존)
             continue
         candidates.append(row)
-    return _sort_oldest_first(candidates), _sort_oldest_first(excluded)
+    return _sort_oldest_first(candidates), _sort_oldest_first(excluded), len(fetched)
 
 
 def collect(repo, min_age_days, exclude_labels, limit, now=None):
     """검토 대상 후보만 반환(A 의 CLI 계약)."""
-    candidates, _ = partition(repo, min_age_days, exclude_labels, limit, now)
+    candidates, _, _ = partition(repo, min_age_days, exclude_labels, limit, now)
     return candidates
 
 
