@@ -45,6 +45,38 @@
 - **A**(수집·정책필터)와 **B**(연결 PR 리졸버)는 **의존 없음 → 병렬**.
 - **C**(판정+리포트)는 A·B 산출을 합침 → **선행 A, B**.
 
+## 데이터 계약 (A·B·C 인터페이스) — 병렬 구현 전 고정
+
+세 조각이 합쳐지려면 shape 를 **먼저** 박아야 한다(안 그러면 C 에서 재작업). 각 스크립트는
+`core/scripts/` 정본, **독립 실행 + JSON stdout**. C 가 A→B 를 파이프한다.
+
+**A `stale_collect.py`** — open 이슈 수집 + 정책 라벨 필터
+- CLI: `python3 stale_collect.py --repo <owner/name> [--min-age-days N] [--exclude-label L ...]`
+- 기본 제외 라벨: `keep, blocked, needs-repro, tracking, epic, good first issue`.
+- 출력(JSON array → stdout):
+  ```json
+  [{"issue": 41, "title": "...", "labels": ["bug"], "age_days": 120, "updated_days": 30, "url": "https://..."}]
+  ```
+- `age_days`·`updated_days` 는 **정렬용**. `--min-age-days` 는 수집 범위 축소(선택)일 뿐 판정 신호 아님.
+
+**B `stale_resolve.py`** — 연결된 '닫는 merged PR' 리졸버 (GraphQL)
+- CLI: `python3 stale_resolve.py --repo <owner/name> --issues 41,42,43`
+- issue `timelineItems` 의 `CROSS_REFERENCED_EVENT`/`CONNECTED_EVENT`/`CLOSED_EVENT` 에서
+  **source/subject/closer 가 PullRequest 이고 `merged=true`** 인 것만 수집.
+  ⚠️ `closingIssuesReferences` 는 **PullRequest 필드**라 Issue 엔 없다(검증됨). open 이슈가
+  auto-close 안 된 채 남았으면 링크는 **cross-reference** 에 산다 — `willCloseTarget=false` 여도
+  merged PR 이면 유효 신호다.
+- 출력(JSON object → stdout):
+  ```json
+  {"41": [{"pr": 55, "url": "https://...", "merged_at": "2026-01-02T..."}], "42": []}
+  ```
+- **acceptance(실행 검증):** `--repo foxyberry/tutti-dpnc --issues 1441` → PR **#1443**(merged) 을
+  반드시 surface 한다. 빈 목록이면 **잘못된 필드를 쿼리한 것**.
+
+**C `stale.py` (command/SKILL)** — A 실행 → 이슈번호 추출 → B 실행 → join → advisory 리포트
+- 이슈별 판정: B 결과 **비어있지 않음 → 닫기후보**(근거 PR 링크 첨부), **비어있음 → 불확실/유지**.
+  `age_days` 로 정렬. **자동 close 없음.**
+
 ## 리스크 / 열린 질문
 
 - **오탐** — 고정밀 지향(연결 PR 있을 때만 후보) + advisory + 근거 필수.
