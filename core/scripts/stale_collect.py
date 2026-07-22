@@ -63,13 +63,19 @@ def _parse_iso(ts):
 
 
 def fetch_open_issues(repo, limit):
-    """gh issue list 로 open 이슈를 가져온다. gh 없음/인증실패는 명확히 종료."""
+    """gh issue list 로 open 이슈를 가져온다. gh 없음/인증실패는 명확히 종료.
+
+    ⚠️ `sort:created-asc` 로 **오래된 이슈부터** 받는다. --limit 로 잘릴 때
+    newest(가장 안 오래된) 쪽이 버려지도록 — stale 탐지는 오래된 이슈가 대상이라
+    gh 기본 정렬(created desc)이면 정작 필요한 걸 놓친다.
+    """
     try:
         proc = subprocess.run(
             [
                 "gh", "issue", "list",
                 "--repo", repo,
                 "--state", "open",
+                "--search", "sort:created-asc",
                 "--limit", str(limit),
                 "--json", "number,title,labels,createdAt,updatedAt,url",
             ],
@@ -129,17 +135,23 @@ def main(argv=None):
     )
     ap.add_argument(
         "--exclude-label", action="append", dest="exclude_labels", default=None,
-        help=f"후보에서 제외할 라벨(반복 가능). 미지정 시 기본값: {', '.join(DEFAULT_EXCLUDE_LABELS)}",
+        help=f"제외할 라벨을 **추가**(반복 가능). 기본 제외 라벨({', '.join(DEFAULT_EXCLUDE_LABELS)})에 더해진다.",
+    )
+    ap.add_argument(
+        "--no-default-excludes", action="store_true",
+        help="기본 제외 라벨을 쓰지 않는다(완전 커스텀 — --exclude-label 로 준 것만 제외).",
     )
     ap.add_argument(
         "--limit", type=int, default=500,
-        help="gh issue list 최대 조회 수(기본 500)",
+        help="gh issue list 최대 조회 수(기본 500, oldest-first 라 초과분은 newest 쪽이 잘림)",
     )
     args = ap.parse_args(argv)
 
-    exclude_labels = (
-        args.exclude_labels if args.exclude_labels is not None else DEFAULT_EXCLUDE_LABELS
-    )
+    # 기본 제외 라벨은 항상 적용하고, --exclude-label 은 거기에 **더한다**(union).
+    # 정책 라벨(keep·blocked 등)이 실수로 빠져 오탐 후보가 되는 걸 막는다.
+    # 완전 커스텀이 필요하면 --no-default-excludes 로 기본값을 끈다.
+    exclude_labels = set() if args.no_default_excludes else set(DEFAULT_EXCLUDE_LABELS)
+    exclude_labels |= set(args.exclude_labels or [])
     rows = collect(args.repo, args.min_age_days, exclude_labels, args.limit)
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
