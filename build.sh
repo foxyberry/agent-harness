@@ -15,6 +15,8 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
       -e "s|{{PROJECT_DIR_ARG}}|$PROJECT_DIR_ARG|g" \
       -e "s|{{FW_FROM_DEFAULT}}|$FW_FROM_DEFAULT|g" \
+      -e "s|{{STALE}}|$STALE|g" \
+      -e "s|{{STALE_NOTE}}|$STALE_NOTE|g" \
       "$1" > "$2"
 }
 
@@ -26,7 +28,14 @@ rm -rf plugins/harness/skills plugins/harness/bin plugins/harness/hooks
 mkdir -p plugins/harness/bin
 cp core/scripts/handoff.py plugins/harness/bin/agent-handoff
 chmod +x plugins/harness/bin/agent-handoff
+# stale detector: orchestrator(stale.py→agent-stale) + A/B 헬퍼를 bin/ 에 co-locate.
+# agent-stale 이 dirname(__file__)=bin/ 에서 stale_collect·stale_resolve 를 import 한다.
+cp core/scripts/stale.py plugins/harness/bin/agent-stale
+cp core/scripts/stale_collect.py plugins/harness/bin/stale_collect.py
+cp core/scripts/stale_resolve.py plugins/harness/bin/stale_resolve.py
+chmod +x plugins/harness/bin/agent-stale
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff
+STALE=agent-stale; STALE_NOTE=''   # Claude: bin/ 이 PATH 등록 — 경로 주석 불필요
 DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
@@ -69,6 +78,8 @@ chmod +x plugins/harness/hooks/*.py
 # 스크립트는 스킬 폴더에 번들(scripts/) — bin PATH 가정 회피(Codex 미검증 영역).
 rm -rf plugins/codex/skills plugins/codex/bin
 AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
+STALE='python3 scripts/stale.py'
+STALE_NOTE='> ⚠️ 위 `scripts/stale.py` 는 이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로다. 그 스킬 폴더로 cd 한 뒤 실행하라. (`--repo` 로 대상 repo 를 명시하므로 cwd/git 루트에는 의존하지 않지만, 명령의 `scripts/` 경로 때문에 스킬 폴더에서 실행해야 한다.)'
 DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 스킬 폴더로 cd 해 실행하되,
 # 스크립트가 cwd 기준 git 루트로 프로젝트를 찾으므로(스킬 폴더=플러그인 캐시는 사용자 repo 밖일 수 있음)
@@ -85,9 +96,15 @@ for s in $SKILLS; do
   cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
   render "core/skills/$s/SKILL.md" "plugins/codex/skills/$s/SKILL.md"
 done
+# stale-scan 스킬만 stale 3-스크립트를 번들(그 스킬만 씀). stale.py 가 같은 폴더에서
+# stale_collect·stale_resolve 를 import 한다.
+cp core/scripts/stale.py core/scripts/stale_collect.py core/scripts/stale_resolve.py \
+   plugins/codex/skills/stale-scan/scripts/
 
-# 렌더 후 미치환 placeholder 가드
-if grep -rl '{{' plugins/harness/skills plugins/codex/skills 2>/dev/null | grep -q .; then
-  echo "ERROR: 미치환 placeholder 남음"; grep -rn '{{' plugins/harness/skills plugins/codex/skills; exit 1
+# 렌더 후 미치환 placeholder 가드 — SKILL.md 만 검사한다.
+# (번들된 스크립트는 검사 제외: stale_resolve.py 의 GraphQL f-string `{{` 처럼
+#  정당한 이중중괄호가 있어 placeholder 로 오탐된다. placeholder 는 SKILL.md 만의 개념.)
+if grep -rl --include='SKILL.md' '{{' plugins/harness/skills plugins/codex/skills 2>/dev/null | grep -q .; then
+  echo "ERROR: 미치환 placeholder 남음"; grep -rn --include='SKILL.md' '{{' plugins/harness/skills plugins/codex/skills; exit 1
 fi
 echo "빌드 완료: core → Claude(plugins/harness, bin PATH) + Codex(plugins/codex, skill별 scripts 번들)"
