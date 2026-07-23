@@ -64,6 +64,7 @@ chmod +x plugins/harness/hooks/*.py
   printf '%s\n' '      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
   printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
+  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] },'
   printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
   printf '%s\n' '    ],'
   printf '%s\n' '    "UserPromptSubmit": ['

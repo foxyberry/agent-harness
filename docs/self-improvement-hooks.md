@@ -5,8 +5,8 @@
 남겨(반영) 다음 세션이 더 잘하게 만든다.
 
 ```
-memory-search  ──▶  reflection  ──▶  pr-merge-reflect  ──▶  /memory-update
-(편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
+project-memory-index  ──▶  memory-search  ──▶  reflection  ──▶  pr-merge-reflect  ──▶  /memory-update
+(세션 시작 인덱스)        (편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
 ```
 
 훅은 **Claude 어댑터에만** 배포된다(`plugins/harness/hooks/`). Codex 훅은 버전 취약
@@ -21,6 +21,7 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
 
 | | 엔진 (core) | 데이터 (프로젝트) |
 |---|---|---|
+| project-memory-index | INDEX.md 읽기 → 공유 메모리 목록 주입 | `INDEX.md`, 선택: `index-load.json` |
 | memory-search | glob/substring 매칭 → 메모리 주입 | `routes.json` (파일→메모리 매핑) |
 | reflection | 정규식 규칙 적용 → 경고 | `reflection-rules.json` (패턴→경고문) |
 
@@ -38,6 +39,24 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
 ---
 
 ## 훅별 상세
+
+### project-memory-index — 세션 시작 시 공유 메모리 목록 주입
+- **이벤트**: SessionStart
+- **동작**: `.claude/memory/INDEX.md` 를 읽어 `additionalContext` 로 주입한다. 목적은 메모리 본문 전체를
+  자동으로 넣는 것이 아니라, 어떤 공유 규칙·결정·회고가 있는지 세션 초반에 발견하게 하는 것이다.
+  실제 상세 파일은 현재 작업에 관련될 때 읽는다.
+- **크기 제한**: 기본 12,000자까지만 주입하고 넘치면 잘림 표시를 붙인다.
+- **옵션**: `.claude/memory/index-load.json` 으로 끄거나 크기 제한을 조정할 수 있다.
+
+`index-load.json` 형식:
+```json
+{
+  "enabled": true,
+  "max_chars": 12000
+}
+```
+- `enabled: false` 면 INDEX 자동 주입을 끈다.
+- `max_chars` 는 1,000~50,000 사이로 clamp 된다.
 
 ### memory-search — 편집 전 관련 메모리 주입
 - **이벤트**: PreToolUse `Edit|Write|MultiEdit`
@@ -116,6 +135,8 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 
 | 무엇 | 어디 | 없으면 |
 |------|------|--------|
+| 공유 메모리 인덱스 | `$CLAUDE_PROJECT_DIR/.claude/memory/INDEX.md` | project-memory-index no-op |
+| INDEX 자동 주입 옵션 | `$CLAUDE_PROJECT_DIR/.claude/memory/index-load.json` | enabled=true, max_chars=12000 |
 | 파일→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
 | 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
 | 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |

@@ -1,6 +1,7 @@
 # 프로젝트 메모리 인덱스 — agent-harness
 
-공유(커밋) 메모리. Claude 는 memory-search 훅으로, Codex 는 이 인덱스로 읽는다.
+공유(커밋) 메모리. Claude 는 세션 시작 시 이 인덱스를 자동으로 보고, 이후 memory-search 훅으로
+관련 메모리 본문을 읽는다. Codex 는 아직 훅 배포가 없어 이 인덱스를 직접 읽는다.
 
 - [engine-data-separation](engine-data-separation.md) — core/hooks는 generic 엔진, "무엇을"은 프로젝트 데이터. 하드코딩 금지
 - [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — 플러그인 dev설치(작업 repo 직접 참조); 훅 삭제 시 다른 세션 Bash 블록 주의
