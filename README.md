@@ -11,7 +11,7 @@
 ## 왜 다른가 (차별점)
 
 공개 하네스 대부분은 *세션 종료 시 캡처*까지만 한다. 이 하네스는:
-- **자기개선 훅 루프** — 편집 전 관련 메모리 주입 → 편집 후 품질 경고 → 머지 시 회고 → 승격. 스킬보다 한 층 위의 자동 루프. ([상세](docs/self-improvement-hooks.md))
+- **자기개선 훅 루프** — 세션 시작 시 공유 메모리 인덱스 노출 → 편집 전 관련 메모리 주입 → 편집 후 품질 경고 → 머지 시 회고 → 승격. 스킬보다 한 층 위의 자동 루프. ([상세](docs/self-improvement-hooks.md))
 - **PR 머지 트리거 회고** — 세션 끝이 아니라 작업이 머지될 때 교훈을 남긴다.
 - **커밋되어 크로스머신/툴 공유되는 메모리** — transcript(로컬·툴 종속) 대신 git 에 커밋되는 메모리·핸드오프로 다른 머신·사람·툴이 이어받는다.
 - **governance 내장** — `_pending → 사람 승인 → committed`. 잘못된 교훈·민감정보가 자동으로 박히지 않는다.
@@ -76,6 +76,7 @@ codex plugin add agent-harness@foxyberry
 
 | 훅 | 이벤트 | 하는 일 | 프로젝트 설정 |
 |----|--------|---------|---------------|
+| project-memory-index | 세션 시작 | 공유 메모리 INDEX를 컨텍스트에 주입 | `.claude/memory/INDEX.md`, 선택: `index-load.json` |
 | memory-search | 편집 전 | 파일에 맞는 메모리를 컨텍스트에 주입 | `.claude/memory/routes.json` |
 | reflection | 편집 후 | 코드 품질 경고(정규식 규칙 + 내장 TODO/FIXME) | `.claude/memory/reflection-rules.json` |
 | pr-merge-reflect | 머지·세션시작·발화 | 미회고 PR 리마인더 + (opt-in) 자동 회고 초안 | env `HARNESS_AUTO_REFLECT=1` |

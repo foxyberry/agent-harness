@@ -13,8 +13,8 @@
 
 ## 자기개선 훅 루프 (엔진=core, 데이터=프로젝트)
 
-이 하네스의 차별점은 스킬 위의 **자기개선 루프**다: memory-search(편집 전 관련 메모리 주입)
-→ reflection(편집 후 품질 경고) → pr-merge-reflect(머지 시 회고) → `/memory-update` 승격.
+이 하네스의 차별점은 스킬 위의 **자기개선 루프**다: project-memory-index(세션 시작 시 공유 메모리 목록 주입)
+→ memory-search(편집 전 관련 메모리 주입) → reflection(편집 후 품질 경고) → pr-merge-reflect(머지 시 회고) → `/memory-update` 승격.
 
 - **엔진**(`core/hooks/`)은 툴 무관·generic. "무엇을" 주입·경고할지는 하드코딩하지 않는다.
 - **데이터**는 프로젝트의 `.claude/memory/` 에 산다: `routes.json`(파일→메모리 매핑),
