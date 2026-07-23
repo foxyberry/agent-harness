@@ -79,7 +79,7 @@ codex plugin add agent-harness@foxyberry
 | project-memory-index | 세션 시작 | 공유 메모리 INDEX를 컨텍스트에 주입 | `.claude/memory/INDEX.md`, 선택: `index-load.json` |
 | memory-search | 편집 전 | 파일에 맞는 메모리를 컨텍스트에 주입 | `.claude/memory/routes.json` |
 | reflection | 편집 후 | 코드 품질 경고(정규식 규칙 + 내장 TODO/FIXME) | `.claude/memory/reflection-rules.json` |
-| pr-merge-reflect | 머지·세션시작·발화 | 미회고 PR 리마인더 + (opt-in) 자동 회고 초안 | env `HARNESS_AUTO_REFLECT=1` |
+| pr-merge-reflect | 머지·세션시작·발화 | 미회고 PR 리마인더 + (opt-in) 자동 회고 초안 | env `HARNESS_AUTO_REFLECT=1`, 선택: `reflect-skip.json` |
 
 엔진은 core, "무엇을" 주입·경고할지는 프로젝트 데이터가 정한다. 설정이 없으면 조용히 no-op.
 자동 회고 잡은 `claude -p` 를 띄우므로 **기본 꺼짐**(`HARNESS_AUTO_REFLECT` opt-in). Codex 훅은 defer.
