@@ -8,6 +8,7 @@
 - [plugin-release-updates](plugin-release-updates.md) — 사용자-facing 플러그인 배포는 버전 bump 와 업데이트 안내를 릴리스 단위로 관리
 - [adapter-cross-project-testing](adapter-cross-project-testing.md) — 어댑터 동작은 harness repo 밖 별도 프로젝트에서 검증 (dev 설치가 버그 가림)
 - [skill-command-examples](skill-command-examples.md) — SKILL.md 필수 인자는 각주 말고 복붙되는 명령 예시 자체에
+- [tool-placement-heuristic](tool-placement-heuristic.md) — 새 훅·도구 배치: 범용이면 하네스 core / 취향이면 개인 ~/.claude 또는 repo 커밋; 훅은 core 에 넣지 말 것
 
 ## 결정 기록 (ADR)
 
