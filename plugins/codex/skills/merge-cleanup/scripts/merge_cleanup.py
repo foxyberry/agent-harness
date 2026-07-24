@@ -10,7 +10,6 @@ import json
 import os
 import shlex
 import subprocess
-import sys
 
 
 def _run(cmd, cwd, timeout=10):
@@ -29,7 +28,7 @@ def _git_root(project_dir):
     return root or project_dir
 
 
-def _repo(project_dir, explicit):
+def _repo(project_dir, explicit=None):
     if explicit:
         return explicit
     data = _out(["gh", "repo", "view", "--json", "nameWithOwner"], project_dir)
@@ -41,8 +40,29 @@ def _repo(project_dir, explicit):
         return None
 
 
-def _default_branch(project_dir):
-    data = _out(["gh", "repo", "view", "--json", "defaultBranchRef"], project_dir)
+def _repo_view_cmd(repo, fields):
+    cmd = ["gh", "repo", "view"]
+    if repo:
+        cmd.append(repo)
+    cmd.extend(["--json", fields])
+    return cmd
+
+
+def _pr_list_cmd(repo, state, limit):
+    cmd = [
+        "gh", "pr", "list",
+        "--state", state,
+        "--limit", str(limit),
+        "--json",
+        "number,title,url,mergedAt,closedAt,headRefName,isCrossRepository,closingIssuesReferences",
+    ]
+    if repo:
+        cmd.extend(["--repo", repo])
+    return cmd
+
+
+def _default_branch(project_dir, repo=None):
+    data = _out(_repo_view_cmd(repo, "defaultBranchRef"), project_dir)
     if data:
         try:
             name = (json.loads(data).get("defaultBranchRef") or {}).get("name")
@@ -74,12 +94,12 @@ def _sync_status(project_dir, branch):
     return {"branch": branch, "ahead": ahead, "behind": behind, "fast_forward": ff}
 
 
-def _merged_local_branches(project_dir, base_branch):
-    raw = _out(["git", "branch", "--merged", base_branch, "--format", "%(refname:short)"], project_dir)
+def _merged_local_branches(project_dir, base_ref, protected_base):
+    raw = _out(["git", "branch", "--merged", base_ref, "--format", "%(refname:short)"], project_dir)
     if raw is None:
         return []
     current = _current_branch(project_dir)
-    protected = {base_branch, current, "main", "master", "develop"}
+    protected = {protected_base, current, "main", "master", "develop"}
     return [b for b in raw.splitlines() if b and b not in protected]
 
 
@@ -93,15 +113,8 @@ def _remote_branches(project_dir, remote="origin"):
     return {b.split("/", 1)[1] for b in raw.splitlines() if "/" in b and not b.endswith("/HEAD")}
 
 
-def _recent_prs(project_dir, state, limit):
-    data = _out(
-        [
-            "gh", "pr", "list", "--state", state, "--limit", str(limit),
-            "--json", "number,title,url,mergedAt,closedAt,headRefName,isCrossRepository,closingIssuesReferences",
-        ],
-        project_dir,
-        timeout=15,
-    )
+def _recent_prs(project_dir, repo, state, limit):
+    data = _out(_pr_list_cmd(repo, state, limit), project_dir, timeout=15)
     if not data:
         return []
     try:
@@ -111,10 +124,12 @@ def _recent_prs(project_dir, state, limit):
         return []
 
 
-def _remote_branch_candidates(project_dir, recent_limit):
+def _remote_branch_candidates(project_dir, repo, recent_limit):
     existing = _remote_branches(project_dir)
     candidates = []
-    for pr in _recent_prs(project_dir, "merged", recent_limit) + _recent_prs(project_dir, "closed", recent_limit):
+    prs = _recent_prs(project_dir, repo, "merged", recent_limit)
+    prs += _recent_prs(project_dir, repo, "closed", recent_limit)
+    for pr in prs:
         if pr.get("isCrossRepository"):
             continue
         head = pr.get("headRefName")
@@ -136,9 +151,9 @@ def _remote_branch_candidates(project_dir, recent_limit):
     return out
 
 
-def _closing_issue_candidates(project_dir, recent_limit):
+def _closing_issue_candidates(project_dir, repo, recent_limit):
     rows = []
-    for pr in _recent_prs(project_dir, "merged", recent_limit):
+    for pr in _recent_prs(project_dir, repo, "merged", recent_limit):
         issues = pr.get("closingIssuesReferences") or []
         if not issues:
             continue
@@ -188,22 +203,28 @@ def _untracked(project_dir):
 
 def collect(project_dir, repo=None, recent_limit=20, fetch=True):
     root = _git_root(project_dir)
+    resolved_repo = _repo(root, repo)
+    cwd_repo = _repo(root)
     fetch_result = {"ran": False, "ok": None}
     if fetch:
         r = _run(["git", "fetch", "origin"], root, timeout=30)
         fetch_result = {"ran": True, "ok": r.returncode == 0}
-    default = _default_branch(root)
+    default = _default_branch(root, resolved_repo)
+    cleanup_base_ref = f"origin/{default}"
     sync = _sync_status(root, default)
-    local = _merged_local_branches(root, default)
-    remote = _remote_branch_candidates(root, recent_limit)
-    issues = _closing_issue_candidates(root, recent_limit)
+    local = _merged_local_branches(root, cleanup_base_ref, default)
+    remote = _remote_branch_candidates(root, resolved_repo, recent_limit)
+    issues = _closing_issue_candidates(root, resolved_repo, recent_limit)
     wts = _worktrees(root, local)
     untracked = _untracked(root)
     return {
         "project_dir": root,
-        "repo": _repo(root, repo),
+        "repo": resolved_repo,
+        "local_repo": cwd_repo,
+        "repo_mismatch": bool(repo and cwd_repo and repo != cwd_repo),
         "fetch": fetch_result,
         "default_branch": default,
+        "cleanup_base_ref": cleanup_base_ref,
         "sync": sync,
         "local_merged_branches": local,
         "remote_branch_candidates": remote,
@@ -221,6 +242,11 @@ def render(result):
     lines.append(f"merge-cleanup 리포트 — {repo}")
     lines.append(f"project: {result['project_dir']}")
     lines.append("advisory-only: 삭제/close/remove 는 자동 실행하지 않음")
+    if result.get("repo_mismatch"):
+        lines.append(
+            f"⚠ --repo({repo}) 와 현재 git remote({result.get('local_repo')}) 가 다름 — "
+            "GitHub PR/이슈 조회와 로컬 git 후보가 다른 저장소 기준일 수 있음"
+        )
     fetch = result.get("fetch") or {}
     if fetch.get("ran") and fetch.get("ok") is False:
         lines.append("⚠ git fetch origin 실패 — 원격 기준 후보가 오래됐을 수 있음")
@@ -243,7 +269,11 @@ def render(result):
             lines.append("  fast-forward 불가 — 사람이 히스토리 확인 필요")
     lines.append("")
 
-    lines.append(f"■ 로컬 merged 브랜치 삭제 후보 ({len(result['local_merged_branches'])})")
+    cleanup_base = result.get("cleanup_base_ref", f"origin/{default}")
+    lines.append(
+        f"■ 로컬 merged 브랜치 삭제 후보 ({len(result['local_merged_branches'])}) "
+        f"— 기준 {cleanup_base}"
+    )
     if result["local_merged_branches"]:
         for b in result["local_merged_branches"]:
             lines.append(f"  {b}  → 후보 명령: git branch -d {shlex.quote(b)}")
