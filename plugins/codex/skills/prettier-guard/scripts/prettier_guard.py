@@ -18,6 +18,7 @@ DEFAULT_EXTENSIONS = [
     ".css", ".graphql", ".gql", ".html", ".js", ".jsx", ".json", ".jsonc",
     ".less", ".md", ".mdx", ".mjs", ".scss", ".ts", ".tsx", ".vue", ".yaml", ".yml",
 ]
+OUTSIDE_PROJECT = "(outside repo)"
 
 
 def _run(cmd, cwd, timeout=20, input_bytes=None):
@@ -74,7 +75,7 @@ def _prettier_cmd(root, explicit):
 
 def _changed_files(root, base_ref, explicit_paths):
     if explicit_paths:
-        return _dedupe([_normalize_path(p) for p in explicit_paths])
+        return _dedupe([_normalize_path(root, p) for p in explicit_paths])
     commands = [
         ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base_ref}...HEAD"],
         ["git", "diff", "--name-only", "--diff-filter=ACMR", "--cached"],
@@ -85,11 +86,24 @@ def _changed_files(root, base_ref, explicit_paths):
         raw = _out(cmd, root)
         if raw:
             paths.extend(raw.splitlines())
-    return _dedupe([_normalize_path(p) for p in paths])
+    return _dedupe([_normalize_path(root, p) for p in paths])
 
 
-def _normalize_path(path):
-    return path.strip().replace("\\", "/")
+def _normalize_path(root, path):
+    normalized = path.strip()
+    if os.path.isabs(normalized):
+        root_real = os.path.realpath(root)
+        path_real = os.path.realpath(normalized)
+        try:
+            if os.path.commonpath([root_real, path_real]) != root_real:
+                return OUTSIDE_PROJECT
+            normalized = os.path.relpath(path_real, root_real)
+        except ValueError:
+            return OUTSIDE_PROJECT
+    normalized = normalized.replace("\\", "/")
+    if normalized == "." or normalized.startswith("../"):
+        return None
+    return normalized
 
 
 def _dedupe(items):
@@ -153,6 +167,9 @@ def collect(project_dir, base_ref=None, prettier=None, paths=None, config=None):
     }
 
     for path in changed:
+        if path == OUTSIDE_PROJECT:
+            result["skipped_files"].append({"path": path, "reason": "outside project"})
+            continue
         full = os.path.join(root, path)
         if not os.path.exists(full):
             result["skipped_files"].append({"path": path, "reason": "missing in working tree"})
