@@ -1,0 +1,16 @@
+{
+  "paths": [
+    ".claude/memory/**",
+    ".claude/handoff/**",
+    ".agents/skills/**"
+  ],
+  "labels": [
+    "skip-reflect",
+    "no-reflect"
+  ],
+  "commit_messages": [
+    "[skip reflect]",
+    "skip-reflect",
+    "no-reflect"
+  ]
+}

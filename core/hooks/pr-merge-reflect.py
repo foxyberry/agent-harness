@@ -26,6 +26,7 @@ $CLAUDE_PROJECT_DIR 하위. 이 둘은 플러그인에서 서로 다른 위치�
 데이터=프로젝트 루트) — 절대 혼동하지 말 것.
 """
 import json
+import fnmatch
 import os
 import re
 import subprocess
@@ -48,6 +49,25 @@ REMIND = (
 
 # _pending 초안이 이만큼 쌓이면 머지 리마인더를 "지금 정리" 로 강하게 에스컬레이션한다.
 DRAFT_BACKLOG_THRESHOLD = 8
+
+# 회고 산출물 PR 이 다시 회고를 요구하는 루프를 막는 기본 예외.
+# 프로젝트별로 .claude/memory/reflect-skip.json 에서 확장/override 가능.
+DEFAULT_REFLECT_SKIP = {
+    "paths": [
+        ".claude/memory/**",
+        ".claude/handoff/**",
+        ".agents/skills/**",
+    ],
+    "labels": [
+        "skip-reflect",
+        "no-reflect",
+    ],
+    "commit_messages": [
+        "[skip reflect]",
+        "skip-reflect",
+        "no-reflect",
+    ],
+}
 
 
 def _auto_reflect_enabled():
@@ -89,6 +109,14 @@ def _remind_text(project_dir, detail):
 
 def _cache_path(project_dir):
     return os.path.join(project_dir, ".claude/.cache/pr-merge-seen.json")
+
+
+def _reflect_skip_config_path(project_dir):
+    memory_dir = os.path.realpath(os.path.join(project_dir, ".claude/memory"))
+    path = os.path.realpath(os.path.join(memory_dir, "reflect-skip.json"))
+    if path == memory_dir or path.startswith(memory_dir + os.sep):
+        return path
+    return None
 
 
 def _pending_dir(project_dir):
@@ -133,6 +161,110 @@ def _recent_merged(project_dir):
         return [(int(p["number"]), p.get("title", "")) for p in json.loads(r.stdout)]
     except Exception:
         return None
+
+
+def _load_reflect_skip_config(project_dir):
+    cfg = {k: list(v) for k, v in DEFAULT_REFLECT_SKIP.items()}
+    path = _reflect_skip_config_path(project_dir)
+    if not path or not os.path.exists(path):
+        return cfg
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return cfg
+        if data.get("defaults") is False:
+            cfg = {"paths": [], "labels": [], "commit_messages": []}
+        for key in ("paths", "labels", "commit_messages"):
+            vals = data.get(key)
+            if isinstance(vals, list):
+                cfg[key].extend(v for v in vals if isinstance(v, str) and v.strip())
+        for key in cfg:
+            cfg[key] = list(dict.fromkeys(cfg[key]))
+    except Exception:
+        return cfg
+    return cfg
+
+
+def _pr_details(project_dir, num):
+    """PR skip 판정에 필요한 세부 정보. gh/네트워크 실패 시 None."""
+    try:
+        r = subprocess.run(
+            ["gh", "pr", "view", str(num), "--json", "files,labels,commits"],
+            cwd=project_dir, capture_output=True, text=True, timeout=8,
+        )
+        if r.returncode != 0:
+            return None
+        data = json.loads(r.stdout)
+        files = [
+            f.get("path") for f in data.get("files", [])
+            if isinstance(f, dict) and isinstance(f.get("path"), str)
+        ]
+        labels = [
+            l.get("name") for l in data.get("labels", [])
+            if isinstance(l, dict) and isinstance(l.get("name"), str)
+        ]
+        messages = []
+        for c in data.get("commits", []) or []:
+            if not isinstance(c, dict):
+                continue
+            msg = c.get("messageHeadline") or ""
+            body = c.get("messageBody") or ""
+            if msg or body:
+                messages.append((msg + "\n" + body).strip())
+        return {"files": files, "labels": labels, "commit_messages": messages}
+    except Exception:
+        return None
+
+
+def _matches_any(value, patterns):
+    return any(fnmatch.fnmatch(value, p) for p in patterns)
+
+
+def _message_matches_any(message, patterns):
+    for pattern in patterns:
+        if not pattern:
+            continue
+        if pattern.startswith("[") and pattern.endswith("]"):
+            if pattern in message:
+                return True
+        elif re.search(rf"(?<![\w-]){re.escape(pattern)}(?![\w-])", message):
+            return True
+    return False
+
+
+def _should_skip_reflect(project_dir, num):
+    """회고 산출물 PR 은 pending/reflect 대상에서 제외한다.
+
+    판정 실패는 False(회고함)로 둔다. 자동화를 놓치는 것보다 실제 작업 회고를 빠뜨리지
+    않는 쪽이 보수적이다.
+    """
+    cfg = _load_reflect_skip_config(project_dir)
+    details = _pr_details(project_dir, num)
+    if details is None:
+        return False
+
+    labels = {l.lower() for l in details["labels"]}
+    label_patterns = [p.lower() for p in cfg["labels"]]
+    if any(_matches_any(label, label_patterns) for label in labels):
+        return True
+
+    commit_patterns = [p.lower() for p in cfg["commit_messages"]]
+    for message in details["commit_messages"]:
+        low = message.lower()
+        if _message_matches_any(low, commit_patterns):
+            return True
+
+    files = details["files"]
+    path_patterns = cfg["paths"]
+    if files and path_patterns and all(_matches_any(path, path_patterns) for path in files):
+        return True
+
+    return False
+
+
+def _filter_reflectable(project_dir, nums):
+    return [n for n in nums if not _should_skip_reflect(project_dir, n)]
 
 
 def _detail(pending, titles):
@@ -339,7 +471,7 @@ def _on_session_start(project_dir, cache):
             # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
             _save_state(cache, set(nums), [])
         else:
-            new = [n for n in nums if n not in state["seen"]]
+            new = _filter_reflectable(project_dir, [n for n in nums if n not in state["seen"]])
             _save_state(cache, state["seen"] | set(nums), state["pending"] + new)
     # 이전에 돌아간 잡이 남긴 초안이 있으면 검토 권고
     _announce_pending_drafts(project_dir)
@@ -385,7 +517,7 @@ def _on_post_tool(data, project_dir, cache):
     num = int(m.group(1)) if m else None
     # 실제 MERGED 인지 확인 후에만 적재·스폰. 번호 없는 `gh pr merge`(현재 브랜치)는 검증 불가라 보류
     # — SessionStart 스윕/사용자 "머지했어" 발화로 뒤늦게 잡힌다.
-    if num is None or not _pr_is_merged(project_dir, num):
+    if num is None or not _pr_is_merged(project_dir, num) or _should_skip_reflect(project_dir, num):
         return
     # 캐시는 SessionStart 시드로만 생성(무더기 보고 방지) → 없으면 적재 보류.
     if os.path.exists(cache):
@@ -405,18 +537,30 @@ def _on_user_prompt(data, project_dir, cache):
         merged = _recent_merged(project_dir)
         if state is None:
             if merged is not None:
-                _save_state(cache, {n for n, _ in merged}, [])
+                seen = {n for n, _ in merged}
+                pending = _filter_reflectable(project_dir, [merged[0][0]] if merged else [])
+                _save_state(cache, seen, [])
+                if pending:
+                    titles = {n: t for n, t in merged}
+                    _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
+                    _spawn_reflect_job(data, project_dir)
+                return
             _emit("UserPromptSubmit", _remind_text(project_dir, ""))
+            _spawn_reflect_job(data, project_dir)
         else:
             seen, pending = set(state["seen"]), list(state["pending"])
             titles = {}
             if merged is not None:
                 titles = {n: t for n, t in merged}
-                pending += [n for n, _ in merged if n not in seen]
+                pending += _filter_reflectable(project_dir, [n for n, _ in merged if n not in seen])
                 seen |= {n for n, _ in merged}
-            _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
+            if pending:
+                _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
+                _spawn_reflect_job(data, project_dir)
+            elif merged is None:
+                _emit("UserPromptSubmit", _remind_text(project_dir, ""))
+                _spawn_reflect_job(data, project_dir)
             _save_state(cache, seen, [])  # 전달 후 비움
-        _spawn_reflect_job(data, project_dir)
         return
 
     # 일반 프롬프트(새 작업 시작 등): 미회고 PR 이 쌓여 있으면 회고부터 (리마인더만).

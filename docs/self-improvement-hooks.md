@@ -108,6 +108,33 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
 
   **B) 자동 회고 잡 (opt-in, 기본 꺼짐)** — 아래 참조.
 
+#### 회고 skip rule
+
+회고를 저장하기 위한 PR 이 다시 "회고하라"는 리마인더를 만드는 루프를 막기 위해,
+`pr-merge-reflect` 는 회고 산출물만 변경한 PR 을 pending/자동 회고 대상에서 제외한다.
+
+기본 skip:
+- 변경 파일이 전부 `.claude/memory/**`
+- 변경 파일이 전부 `.claude/handoff/**`
+- 변경 파일이 전부 `.agents/skills/**`
+- PR 라벨이 `skip-reflect` 또는 `no-reflect`
+- 커밋 메시지에 `[skip reflect]`, `skip-reflect`, `no-reflect` 포함
+
+프로젝트별로 `.claude/memory/reflect-skip.json` 에서 패턴을 확장할 수 있다.
+
+```json
+{
+  "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**"],
+  "labels": ["skip-reflect", "no-reflect"],
+  "commit_messages": ["[skip reflect]", "skip-reflect", "no-reflect"]
+}
+```
+
+- `paths`: PR 변경 파일이 **전부** 이 패턴들에 매칭될 때 skip 한다(fnmatch).
+- `labels`: PR 라벨이 하나라도 매칭되면 skip 한다(fnmatch, 대소문자 무시).
+- `commit_messages`: 커밋 메시지에 문자열이 하나라도 포함되면 skip 한다(대소문자 무시).
+- `"defaults": false` 를 두면 내장 기본값을 비우고 프로젝트 설정만 사용한다.
+
 ### reflect.py + compact_transcript.py — 자동 회고 잡
 `pr-merge-reflect` 가 스폰하는 백그라운드 잡. 세션 트랜스크립트(Claude `.jsonl` / Codex rollout 둘 다)를
 압축 → LLM 으로 분석 → 영속할 교훈을 `.claude/memory/_pending/*.md` 에 **초안**으로 저장.
@@ -139,6 +166,7 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 | INDEX 자동 주입 옵션 | `$CLAUDE_PROJECT_DIR/.claude/memory/index-load.json` | enabled=true, max_chars=12000 |
 | 파일→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
 | 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
+| 회고 skip rule | `$CLAUDE_PROJECT_DIR/.claude/memory/reflect-skip.json` | 기본 회고 산출물 경로·라벨·커밋 메시지 skip |
 | 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |
 | 회고 백엔드 | env `REFLECT_BACKEND` | `claude` |
 
