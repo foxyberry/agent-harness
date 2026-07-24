@@ -9,6 +9,7 @@
 |------|---------|------|--------|
 | `routes.json` | memory-search (PreToolUse Edit/Write) | 편집 파일 → 주입할 메모리 매핑 | no-op (주입 없음) |
 | `reflection-rules.json` | reflection (PostToolUse Edit/Write) | 새 코드 → 품질 경고 정규식 규칙 | 내장 TODO/FIXME 규칙만 |
+| `prettier-guard.json` | prettier-guard skill | main 기준 non-clean 파일과 제외 glob 설정 | 기본 확장자만 검사 |
 
 두 예시 파일은 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
 

@@ -1,0 +1,28 @@
+{
+  "//": "prettier-guard 설정. main 기준으로 이미 prettier-clean 이 아닌 파일은 --write 후보에서 보호한다.",
+  "knownNonClean": [],
+  "exclude": [
+    "dist/**",
+    "generated/**"
+  ],
+  "extensions": [
+    ".css",
+    ".graphql",
+    ".gql",
+    ".html",
+    ".js",
+    ".jsx",
+    ".json",
+    ".jsonc",
+    ".less",
+    ".md",
+    ".mdx",
+    ".mjs",
+    ".scss",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".yaml",
+    ".yml"
+  ]
+}

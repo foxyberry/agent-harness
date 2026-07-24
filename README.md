@@ -70,6 +70,7 @@ codex plugin add agent-harness@foxyberry
 | `/feedback-review` | 받은 지적을 규칙/스킬로 승격 검토 |
 | `/memory-update` | 배운 것을 공유 메모리로 영속화 (`_pending` 검토·승격) |
 | `/merge-cleanup` | PR merge/close 후 로컬 브랜치·원격 브랜치·이슈·worktree 정리 후보 리포트 |
+| `/prettier-guard` | prettier --write 전 main 기준 non-clean 파일을 보호하고 safe 대상만 제안 |
 
 ## 자동 훅 (Claude 어댑터)
 
