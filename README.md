@@ -69,6 +69,7 @@ codex plugin add agent-harness@foxyberry
 | `/fw` | 툴 전환 이어받기 — **저장 안 했어도** 반대 툴(Codex↔Claude) 세션 로그에서 자동 복원 (같은 머신 한정, 요금제 소진 시) |
 | `/feedback-review` | 받은 지적을 규칙/스킬로 승격 검토 |
 | `/memory-update` | 배운 것을 공유 메모리로 영속화 (`_pending` 검토·승격) |
+| `/merge-cleanup` | PR merge/close 후 로컬 브랜치·원격 브랜치·이슈·worktree 정리 후보 리포트 |
 
 ## 자동 훅 (Claude 어댑터)
 
