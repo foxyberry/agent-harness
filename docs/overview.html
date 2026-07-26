@@ -292,12 +292,12 @@
     </div>
     <div class="card">
       <h3>⏪ 과거 <span class="muted" style="font-weight:400">— git에서 소급</span></h3>
-      <p class="muted" style="margin:0"><code>mine.py</code>가 <b>git 히스토리</b>(커밋 메시지)에서 이미 내린 결정을 뽑아 같은 ADR 초안으로 떨군다. 커밋에 "왜"가 안 적혀 있으면 초안을 <b>만들지 않는다</b> — 없는 이유를 지어내지 않는다.</p>
+      <p class="muted" style="margin:0"><code>mine.py</code>가 <b>git 히스토리</b>(커밋 메시지)에서 이미 내린 결정을 뽑아 같은 ADR 초안으로 떨군다. 커밋에 "왜"가 안 적혀 있으면 초안을 만들지 않도록 지시하며, 생성된 초안은 사람이 검토한다.</p>
     </div>
   </div>
   <p class="muted">둘 다 <b>같은 승격 경로</b>를 탄다 — <code>_pending/decisions/</code> → 사람이 <code>/memory-update</code>로 확정 → <code>.claude/memory/decisions/</code>. 과거는 마이닝으로 씨앗을 깔고, 이후는 회고로 이어 붙여 하나의 <b>결정 계보</b>가 된다.</p>
   <div class="note tip">
-    <b>ADR 게이트:</b> 본문에 <code>Alternatives</code>(안 고른 대안)와 <code>Consequence</code>(결과)가 <b>둘 다</b> 있어야 ADR로 인정한다. 없으면 그냥 교훈 메모리로 보낸다 — 아무 선택이나 결정 기록으로 만들면 검색이 무너지기 때문이다.
+    <b>ADR 게이트:</b> 본문에 <code>Alternatives</code>(안 고른 대안)와 <code>Consequence</code>(결과)가 <b>둘 다</b> 있어야 ADR로 인정한다. 둘 중 하나라도 없으면 <code>/memory-update</code> 검토에서 ADR로 승격하지 않고, 일반 메모리로 돌리거나 폐기한다 — 아무 선택이나 결정 기록으로 만들면 검색이 무너지기 때문이다.
   </div>
 
   <div class="cat">
@@ -471,7 +471,7 @@ type: feedback | project | reference
   <h2>상태</h2>
   <ul class="status">
     <li><span class="badge done">DONE</span> Claude용 사본 — 핸드오프·feedback-review·memory-update 스킬 + 스스로 돌아보는 훅 3개 구현·간단 테스트 완료</li>
-    <li><span class="badge done">DONE</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
+    <li><span class="badge done">POC</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + Claude용 수동 <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
     <li><span class="badge soon">NEXT</span> 훅 실제 사용 검증 (설치 후 실제 대화에서 확인) — 이슈 #3</li>
     <li><span class="badge soon">NEXT</span> Codex용 훅 (버전 변화에 약해 나중에 진행) · 설치 도구 · 사람 확인 절차 자동화</li>
   </ul>
