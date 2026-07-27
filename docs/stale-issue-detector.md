@@ -68,14 +68,20 @@
   merged PR 이면 유효 신호다.
 - 출력(JSON object → stdout):
   ```json
-  {"41": [{"pr": 55, "url": "https://...", "merged_at": "2026-01-02T..."}], "42": []}
+  {"41": [{"pr": 55, "url": "https://...", "merged_at": "2026-01-02T...", "will_close": true}], "42": []}
   ```
+- `will_close=true` 는 PR 이 closing keyword 로 이 이슈를 **닫는다고 선언**했다는 뜻이다.
+  `CrossReferencedEvent.willCloseTarget` 과 PR 의 `closingIssuesReferences`를 함께 확인한다.
+  전자는 이미 머지된 PR 에서 `false`가 될 수 있어, 후자로 머지 후 선언 관계를 보존한다.
+  `false` 는 **단순 언급/연결**이라 사람 확인이 더 필요하다. 다만 기본 브랜치 조건 등에 따라
+  실제 해결 PR 도 `false` 일 수 있으므로 필터로 쓰지 않고 신뢰도 표시에만 사용한다.
 - **acceptance(실행 검증):** `--repo foxyberry/tutti-dpnc --issues 1441` → PR **#1443**(merged) 을
   반드시 surface 한다. 빈 목록이면 **잘못된 필드를 쿼리한 것**.
 
 **C `stale.py` (command/SKILL)** — A 실행 → 이슈번호 추출 → B 실행 → join → advisory 리포트
 - 이슈별 판정: B 결과 **비어있지 않음 → 닫기후보**(근거 PR 링크 첨부), **비어있음 → 불확실/유지**.
-  `age_days` 로 정렬. **자동 close 없음.**
+  `will_close=true` 인 PR 이 있는 후보를 먼저 표시하고, 각 PR 에 `닫기 선언`/`단순 언급`을 붙인다.
+  둘 다 후보에서 제외하지 않으며 **자동 close 없음.**
 
 ## 리스크 / 열린 질문
 

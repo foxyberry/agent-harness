@@ -32,6 +32,9 @@ jobs:
       - name: py_compile core scripts+hooks
         run: python3 -m py_compile core/scripts/*.py core/hooks/*.py
 
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -v
+
       # 정본(core)과 생성물(plugins/harness) 동기화 확인 — build.sh 안 돌린 채 커밋 방지
       - name: core↔adapter in sync (build.sh drift check)
         run: |
