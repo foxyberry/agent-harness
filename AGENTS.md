@@ -39,7 +39,7 @@
 ## 배포 (비대칭 — 숨기지 말 것)
 
 - **Claude**: `/plugin marketplace add foxyberry/agent-harness` → `/plugin install agent-harness@foxyberry`
-- **Codex**: `codex plugin marketplace add foxyberry/agent-harness` (배포 후) / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
+- **Codex**: 현재 private repo 는 `codex plugin marketplace add git@github.com:foxyberry/agent-harness.git`(SSH 권한 필요), 공개 후 `foxyberry/agent-harness` 사용 가능 / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
 - **공통**: 프로젝트에 `project-template/` 복사 (AGENTS.md 정본 + `.claude/memory` 템플릿)
 
 설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/feedback-review`, `/memory-update`, `/merge-cleanup`, `/prettier-guard`.
