@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-harness — 재사용 가능한 에이전트 하네스</title>
 <style>
-  :root{
+  :root, :root[data-theme="light"]{
     --bg:#fbfbfa; --fg:#1e1e1c; --muted:#6b6b66; --card:#fff; --border:#e6e4df;
     --accent:#7a5cff; --accent-soft:#efeaff; --ok:#1a9e6a; --ok-soft:#e6f6ee;
     --warn:#c9820a; --warn-soft:#fbf1dd; --code-bg:#f2f0eb;
@@ -16,6 +16,11 @@
       --accent:#a690ff; --accent-soft:#282142; --ok:#4fd39a; --ok-soft:#16302a;
       --warn:#e0a842; --warn-soft:#33280f; --code-bg:#26262b;
     }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17171a; --fg:#e9e8e4; --muted:#9d9c96; --card:#1f1f23; --border:#2e2e33;
+    --accent:#a690ff; --accent-soft:#282142; --ok:#4fd39a; --ok-soft:#16302a;
+    --warn:#e0a842; --warn-soft:#33280f; --code-bg:#26262b;
   }
   *{box-sizing:border-box}
   body{
@@ -30,6 +35,8 @@
     border-radius:12px; padding:16px 18px; margin:22px 0 8px}
   h2{font-size:1.35rem; margin:44px 0 14px; letter-spacing:-.01em}
   h2 .em{color:var(--accent)}
+  h3{font-size:1.05rem; margin:30px 0 8px; letter-spacing:-.01em}
+  h3 .em{color:var(--accent)}
   p{margin:12px 0}
   code{background:var(--code-bg); padding:.12em .4em; border-radius:5px; font-size:.88em;
     font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
@@ -53,13 +60,23 @@
   th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top}
   th{font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
   td code{white-space:nowrap}
+  @media(max-width:640px){
+    table{display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch}
+  }
 
   .cards{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0}
   @media (max-width:640px){ .cards{grid-template-columns:1fr} }
-  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px}
+  .card{min-width:0; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px}
   .card h3{margin:0 0 6px; font-size:1rem}
+  .card h3 code{white-space:normal; overflow-wrap:anywhere}
   .card.engine{border-left:3px solid var(--accent)}
   .card.data{border-left:3px solid var(--ok)}
+  .lifetime{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0}
+  .life{border:1px solid var(--border); border-radius:12px; padding:14px 16px; background:var(--card)}
+  .life b{display:block; margin-bottom:5px}
+  .life p{margin:5px 0; font-size:.88rem}
+  .life .route{color:var(--muted); border-top:1px solid var(--border); padding-top:8px; margin-top:10px}
+  @media(max-width:680px){.lifetime{grid-template-columns:1fr}}
 
   .note{border-radius:10px; padding:12px 16px; margin:14px 0; font-size:.92rem}
   .note.warn{background:var(--warn-soft); border:1px solid var(--border)}
@@ -219,15 +236,51 @@
     </div>
   </div>
 
-  <h2>자동 훅 3개 <span class="muted">(Claude용 묶음)</span></h2>
+  <h2>자동 훅 4개 <span class="muted">(Claude용 묶음)</span></h2>
   <table>
     <thead><tr><th>언제</th><th>훅</th><th>하는 일</th><th>프로젝트 설정</th></tr></thead>
     <tbody>
+      <tr><td>세션 시작할 때</td><td><code>project-memory-index</code></td><td>이 프로젝트에 어떤 공유 메모리가 있는지 목록을 먼저 알려줌</td><td><code>.claude/memory/INDEX.md</code></td></tr>
       <tr><td>파일 고치기 직전</td><td><code>memory-search</code></td><td>파일에 맞는 메모리를 에이전트에게 미리 알려줌</td><td><code>routes.json</code></td></tr>
       <tr><td>파일 고친 직후</td><td><code>reflection</code></td><td>코드에서 자주 보이는 문제를 알려줌 (정규식 규칙 + 기본 TODO/FIXME 확인)</td><td><code>reflection-rules.json</code></td></tr>
       <tr><td>머지·세션시작·발화</td><td><code>pr-merge-reflect</code></td><td>아직 회고하지 않은 PR을 알려주고, 원하면 자동 회고 초안(교훈 + 결정 ADR)도 만듦</td><td>env <code>HARNESS_AUTO_REFLECT</code></td></tr>
     </tbody>
   </table>
+  <p class="muted"><code>project-memory-index</code>는 루프의 단계라기보다 <b>루프에 시동을 거는 쪽</b>이다.
+    세션이 열리면 "이 프로젝트엔 이런 메모리가 있다"는 목록을 먼저 깔아두고, 그 뒤 파일을 열 때
+    <code>memory-search</code>가 그중 지금 필요한 본문을 꺼내 ①로 넘긴다.</p>
+
+  <h3>"자동"이라는 말의 뜻 — <span class="em">돌아가는 것</span>과 <span class="em">말을 거는 것</span>은 다르다</h3>
+  <p>4개 모두 플러그인만 깔면 <b>따로 켜지 않아도 해당 순간마다 실행된다</b>. 여기까지는 무조건이다.
+    하지만 실행됐다고 항상 뭔가를 알려주는 건 아니다. <b>대부분은 프로젝트에 재료가 있을 때만 입을 연다</b> —
+    없으면 아무 말 없이 지나간다(고장이 아니다).</p>
+  <div class="vis">
+    <div class="col show">
+      <h4>✅ 맨입에도 동작</h4>
+      <p class="cap">아무 설정 없이 설치만 해도 바로 말을 건다</p>
+      <ul>
+        <li><b>reflection</b> — TODO·FIXME 확인은 <b>내장</b>이라 기본으로 켜져 있다</li>
+        <li><b>pr-merge-reflect</b> — "회고 안 한 PR 있다"는 <b>알림까지는</b> 항상</li>
+      </ul>
+    </div>
+    <div class="col hide">
+      <h4>🧾 재료가 있어야 동작</h4>
+      <p class="cap">해당 파일이 없으면 조용히 지나간다</p>
+      <ul>
+        <li><b>project-memory-index</b> — <code>.claude/memory/INDEX.md</code></li>
+        <li><b>memory-search</b> — <code>routes.json</code>, 그리고 지금 여는 파일과 <b>맞는 규칙</b>이 있을 때</li>
+        <li><b>reflection</b>의 프로젝트 규칙 — <code>reflection-rules.json</code></li>
+        <li><b>자동 회고 초안</b> 생성 — <code>HARNESS_AUTO_REFLECT=1</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="note warn">
+    <b>⚠️ 파일을 어떻게 고치느냐도 영향을 준다.</b> <code>memory-search</code>와 <code>reflection</code>은
+    에이전트가 <b>편집 도구로</b> 파일을 고칠 때만 걸린다. 터미널 명령으로 파일을 바꾸면
+    <span class="muted">(예: <code>sed</code>나 <code>&gt;</code> 리다이렉션)</span> 이 둘은 아예 실행되지 않는다.
+  </div>
+  <p class="muted"><code>project-template/</code>를 복사하지 않은 새 프로젝트라면 <b>4개 중 2개가 조용한 게 정상</b>이다.
+    재료를 넣는 순간부터 말을 걸기 시작한다.</p>
 
   <h2>핵심 설계 — <span class="em">엔진과 재료를 분리</span></h2>
   <p>도넛 기계와 반죽을 나눠 두었다고 보면 쉽다. 기계는 만드는 방법만 알고, 어떤 맛을 낼지는 각 프로젝트가 넣는 반죽이 정한다.</p>
@@ -314,8 +367,16 @@
     <tbody>
       <tr><td><code>/handoff-save</code></td><td>세션 끝 · 툴/머신/사람 바꾸기 직전</td><td>다음 사람이 이어받기 쉽게 현재 상태를 커밋 파일로 저장 (git 정보 자동수집)</td></tr>
       <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프를 읽고 현재 git 상태와 비교</td></tr>
+      <tr><td><code>/fw</code></td><td>저장 안 하고 툴만 바꿨을 때</td><td>반대 툴의 대화 기록에서 하던 일을 자동으로 복원 (같은 머신)</td></tr>
+      <tr><td><code>/fw-both</code></td><td>여러 툴을 오가며 작업했을 때</td><td>Claude·Codex 기록을 <b>한 번에</b> 보고 합쳐서 이어받음</td></tr>
     </tbody>
   </table>
+  <div class="note tip">
+    <b><code>/handoff-save</code>와 <code>/fw</code>의 차이:</b> 핸드오프는 <b>사람이 일부러 저장해</b> git에 올리는 정식 방법이라
+    다른 머신·다른 사람에게도 넘어간다. <code>/fw</code>는 <b>저장하는 걸 깜빡했을 때</b>를 위한 보조 수단이라,
+    같은 컴퓨터에 남은 대화 기록을 뒤져 복원한다 — 그래서 다른 머신으로는 못 넘어간다.
+    셋 다 <b>지금 git 상태를 먼저 믿고</b>, 기록은 참고로만 쓴다.
+  </div>
   <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람이 바뀌어도</b> 작업을 이어가기 위한 방법이다 — 흐름은 이렇다:</p>
   <div class="arch">
     <div class="node"><b>세션 A</b><span>지금 작업 중 → <code>/handoff-save "한 줄 요약"</code></span></div>
@@ -357,6 +418,32 @@ type: feedback | project | reference
     </div>
   </div>
 
+  <h3>메모리에 넣기 전 — <span class="em">오래 남길 지식인지 먼저 구분</span></h3>
+  <p>메모리는 계속 참고할 지식만 담는다. 지금 작업 상태까지 넣으면 PR·코드가 바뀐 뒤에도
+    오래된 내용이 남기 때문에, <code>/memory-update</code>가 저장 위치를 고르기 전에 수명부터 나눈다.</p>
+  <div class="lifetime">
+    <div class="life">
+      <b>영속 지식</b>
+      <p>반복될 실수, 비자명한 패턴, 결정의 이유, 안정적인 계약</p>
+      <p class="route">사람이 확인한 뒤 <strong>memory</strong>에 저장</p>
+    </div>
+    <div class="life">
+      <b>전환용 작업 상태</b>
+      <p>WIP, 진행 중 PR, 다음 액션, 재개 체크포인트</p>
+      <p class="route">실제로 세션·툴·머신·사람을 바꿀 때만 <strong>handoff를 제안</strong></p>
+    </div>
+    <div class="life">
+      <b>다시 구할 수 있는 값</b>
+      <p>줄 수, 테스트 수, 열린 PR 상태, 현재 브랜치·커밋</p>
+      <p class="route">저장하지 않고 코드·git·명령으로 다시 확인</p>
+    </div>
+  </div>
+  <div class="note tip">
+    <b>번호보다 상태가 문제다.</b> <code>PR #123</code>은 결정의 근거를 가리키는 링크로 남길 수 있지만,
+    <code>PR #123 머지 대기</code>는 곧 틀릴 수 있어 메모리에 남기지 않는다.
+    <code>_pending</code>의 회고 초안도 같은 기준을 통과해야 공유 메모리로 승격된다.
+  </div>
+
   <h2>다른 머신에서 이어받기</h2>
   <p>비결은 딱 하나 — <b>대화 기록은 두고, 커밋된 파일만 넘긴다.</b> 무엇이 넘어가고 안 넘어가는지가 핵심이다:</p>
   <div class="vis">
@@ -393,6 +480,31 @@ type: feedback | project | reference
     Codex가 남긴 상태를 그대로 받아 계속. <b>툴이 바뀌어도 작업은 안 끊긴다.</b>
   </div>
 
+  <div class="cat">
+    <div class="no">03</div>
+    <div class="tx">
+      <div class="t">정리 · 점검</div>
+      <p>사람이 반복하던 뒷정리를 대신 찾아준다 — 단, <b>실행은 사람이</b></p>
+    </div>
+  </div>
+
+  <h2>정리·점검 명령 <span class="muted">(전부 제안만 한다)</span></h2>
+  <p>세 명령은 성격이 같다. <b>후보를 찾아서 보여주기만 하고, 스스로 지우거나 닫거나 고치지 않는다.</b>
+    브랜치 삭제·이슈 닫기·파일 덮어쓰기처럼 되돌리기 번거로운 일이라, 마지막 판단은 사람이 하도록 남겨뒀다.</p>
+  <table>
+    <thead><tr><th>명령</th><th>언제 쓰나</th><th>찾아주는 것</th></tr></thead>
+    <tbody>
+      <tr><td><code>/merge-cleanup</code></td><td>PR 머지한 직후</td><td>뒤처진 main, 남은 브랜치, 안 닫힌 이슈, worktree·임시파일 잔여물<br><span class="muted">squash merge의 로컬 브랜치 판정은 이슈 #50에서 보완 예정</span></td></tr>
+      <tr><td><code>/stale-scan</code></td><td>이슈 백로그 정리할 때</td><td>오래 열려 있지만 <b>이미 해결된</b> 이슈 — 근거로 머지된 PR을 함께 보여줌</td></tr>
+      <tr><td><code>/prettier-guard</code></td><td><code>prettier --write</code> 돌리기 전</td><td>남의 미완성 변경이 섞인 파일을 빼고, 안전한 명령을 대신 제안</td></tr>
+    </tbody>
+  </table>
+  <div class="note tip">
+    <b><code>/stale-scan</code>은 근거의 세기까지 구분한다.</b> 이슈에 딸린 PR이 <code>Closes #33</code>처럼
+    <b>닫겠다고 선언</b>한 것인지, 그냥 번호만 <b>언급</b>한 것인지 나눠서 표시하고, 선언이 있는 쪽을 위로 올린다.
+    언급뿐이라고 후보에서 빼지는 않는다 — 실제로 해결한 PR이 선언 없이 머지되는 경우도 있기 때문이다.
+  </div>
+
   <div class="cat plain">
     <div class="no">＋</div>
     <div class="tx">
@@ -406,79 +518,101 @@ type: feedback | project | reference
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
   <p><b>Codex</b> <span class="muted">(현재는 스킬만 제공 — 설치 도구는 만드는 중)</span>:</p>
-  <pre><code>codex plugin marketplace add foxyberry/agent-harness   # 배포 후
+  <pre><code>codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
+codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
+  <div class="note warn">
+    <b>⚠️ Codex는 지금 SSH 주소를 써야 한다.</b> 이 저장소가 아직 비공개라서다.
+    <code>owner/repo</code> 짧은 형식은 인증 없이 HTTPS로 받아오려 하기 때문에 비공개 상태에서는 실패한다
+    <span class="muted">(실제로 <code>Repository not found</code>로 막히는 걸 확인했다)</span>.
+    저장소가 공개되면 짧은 형식을 쓸 수 있다. Claude 쪽은 짧은 형식 그대로 설치되는 것을 확인했다.
+  </div>
   <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
+  <p class="muted"><b>업데이트</b> — Codex에는 아직 <code>plugin update</code>가 없어서, 새 버전은
+    <code>marketplace upgrade</code> 뒤 <code>remove</code>·<code>add</code>로 캐시를 다시 받는다.
+    자주 할 필요는 없고, 새 릴리스가 나왔을 때만 하면 된다.</p>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
     <thead><tr><th>층</th><th>위치</th><th>내용</th></tr></thead>
     <tbody>
       <tr><td><b>core</b></td><td><code>core/</code></td><td>마스터 원고 — 스킬·훅·스크립트·메모리 형식이 여기서 시작</td></tr>
-      <tr><td><b>도구별 사본</b></td><td><code>plugins/harness/</code>, <code>codex/</code></td><td>각 도구에 맞게 포장된 사본 (<code>build.sh</code>로 자동 복사)</td></tr>
+      <tr><td><b>도구별 사본</b></td><td><code>plugins/harness/</code>, <code>plugins/codex/</code></td><td>각 도구에 맞게 포장된 사본 (<code>build.sh</code>로 자동 복사)</td></tr>
       <tr><td><b>선택 템플릿</b></td><td><code>project-template/</code></td><td>개인/팀의 작업 방식과 회고 방식 (필요할 때 선택해서 사용)</td></tr>
     </tbody>
   </table>
-  <p class="muted"><code>core/</code>는 마스터 원고이고, <code>plugins/harness/</code>와 <code>codex/</code>는 내보내기 버튼을 누르면 찍혀 나오는 사본이다. 고칠 때는 마스터 원고인 <code>core/</code>를 먼저 고치고 → <code>./build.sh</code>를 눌러 내보내고 → 사본을 다시 만든다. 사본을 직접 고치면 다음 내보내기 때 덮어써진다.</p>
+  <p class="muted"><code>core/</code>는 마스터 원고이고, <code>plugins/harness/</code>와 <code>plugins/codex/</code>는 내보내기 버튼을 누르면 찍혀 나오는 사본이다. 고칠 때는 마스터 원고인 <code>core/</code>를 먼저 고치고 → <code>./build.sh</code>를 눌러 내보내고 → 사본을 다시 만든다. 사본을 직접 고치면 다음 내보내기 때 덮어써진다.</p>
 
   <div class="arch">
     <div class="node core"><b>core/</b><span>마스터 원고 — 훅 · 스킬 · 스크립트 · 메모리 형식 (여기서만 고친다)</span></div>
     <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
     <div class="split">
-      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · <code>hooks.json</code> 자동발견</span></div>
-      <div class="node"><b>codex/</b><span>Codex용 사본 · 스킬만 (훅은 나중에)</span></div>
+      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 9개 + 훅 <code>hooks.json</code> 자동발견</span></div>
+      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 9개 (훅은 나중에)</span></div>
     </div>
     <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
     <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
   </div>
-  <p class="muted"><code>core/</code> 한 곳을 고치면 두 사본이 함께 만들어진다. CI가 "마스터 원고와 사본이 같은지" 확인하므로, <code>build.sh</code>를 안 돌린 채 커밋하면 실패한다.</p>
+  <p class="muted"><code>core/</code> 한 곳을 고치면 두 사본이 함께 만들어진다. CI가 "마스터 원고와 사본이 같은지" 확인하므로, <code>build.sh</code>를 안 돌린 채 커밋하면 실패한다.
+    JSON·스크립트 문법 검사와 <code>tests/</code>의 단위 테스트도 CI에서 매번 함께 돈다.</p>
 
   <h2>폴더 구조</h2>
 <pre class="tree">agent-harness/
 ├─ <span class="d">core/</span>                     <span class="c">← 마스터 원고 (원본은 여기 하나)</span>
 │  ├─ <span class="d">hooks/</span>                 <span class="c">자기개선 훅 엔진</span>
-│  │  ├─ memory-search.py       <span class="c">편집 전 메모리 주입</span>
-│  │  ├─ reflection.py          <span class="c">편집 후 품질 경고</span>
-│  │  ├─ pr-merge-reflect.py    <span class="c">머지 회고 (핵심)</span>
-│  │  ├─ reflect.py             <span class="c">회고 잡 — 교훈 + 결정 ADR 초안</span>
-│  │  ├─ mine.py                <span class="c">git 히스토리에서 결정 소급 마이닝</span>
-│  │  └─ compact_transcript.py  <span class="c">트랜스크립트 압축</span>
-│  ├─ <span class="d">skills/</span>                <span class="c">스킬 (SKILL.md)</span>
-│  │  ├─ handoff-save · handoff-load
-│  │  └─ feedback-review · memory-update
-│  └─ <span class="d">scripts/</span>handoff.py
+│  │  ├─ project-memory-index.py <span class="c">세션 시작 시 메모리 목록 주입</span>
+│  │  ├─ memory-search.py        <span class="c">편집 전 메모리 주입</span>
+│  │  ├─ reflection.py           <span class="c">편집 후 품질 경고</span>
+│  │  ├─ pr-merge-reflect.py     <span class="c">머지 회고 (핵심)</span>
+│  │  ├─ reflect.py              <span class="c">회고 잡 — 교훈 + 결정 ADR 초안</span>
+│  │  ├─ mine.py                 <span class="c">git 히스토리에서 결정 소급 마이닝</span>
+│  │  └─ compact_transcript.py   <span class="c">트랜스크립트 압축</span>
+│  ├─ <span class="d">skills/</span>                <span class="c">스킬 9개 (SKILL.md)</span>
+│  │  ├─ handoff-save · handoff-load · fw · fw-both
+│  │  ├─ feedback-review · memory-update
+│  │  └─ merge-cleanup · stale-scan · prettier-guard
+│  └─ <span class="d">scripts/</span>               <span class="c">스킬이 부르는 실행 스크립트</span>
+│     ├─ handoff.py             <span class="c">핸드오프 저장·복원</span>
+│     ├─ merge_cleanup.py       <span class="c">머지 후 정리 후보</span>
+│     ├─ stale_collect.py · stale_resolve.py · stale.py
+│     └─ prettier_guard.py
 │
 ├─ <span class="d">plugins/harness/</span>          <span class="c">← Claude용 사본 (build.sh가 만듦)</span>
 │  ├─ hooks/  <span class="c">(hooks.json + *.py)</span>
 │  ├─ skills/
-│  └─ bin/agent-handoff
+│  └─ bin/  <span class="c">agent-handoff · agent-merge-cleanup · agent-stale · agent-prettier-guard</span>
 │
-├─ <span class="d">codex/</span>                    <span class="c">← Codex용 사본 (build.sh가 만듦)</span>
+├─ <span class="d">plugins/codex/</span>            <span class="c">← Codex용 사본 (build.sh가 만듦)</span>
 │  ├─ .codex-plugin/plugin.json
-│  └─ skills/*/scripts/handoff.py
+│  └─ skills/*/scripts/
 │
 ├─ <span class="d">project-template/</span>         <span class="c">← opinion pack (프로젝트가 복사)</span>
 │  └─ .claude/memory/  <span class="c">routes.json · reflection-rules.json · decisions/ (예시)</span>
 │
+├─ <span class="d">tests/</span>                    <span class="c">← 단위 테스트 (CI가 매번 돌림)</span>
 ├─ <span class="d">.claude/memory/</span>           <span class="c">← 자기 dogfooding (이 repo에도 훅 적용)</span>
-├─ <span class="d">docs/</span>self-improvement-hooks.md
+├─ <span class="d">docs/</span>                     <span class="c">overview.html · self-improvement-hooks.md</span>
+│                            <span class="c">decision-mining.md · stale-issue-detector.md</span>
 ├─ build.sh                  <span class="c">core → 사본 만들기</span>
 ├─ .claude-plugin/marketplace.json    <span class="c">Claude 배포</span>
 ├─ .agents/plugins/marketplace.json   <span class="c">Codex 배포</span>
-└─ AGENTS.md · README.md · readme.html
+└─ AGENTS.md · README.md
 </pre>
 
   <h2>상태</h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Claude용 사본 — 핸드오프·feedback-review·memory-update 스킬 + 스스로 돌아보는 훅 3개 구현·간단 테스트 완료</li>
+    <li><span class="badge done">DONE</span> Claude용 사본 — 스킬 9개 + 스스로 돌아보는 훅 4개 구현·스모크 테스트 완료</li>
+    <li><span class="badge done">DONE</span> 정리·점검 명령 — <code>/merge-cleanup</code>·<code>/stale-scan</code>·<code>/prettier-guard</code>. 셋 다 제안만 하고 직접 실행하지 않는다</li>
+    <li><span class="badge soon">NEXT</span> <code>/merge-cleanup</code>의 squash merge 로컬 브랜치 판정 보완 — 이슈 #50</li>
+    <li><span class="badge done">DONE</span> 실제 설치 검증 — Claude·Codex 양쪽에서 marketplace로 받아 설치하고, <b>설치된 사본으로</b> 스킬을 돌려봤다. Claude가 저장한 핸드오프를 Codex가 그대로 읽는 것까지 확인</li>
     <li><span class="badge done">POC</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + Claude용 수동 <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
-    <li><span class="badge soon">NEXT</span> 훅 실제 사용 검증 (설치 후 실제 대화에서 확인) — 이슈 #3</li>
+    <li><span class="badge soon">NEXT</span> 훅이 실제로 <b>발화</b>하는지 확인 — 지금까지 확인된 건 설치 후 훅이 <b>인식</b>된다는 것까지다</li>
     <li><span class="badge soon">NEXT</span> Codex용 훅 (버전 변화에 약해 나중에 진행) · 설치 도구 · 사람 확인 절차 자동화</li>
   </ul>
 
   <footer>
-    상세 문서: <code>docs/self-improvement-hooks.md</code> · 기준 지침: <code>AGENTS.md</code><br>
-    이 페이지는 문서가 바뀔 때 함께 갱신된다. — foxyberry/agent-harness
+    상세 문서: <code>docs/self-improvement-hooks.md</code> · <code>docs/decision-mining.md</code> · <code>docs/stale-issue-detector.md</code><br>
+    기준 지침: <code>AGENTS.md</code> — 이 페이지는 문서가 바뀔 때 함께 갱신된다. · foxyberry/agent-harness
   </footer>
 
 </div>
