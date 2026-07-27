@@ -59,6 +59,14 @@ def judge(repo, min_age_days, exclude_labels, limit):
         row = dict(c, linked_prs=prs)
         (closable if prs else keep).append(row)
 
+    # closing keyword 선언이 있는 후보를 먼저 보여준다. 선언이 없어도 유효한 해결
+    # 신호일 수 있으므로 필터링하지 않고 기존 순서를 유지한 채 뒤에 둔다.
+    closable.sort(
+        key=lambda row: not any(
+            pr.get("will_close") is True for pr in row["linked_prs"]
+        )
+    )
+
     return {
         "repo": repo,
         "closable": closable,
@@ -102,7 +110,11 @@ def render_text(result):
         lines.append(f"  #{r['issue']}  (age {_age(r)})  {r['title']}")
         for pr in r["linked_prs"]:
             merged = (pr.get("merged_at") or "")[:10]
-            lines.append(f"       └ PR #{pr['pr']} merged {merged}  {pr.get('url','')}")
+            confidence = "닫기 선언" if pr.get("will_close") is True else "단순 언급"
+            lines.append(
+                f"       └ [{confidence}] PR #{pr['pr']} merged {merged}  "
+                f"{pr.get('url','')}"
+            )
     lines.append("")
 
     lines.append(f"■ 유지 / 불확실 ({len(keep)})  ← 연결된 merged PR 없음")

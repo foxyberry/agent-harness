@@ -71,6 +71,14 @@ fragment PrFields on PullRequest {
   merged
   mergedAt
   state
+  closingIssuesReferences(first: 100) {
+    nodes {
+      number
+      repository {
+        nameWithOwner
+      }
+    }
+  }
 }
 """
 
@@ -194,7 +202,29 @@ def pull_request_from_node(node):
     return None
 
 
-def add_merged_prs(result, issue_number, nodes):
+def will_close_from_node(node, issue_number, repo_full_name):
+    """PR 이 closing keyword 로 이 이슈를 닫는다고 선언했는지 반환한다.
+
+    willCloseTarget 은 이미 머지된 PR 에서 false 로 바뀔 수 있다. PR 의
+    closingIssuesReferences 도 함께 확인해 머지 후에도 선언 관계를 복원한다.
+    """
+    if (
+        node.get("__typename") == "CrossReferencedEvent"
+        and node.get("willCloseTarget") is True
+    ):
+        return True
+
+    pr = pull_request_from_node(node) or {}
+    closing = (pr.get("closingIssuesReferences") or {}).get("nodes") or []
+    return any(
+        item.get("number") == issue_number
+        and ((item.get("repository") or {}).get("nameWithOwner") == repo_full_name)
+        for item in closing
+        if isinstance(item, dict)
+    )
+
+
+def add_merged_prs(result, issue_number, nodes, repo_full_name):
     by_pr = {item["pr"]: item for item in result[str(issue_number)]}
     for node in nodes or []:
         if not isinstance(node, dict):
@@ -207,10 +237,16 @@ def add_merged_prs(result, issue_number, nodes):
         number = pr.get("number")
         if not isinstance(number, int):
             continue
+        previous = by_pr.get(number) or {}
         by_pr[number] = {
             "pr": number,
             "url": pr.get("url"),
             "merged_at": pr.get("mergedAt"),
+            # 같은 PR 이 여러 이벤트/페이지에 나오면 true 신호를 잃지 않는다.
+            "will_close": (
+                previous.get("will_close", False)
+                or will_close_from_node(node, issue_number, repo_full_name)
+            ),
         }
     result[str(issue_number)] = [by_pr[n] for n in sorted(by_pr)]
 
@@ -236,6 +272,7 @@ def resolve(owner, name, issues):
                     result,
                     number,
                     timeline.get("nodes") or [],
+                    f"{owner}/{name}",
                 )
                 page_info = timeline.get("pageInfo") or {}
                 if page_info.get("hasNextPage") and page_info.get("endCursor"):
