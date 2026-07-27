@@ -11,21 +11,27 @@ import stale  # noqa: E402
 import stale_resolve  # noqa: E402
 
 
-def pr_event(number, will_close=False, closing_issues=None):
+def pr_event(
+    number,
+    will_close=False,
+    closing_issues=None,
+    url=None,
+    closing_repo="owner/repo",
+):
     return {
         "__typename": "CrossReferencedEvent",
         "willCloseTarget": will_close,
         "source": {
             "__typename": "PullRequest",
             "number": number,
-            "url": f"https://example.test/pr/{number}",
+            "url": url or f"https://example.test/pr/{number}",
             "merged": True,
             "mergedAt": "2026-01-02T03:04:05Z",
             "closingIssuesReferences": {
                 "nodes": [
                     {
                         "number": issue,
-                        "repository": {"nameWithOwner": "owner/repo"},
+                        "repository": {"nameWithOwner": closing_repo},
                     }
                     for issue in (closing_issues or [])
                 ],
@@ -77,6 +83,47 @@ class ResolveTests(unittest.TestCase):
         )
 
         self.assertTrue(result["21"][0]["will_close"])
+
+    def test_repository_name_comparison_is_case_insensitive(self):
+        result = {"33": []}
+
+        stale_resolve.add_merged_prs(
+            result,
+            33,
+            [pr_event(
+                48,
+                closing_issues=[33],
+                closing_repo="foxyberry/agent-harness",
+            )],
+            "FoxyBerry/Agent-Harness",
+        )
+
+        self.assertTrue(result["33"][0]["will_close"])
+
+    def test_same_pr_number_from_different_repositories_does_not_merge(self):
+        result = {"41": []}
+        declaring = pr_event(
+            55,
+            will_close=True,
+            url="https://example.test/owner-a/repo-a/pull/55",
+        )
+        mentioning = pr_event(
+            55,
+            will_close=False,
+            url="https://example.test/owner-b/repo-b/pull/55",
+        )
+
+        stale_resolve.add_merged_prs(
+            result,
+            41,
+            [declaring, mentioning],
+            "owner/repo",
+        )
+
+        self.assertEqual(len(result["41"]), 2)
+        by_url = {item["url"]: item for item in result["41"]}
+        self.assertTrue(by_url[declaring["source"]["url"]]["will_close"])
+        self.assertFalse(by_url[mentioning["source"]["url"]]["will_close"])
 
 
 class ReportTests(unittest.TestCase):
