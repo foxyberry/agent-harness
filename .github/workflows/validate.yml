@@ -23,8 +23,12 @@ jobs:
           m=json.load(open('.agents/plugins/marketplace.json'))
           assert isinstance(m.get('name'),str) and m['name'], "Codex marketplace: top-level 'name' 필요"
           p=json.load(open('plugins/codex/.codex-plugin/plugin.json')); i=p.get('interface',{})
+          h=json.load(open('plugins/harness/.claude-plugin/plugin.json'))
           assert i.get('longDescription'), "Codex plugin: interface.longDescription 필요"
           assert i.get('defaultPrompt'), "Codex plugin: interface.defaultPrompt 필요"
+          assert p.get('version') == h.get('version'), (
+              f"Claude/Codex plugin version 불일치: {h.get('version')} != {p.get('version')}"
+          )
           print("Codex manifest 필수 필드 OK")
           PY
 

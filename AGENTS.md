@@ -39,7 +39,7 @@
 ## 배포 (비대칭 — 숨기지 말 것)
 
 - **Claude**: `/plugin marketplace add foxyberry/agent-harness` → `/plugin install agent-harness@foxyberry`
-- **Codex**: `codex plugin marketplace add foxyberry/agent-harness` (배포 후) / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
+- **Codex**: 현재 private repo 는 `codex plugin marketplace add git@github.com:foxyberry/agent-harness.git`(SSH 권한 필요), 공개 후 `foxyberry/agent-harness` 사용 가능 / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
 - **공통**: 프로젝트에 `project-template/` 복사 (AGENTS.md 정본 + `.claude/memory` 템플릿)
 
 설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/feedback-review`, `/memory-update`, `/merge-cleanup`, `/prettier-guard`.
@@ -49,7 +49,9 @@
 ### 업데이트/릴리스 운영
 
 - 일반 사용자는 자주 업데이트하지 않게 한다. 로컬 dogfooding 과 사용자-facing 릴리스를 분리한다.
-- 사용자-facing 변경을 배포할 때는 `plugins/codex/.codex-plugin/plugin.json` 버전을 올린다(`0.1.0` 그대로 캐시 갱신 요구 금지).
+- 사용자-facing 변경을 배포할 때는 `plugins/codex/.codex-plugin/plugin.json`과
+  `plugins/harness/.claude-plugin/plugin.json` 버전을 **같이** 올린다(같은 버전 유지,
+  버전 그대로 캐시 갱신 요구 금지).
 - Codex 는 현재 `plugin update` 가 없으므로 업데이트 안내는 `marketplace upgrade` 후 `remove`/`add` 로 캐시를 새로 받는 방식이다.
 - 로컬 개발 검증은 `./build.sh` → `codex plugin marketplace add ./` → `codex plugin remove/add agent-harness@foxyberry` 로 한다.
 - README 에는 사용자 설치/업데이트 명령만 짧게 유지하고, 절차가 길어지면 `docs/release.md` 로 분리한다.

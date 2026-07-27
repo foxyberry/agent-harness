@@ -23,14 +23,17 @@
 /plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry
 ```
+Claude Code는 등록된 GitHub 인증을 재사용해 현재 private repo도 `owner/repo` 형식으로 설치된다.
 로컬 테스트: `/plugin marketplace add ./` (repo 루트에서)
 
 ### Codex (skill-only plugin) — *installer 구축 중*
 ```
-codex plugin marketplace add foxyberry/agent-harness   # (배포 후)
+codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./
 ```
+현재 저장소는 비공개라 GitHub SSH 접근 권한이 필요하다. `owner/repo` 형식은 HTTPS clone 을
+사용하므로 공개 저장소가 되기 전에는 인증 없이 실패한다.
 `installers/install-codex.sh`(config.toml merge)는 아직 미구현 — 현재는 위 marketplace 방식.
 
 ### 업데이트
@@ -43,6 +46,7 @@ codex plugin marketplace upgrade foxyberry
 codex plugin remove agent-harness@foxyberry
 codex plugin add agent-harness@foxyberry
 ```
+SSH로 등록한 marketplace에서도 위 `marketplace upgrade` 명령이 동작함을 live 검증했다.
 
 개발 중 로컬 dogfooding 은 repo 루트에서 `./build.sh` 후 `codex plugin marketplace add ./` 를 쓰고,
 사용자에게는 버전된 릴리스 단위로 업데이트를 안내한다.
@@ -96,7 +100,8 @@ CI(`.github/workflows/validate.yml`)가 JSON·스크립트 문법 + **core↔ada
 ## 상태
 
 구축 중.
-- ✅ Claude 어댑터 — handoff·feedback-review·memory-update 스킬 + 자기개선 훅(memory-search·reflection·pr-merge-reflect) 구현·스모크테스트 완료
-- ✅ Codex 스킬 로드 live 검증 — 4개 스킬 정상 노출, Claude 전용 frontmatter 필드는 무해(무시됨) ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3) 기록)
-- 🔜 훅 live-fire 검증(설치 후 실발화)·Codex 스킬 실행 검증 — 이슈 #3
+- ✅ Claude GitHub marketplace 설치 live 검증 — 스킬 9개·훅 이벤트 4개 정상 인식, 설치 캐시의 handoff-save 실행 완료
+- ✅ Codex GitHub marketplace 설치 live 검증 — `0.4.1`, 스킬 9개 정상 노출, 설치 캐시의 handoff-load·stale-scan 실행 완료 ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3))
+- ✅ 크로스툴 스모크 테스트 — Claude 설치본이 저장한 handoff 를 Codex 설치본이 정상 로드
+- 🔜 Claude 훅 live-fire 검증 — 설치본의 훅 이벤트 인식은 확인했지만 실제 발화·주입은 별도 검증 필요
 - 🔜 Codex 어댑터 훅(버전 취약으로 defer)·installer(config merge)·governance 자동화
