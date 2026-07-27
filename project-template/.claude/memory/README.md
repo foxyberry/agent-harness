@@ -19,6 +19,11 @@
 `decisions/git-workflow.md`. frontmatter(name/description/type) 를 가진 마크다운으로 쓰고,
 `INDEX.md` 에 한 줄씩 등록한다(Codex 는 이 인덱스로 읽는다). `/memory-update` 스킬이 관리한다.
 
+메모리에는 오래 유지할 **결정·제약·비자명한 패턴**만 둔다. 재개 체크포인트, WIP,
+진행 중 PR과 다음 액션은 메모리가 아니다. 실제로 세션·툴·머신·사람을 전환할 때만
+`/handoff-save` 로 인계한다. 줄 수·테스트 수·열린 PR 상태처럼 코드나 명령으로 다시
+구할 수 있는 현재 값은 저장하지 않는다.
+
 ## _pending/ (자동 회고 초안)
 
 `HARNESS_AUTO_REFLECT=1` 로 자동 회고를 켜면, reflect 잡이 세션 트랜스크립트를 분석해
