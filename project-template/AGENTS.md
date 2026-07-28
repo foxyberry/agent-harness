@@ -31,6 +31,8 @@ Codex 는 이 파일을 직접 읽고, Claude Code 는 `CLAUDE.md` 가 이 파�
 
 - 세션·툴(Codex↔Claude)·머신·사람을 바꾸기 전 `/handoff-save` — `.claude/handoff/<브랜치>.md` 로 커밋.
 - 이어받을 때 `/handoff-load` — 커밋된 핸드오프 1순위, 현재 git 상태가 항상 우선.
+- 어느 세션을 이어받을지 모르면 `/history`로 Claude·Codex 로그를 읽기 전용 조회·검색한 뒤,
+  선택한 경로를 `/fw --session`으로 넘긴다.
 - 여러 라운드 PR 리뷰는 `/review-ledger`로 finding ID·상태·근거를 기록하고, 기존 open
   finding 재검수 후 신규 탐색 순서를 지킨다. 로컬 원장 요약은 handoff-save가 자동 포함한다.
 - 버그 수정 테스트는 `/verify-regression`으로 수정 전 source에서도 실행해 실제 회귀 재현

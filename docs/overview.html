@@ -369,6 +369,7 @@
       <tr><td><code>/handoff-load</code></td><td>작업 이어받을 때</td><td>커밋된 핸드오프를 읽고 현재 git 상태와 비교</td></tr>
       <tr><td><code>/fw</code></td><td>저장 안 하고 툴만 바꿨을 때</td><td>반대 툴의 대화 기록에서 하던 일을 자동으로 복원 (같은 머신)</td></tr>
       <tr><td><code>/fw-both</code></td><td>여러 툴을 오가며 작업했을 때</td><td>Claude·Codex 기록을 <b>한 번에</b> 보고 합쳐서 이어받음</td></tr>
+      <tr><td><code>/history</code></td><td>어느 세션을 이어받을지 모를 때</td><td>Claude·Codex 로그를 시간순 조회·검색하고 선택한 로그의 <code>fw --session</code> 명령 출력</td></tr>
     </tbody>
   </table>
   <div class="note tip">
@@ -376,6 +377,11 @@
     다른 머신·다른 사람에게도 넘어간다. <code>/fw</code>는 <b>저장하는 걸 깜빡했을 때</b>를 위한 보조 수단이라,
     같은 컴퓨터에 남은 대화 기록을 뒤져 복원한다 — 그래서 다른 머신으로는 못 넘어간다.
     셋 다 <b>지금 git 상태를 먼저 믿고</b>, 기록은 참고로만 쓴다.
+  </div>
+  <div class="note tip">
+    <b><code>/history</code>는 찾기, <code>/fw</code>는 이어받기.</b>
+    history는 최근 로그의 시각·툴·경로·마지막 사용자 입력을 읽기 전용으로 보여줄 뿐 자동 복원하지 않는다.
+    프롬프트를 화면에 보이고 싶지 않으면 <code>--no-content</code>로 경로와 메타데이터만 본다.
   </div>
   <p class="muted" style="margin-top:22px">핸드오프는 <b>세션·툴·머신·사람이 바뀌어도</b> 작업을 이어가기 위한 방법이다 — 흐름은 이렇다:</p>
   <div class="arch">
@@ -593,8 +599,8 @@ codex plugin add agent-harness@foxyberry
     <div class="node core"><b>core/</b><span>마스터 원고 — 훅 · 스킬 · 스크립트 · 메모리 형식 (여기서만 고친다)</span></div>
     <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
     <div class="split">
-      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 11개 + 훅 <code>hooks.json</code> 자동발견</span></div>
-      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 11개 (훅은 나중에)</span></div>
+      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 12개 + 훅 <code>hooks.json</code> 자동발견</span></div>
+      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 12개 (훅은 나중에)</span></div>
     </div>
     <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
     <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
@@ -613,9 +619,9 @@ codex plugin add agent-harness@foxyberry
 │  │  ├─ reflect.py              <span class="c">회고 잡 — 교훈 + 결정 ADR 초안</span>
 │  │  ├─ mine.py                 <span class="c">git 히스토리에서 결정 소급 마이닝</span>
 │  │  └─ compact_transcript.py   <span class="c">트랜스크립트 압축</span>
-│  ├─ <span class="d">skills/</span>                <span class="c">스킬 11개 (SKILL.md)</span>
+│  ├─ <span class="d">skills/</span>                <span class="c">스킬 12개 (SKILL.md)</span>
 │  │  ├─ handoff-save · handoff-load · fw · fw-both
-│  │  ├─ feedback-review · memory-update
+│  │  ├─ history · feedback-review · memory-update
 │  │  ├─ merge-cleanup · stale-scan · prettier-guard
 │  │  └─ review-ledger · verify-regression
 │  └─ <span class="d">scripts/</span>               <span class="c">스킬이 부르는 실행 스크립트</span>
@@ -649,7 +655,7 @@ codex plugin add agent-harness@foxyberry
 
   <h2>상태</h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Claude·Codex용 사본 — 스킬 11개 + 스스로 돌아보는 Claude 훅 4개 구현</li>
+    <li><span class="badge done">DONE</span> Claude·Codex용 사본 — 스킬 12개 + 스스로 돌아보는 Claude 훅 4개 구현</li>
     <li><span class="badge done">DONE</span> 리뷰 근거 검증 — <code>/review-ledger</code>로 다중 라운드 지적을 추적하고, <code>/verify-regression</code>으로 실제 프로젝트 테스트의 수정 전 실패 여부를 확인</li>
     <li><span class="badge done">DONE</span> 정리·점검 명령 — <code>/merge-cleanup</code>·<code>/stale-scan</code>·<code>/prettier-guard</code>. 셋 다 제안만 하고 직접 실행하지 않는다</li>
     <li><span class="badge done">DONE</span> 실제 설치 검증 — Claude·Codex 양쪽에서 marketplace로 받아 설치하고, <b>설치된 사본으로</b> 스킬을 돌려봤다. Claude가 저장한 핸드오프를 Codex가 그대로 읽는 것까지 확인</li>
