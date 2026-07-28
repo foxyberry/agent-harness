@@ -1,4 +1,5 @@
 import json
+import os
 import pathlib
 import sys
 import tempfile
@@ -120,14 +121,14 @@ class HistoryTest(unittest.TestCase):
         old_dir.mkdir(parents=True)
         rollout = old_dir / "rollout-old.jsonl"
         rollout.write_text(self.codex.read_text())
-        now = time.time()
-        rollout.touch()
+        resumed_at = time.time() - 60
+        os.utime(rollout, (resumed_at, resumed_at))
         with patch.object(handoff, "_codex_sessions_dir", return_value=str(sessions)):
             rows = handoff._recent_codex_rollouts(
                 str(self.root), limit=10, days=1
             )
         self.assertEqual([row[2] for row in rows], [str(rollout)])
-        self.assertGreaterEqual(rows[0][0], now)
+        self.assertEqual(rows[0][0], resumed_at)
 
     def test_malformed_utf8_does_not_crash_history(self):
         malformed = self.root / "malformed.jsonl"
