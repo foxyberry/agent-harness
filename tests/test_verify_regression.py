@@ -55,7 +55,7 @@ class VerifyRegressionTest(unittest.TestCase):
         ).stdout
         self.assertIn("regression test (catches bug)", result.stdout)
         self.assertIn("not regression (new-logic guard)", result.stdout)
-        self.assertIn("Original worktree restored: yes", result.stdout)
+        self.assertIn("Original worktree unchanged: yes", result.stdout)
         self.assertEqual(before, after)
         worktrees = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
@@ -91,6 +91,70 @@ class VerifyRegressionTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 2)
+        worktrees = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=self.root, text=True, capture_output=True, check=True,
+        ).stdout
+        self.assertEqual(worktrees.count("worktree "), 1)
+
+    def test_runner_error_is_inconclusive_not_regression(self):
+        result = self.run_cli("missing_test.py", check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("inconclusive (test path missing)", result.stdout)
+        self.assertNotIn("regression test (catches bug)", result.stdout)
+
+    def test_untracked_implementation_is_available_to_fixed_baseline(self):
+        (self.root / "newfeature.py").write_text("READY = True\n")
+        (self.root / "newfeature_test.py").write_text(
+            "from behavior import VALUE\nfrom newfeature import READY\n"
+            "raise SystemExit(0 if VALUE and READY else 1)\n"
+        )
+        result = self.run_cli(
+            "newfeature_test.py", extra=["--source", "newfeature.py"]
+        )
+        self.assertIn("regression test (catches bug)", result.stdout)
+        self.assertNotIn("fixed baseline failed", result.stdout)
+
+    def test_merge_base_default_path(self):
+        subprocess.run(["git", "branch", "main", "HEAD"], cwd=self.root, check=True)
+        result = subprocess.run(
+            [
+                sys.executable, str(SCRIPT), "--project-dir", str(self.root),
+                "--source", "behavior.py", "--base-ref", "main",
+                "--command", f"{sys.executable} {{test}}", "regression_test.py",
+            ],
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("regression test (catches bug)", result.stdout)
+
+    def test_timeout_is_inconclusive_and_json_uses_null_exit(self):
+        (self.root / "slow_test.py").write_text(
+            "import time\ntime.sleep(2)\n"
+        )
+        result = self.run_cli(
+            "slow_test.py", extra=["--timeout", "1", "--json"], check=False
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('"classification": "inconclusive (fixed baseline failed)"', result.stdout)
+        self.assertIn('"exit_code": null', result.stdout)
+
+    def test_locked_worktree_is_unlocked_and_removed(self):
+        path = self.root / ".claude" / ".cache" / "locked-worktree"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "worktree", "add", "--detach", str(path), "HEAD"],
+            cwd=self.root, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "worktree", "lock", str(path)],
+            cwd=self.root, check=True,
+        )
+
+        warning = verify_regression.remove_worktree(self.root, path)
+
+        self.assertEqual(warning, "")
+        self.assertFalse(path.exists())
         worktrees = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
             cwd=self.root, text=True, capture_output=True, check=True,

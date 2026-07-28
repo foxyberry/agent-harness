@@ -61,18 +61,16 @@ def validate_relative_paths(root, paths, label):
     return normalized
 
 
-def copy_untracked_tests(root, worktree, tests):
-    untracked = set(
+def copy_untracked_files(root, worktree):
+    untracked = [
         line for line in git_output(root, "ls-files", "--others", "--exclude-standard").splitlines()
         if line
-    )
-    for test in tests:
-        if test not in untracked:
-            continue
-        source = root / test
+    ]
+    for item in untracked:
+        source = root / item
         if not source.is_file():
-            raise RuntimeError(f"untracked 테스트 파일을 읽을 수 없습니다: {test}")
-        target = worktree / test
+            continue
+        target = worktree / item
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
 
@@ -93,6 +91,47 @@ def clip_output(value, limit=500):
     return value
 
 
+def ensure_local_exclude(root):
+    exclude = Path(git_output(root, "rev-parse", "--git-path", "info/exclude").strip())
+    if not exclude.is_absolute():
+        exclude = root / exclude
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    entry = ".claude/.cache/"
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if entry not in existing.splitlines():
+        with exclude.open("a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write(entry + "\n")
+
+
+def execute_test(argv, cwd, timeout):
+    try:
+        completed = run(argv, cwd, timeout=timeout)
+        return {
+            "exit_code": completed.returncode,
+            "output": clip_output(completed.stdout or completed.stderr).replace(
+                str(cwd), "<temp-worktree>"
+            ),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "exit_code": None,
+            "output": f"timeout after {timeout}s",
+        }
+
+
+def remove_worktree(root, path):
+    removed = run(["git", "worktree", "remove", "--force", str(path)], root)
+    if removed.returncode:
+        run(["git", "worktree", "unlock", str(path)], root)
+        removed = run(["git", "worktree", "remove", "--force", str(path)], root)
+    if removed.returncode:
+        return removed.stderr.strip() or str(path)
+    shutil.rmtree(path, ignore_errors=True)
+    return ""
+
+
 def render_markdown(result):
     lines = [
         "## Regression verification",
@@ -100,7 +139,7 @@ def render_markdown(result):
         f"- Base: `{result['base']}`",
         f"- Source files: {', '.join(f'`{item}`' for item in result['sources'])}",
         f"- Command: `{result['command']}`",
-        f"- Original worktree restored: {'yes' if result['worktree_unchanged'] else 'NO'}",
+        f"- Original worktree unchanged: {'yes' if result['worktree_unchanged'] else 'NO'}",
         "",
         "| Test | Pre-fix | Classification | Exit | Output |",
         "|---|---|---|---|---|",
@@ -121,16 +160,20 @@ def render_markdown(result):
         "",
         "> Pre-fix PASS는 삭제 대상이 아니라, 해당 테스트가 회귀 재현이 아닌 신규 로직 가드라는 분류입니다.",
     ])
+    for warning in result.get("cleanup_warnings", []):
+        lines.append(f"> ⚠️ Cleanup: {warning}")
     return "\n".join(lines)
 
 
 def verify(root, tests, sources, base, command, timeout):
+    ensure_local_exclude(root)
     before = git_output(root, "status", "--porcelain=v1", "-uall")
     cache = root / ".claude" / ".cache" / "verify-regression"
     cache.mkdir(parents=True, exist_ok=True)
     temp_dir = Path(tempfile.mkdtemp(prefix="run-", dir=cache))
     worktree_added = False
     results = []
+    cleanup_warnings = []
     try:
         add = run(
             ["git", "worktree", "add", "--detach", str(temp_dir), "HEAD"],
@@ -153,60 +196,86 @@ def verify(root, tests, sources, base, command, timeout):
             )
             if applied.returncode:
                 raise RuntimeError(applied.stderr.strip() or "현재 diff 복제 실패")
-        copy_untracked_tests(root, temp_dir, tests)
+        copy_untracked_files(root, temp_dir)
 
-        checkout = run(["git", "checkout", base, "--", *sources], temp_dir)
-        if checkout.returncode:
-            raise RuntimeError(checkout.stderr.strip() or "base source 복원 실패")
-
+        baselines = {}
         for test in tests:
-            argv = command_for_test(command, test)
-            try:
-                completed = run(argv, temp_dir, timeout=timeout)
-                passed = completed.returncode == 0
-                output = completed.stdout or completed.stderr
+            if not (temp_dir / test).exists():
                 results.append({
                     "test": test,
-                    "pre_fix": "PASS" if passed else "FAIL",
-                    "classification": (
-                        "not regression (new-logic guard)"
-                        if passed
-                        else "regression test (catches bug)"
-                    ),
-                    "exit_code": completed.returncode,
-                    "output": clip_output(output),
+                    "pre_fix": "ERROR",
+                    "classification": "inconclusive (test path missing)",
+                    "exit_code": None,
+                    "output": "test path does not exist in current snapshot",
                 })
-            except subprocess.TimeoutExpired:
+                continue
+            argv = command_for_test(command, test)
+            baseline = execute_test(argv, temp_dir, timeout)
+            baselines[test] = (argv, baseline)
+            if baseline["exit_code"] != 0:
+                results.append({
+                    "test": test,
+                    "pre_fix": "NOT RUN",
+                    "classification": "inconclusive (fixed baseline failed)",
+                    "exit_code": baseline["exit_code"],
+                    "output": baseline["output"],
+                })
+        for source in sources:
+            exists = run(["git", "cat-file", "-e", f"{base}:{source}"], temp_dir)
+            target = temp_dir / source
+            if exists.returncode == 0:
+                checkout = run(["git", "checkout", base, "--", source], temp_dir)
+                if checkout.returncode:
+                    raise RuntimeError(checkout.stderr.strip() or f"base source 복원 실패: {source}")
+            elif target.exists():
+                target.unlink() if target.is_file() or target.is_symlink() else shutil.rmtree(target)
+
+        for test in tests:
+            if test not in baselines or baselines[test][1]["exit_code"] != 0:
+                continue
+            argv = baselines[test][0]
+            completed = execute_test(argv, temp_dir, timeout)
+            if completed["exit_code"] is None:
                 results.append({
                     "test": test,
                     "pre_fix": "ERROR",
                     "classification": "inconclusive (timeout)",
-                    "exit_code": "-",
-                    "output": f"timeout after {timeout}s",
+                    "exit_code": None,
+                    "output": completed["output"],
                 })
+                continue
+            passed = completed["exit_code"] == 0
+            results.append({
+                "test": test,
+                "pre_fix": "PASS" if passed else "FAIL",
+                "classification": (
+                    "not regression (new-logic guard)"
+                    if passed
+                    else "regression test (catches bug)"
+                ),
+                "exit_code": completed["exit_code"],
+                "output": completed["output"],
+            })
     finally:
         if worktree_added:
-            removed = run(
-                ["git", "worktree", "remove", "--force", str(temp_dir)],
-                root,
-            )
-            if removed.returncode:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                run(["git", "worktree", "prune"], root)
-                registered = git_output(root, "worktree", "list", "--porcelain")
-                if f"worktree {temp_dir}" in registered:
-                    raise RuntimeError(
-                        "임시 worktree 제거 실패: " + (removed.stderr.strip() or str(temp_dir))
-                    )
-        shutil.rmtree(temp_dir, ignore_errors=True)
+            warning = remove_worktree(root, temp_dir)
+            if warning:
+                cleanup_warnings.append(warning)
+        else:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     after = git_output(root, "status", "--porcelain=v1", "-uall")
+    results.sort(key=lambda item: tests.index(item["test"]))
     return {
         "base": base,
         "command": command,
         "sources": sources,
         "tests": results,
         "worktree_unchanged": before == after,
+        "cleanup_warnings": cleanup_warnings,
+        "conclusive": all(
+            not item["classification"].startswith("inconclusive") for item in results
+        ),
     }
 
 
@@ -234,10 +303,19 @@ def main():
         base = resolve_base(root, args.base, args.base_ref)
         result = verify(root, tests, sources, base, args.command, args.timeout)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else render_markdown(result))
-        return 0 if result["worktree_unchanged"] else 2
+        return (
+            0
+            if result["worktree_unchanged"]
+            and not result["cleanup_warnings"]
+            and result["conclusive"]
+            else 2
+        )
     except Exception as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print("ERROR: interrupted; temporary worktree cleanup attempted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

@@ -43,9 +43,11 @@ PASS 테스트를 삭제하라는 뜻이 아니다. 회귀 재현이 아니라 �
 
 ## 복원 보장
 
-현재 HEAD와 작업 diff를 `.claude/.cache/verify-regression/` 아래 임시 worktree에 복제하고,
-지정 source만 base로 checkout한다. 성공·실패·timeout·중단 시 `finally`에서 worktree를
-제거한다. 실행 전후 원본 `git status --porcelain`이 다르면 exit 2로 실패한다.
+현재 HEAD, 작업 diff, non-ignored untracked 파일을 `.claude/.cache/verify-regression/`
+아래 임시 worktree에 복제한다. 먼저 수정 후 테스트가 PASS하는지 확인하고, 지정 source만
+base로 바꾼 뒤 다시 실행한다. 수정 후 baseline 자체가 실패하면 회귀로 과대 보고하지 않고
+`inconclusive`로 분류한다. 성공·실패·timeout·중단 시 `finally`에서 worktree를 제거한다.
+실행 전후 원본 `git status --porcelain`이 다르거나 cleanup 경고/inconclusive가 있으면 exit 2다.
 
 임시 worktree는 프로젝트 아래에 있어 상위 `node_modules`를 찾을 수 있지만, `.env` 등
 gitignore된 런타임 파일은 자동 복사하지 않는다. 필요한 설정은 테스트 명령에서 안전하게 주입한다.
