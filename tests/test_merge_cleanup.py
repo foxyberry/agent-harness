@@ -93,7 +93,7 @@ class LocalBranchCandidatesTest(unittest.TestCase):
         self.assertEqual(10, result[1]["pr"])
         self.assertEqual("merged", result[1]["state"])
 
-    def test_closed_pr_is_reported_as_force_candidate(self):
+    def test_closed_pr_never_bypasses_git_delete_safety(self):
         closed = {
             "number": 20,
             "headRefName": "abandoned",
@@ -116,7 +116,25 @@ class LocalBranchCandidatesTest(unittest.TestCase):
             )
 
         self.assertEqual("closed", result[0]["state"])
-        self.assertTrue(result[0]["force"])
+        self.assertEqual("pr-closed", result[0]["reason"])
+        self.assertFalse(result[0]["force"])
+
+        report = {
+            "repo": "owner/repo",
+            "project_dir": "/repo",
+            "default_branch": "main",
+            "sync": {"ahead": 0, "behind": 0},
+            "fetch": {"ran": False, "ok": None},
+            "local_merged_branches": [],
+            "local_branch_candidates": result,
+            "remote_branch_candidates": [],
+            "closing_issue_candidates": [],
+            "worktree_candidates": [],
+            "untracked": [],
+        }
+        output = merge_cleanup.render(report)
+        self.assertIn("git branch -d abandoned", output)
+        self.assertNotIn("git branch -D abandoned", output)
 
     def test_diverged_or_reused_branch_never_gets_force_delete(self):
         old_pr = {
@@ -254,6 +272,37 @@ class RenderTest(unittest.TestCase):
 
 
 class RemoteBranchCandidatesTest(unittest.TestCase):
+    def test_closed_remote_branch_never_gets_delete_command(self):
+        pr = {
+            "number": 51,
+            "headRefName": "abandoned",
+            "headRefOid": "tip",
+            "mergedAt": None,
+            "closedAt": "2026-07-27T00:00:00Z",
+            "isCrossRepository": False,
+            "url": "https://example.test/pull/51",
+        }
+        with patch.object(
+            merge_cleanup, "_remote_branches", return_value={"abandoned": "tip"}
+        ):
+            candidates = merge_cleanup._remote_branch_candidates("/repo", [pr])
+
+        result = {
+            "repo": "owner/repo",
+            "project_dir": "/repo",
+            "default_branch": "main",
+            "sync": {"ahead": 0, "behind": 0},
+            "fetch": {"ran": False, "ok": None},
+            "local_merged_branches": [],
+            "remote_branch_candidates": candidates,
+            "closing_issue_candidates": [],
+            "worktree_candidates": [],
+            "untracked": [],
+        }
+        output = merge_cleanup.render(result)
+        self.assertIn("원격이 유일한 사본일 수 있음", output)
+        self.assertNotIn("git push origin --delete abandoned", output)
+
     def test_remote_reused_branch_does_not_get_delete_command(self):
         pr = {
             "number": 50,
@@ -289,6 +338,24 @@ class RemoteBranchCandidatesTest(unittest.TestCase):
 
 
 class WorktreeTest(unittest.TestCase):
+    def test_only_merged_or_ancestry_candidates_enable_worktree_cleanup(self):
+        candidates = [
+            {"branch": "ancestor", "reason": "ancestor", "force": False},
+            {"branch": "squashed", "reason": "pr", "force": True, "state": "merged"},
+            {"branch": "closed", "reason": "pr-closed", "force": False, "state": "closed"},
+            {
+                "branch": "reused",
+                "reason": "pr-diverged",
+                "force": False,
+                "state": "merged",
+            },
+        ]
+
+        self.assertEqual(
+            ["ancestor", "squashed"],
+            merge_cleanup._safe_worktree_branches(candidates),
+        )
+
     def test_pr_based_local_candidate_enables_worktree_cleanup(self):
         porcelain = "\n".join(
             [

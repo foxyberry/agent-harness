@@ -153,12 +153,17 @@ def _local_branch_candidates(project_dir, prs, base_ref, protected_base):
         )
         pr_tip = pr.get("headRefOid") or ""
         tip_matches = bool(local_tip and pr_tip and local_tip == pr_tip)
+        state = "merged" if pr.get("mergedAt") else "closed"
         candidates[branch] = {
             "branch": branch,
-            "reason": "pr" if tip_matches else "pr-diverged",
-            "force": tip_matches,
+            "reason": (
+                "pr-diverged" if not tip_matches
+                else "pr" if state == "merged"
+                else "pr-closed"
+            ),
+            "force": tip_matches and state == "merged",
             "pr": pr.get("number"),
-            "state": "merged" if pr.get("mergedAt") else "closed",
+            "state": state,
             "url": pr.get("url") or "",
             "local_tip": local_tip or "",
             "pr_tip": pr_tip,
@@ -270,6 +275,15 @@ def _worktrees(project_dir, merged_local):
     return out
 
 
+def _safe_worktree_branches(local_candidates):
+    return [
+        candidate["branch"]
+        for candidate in local_candidates
+        if candidate.get("reason") == "ancestor"
+        or (candidate.get("force") and candidate.get("state") == "merged")
+    ]
+
+
 def _untracked(project_dir):
     raw = _out(["git", "status", "--short"], project_dir)
     if raw is None:
@@ -297,10 +311,14 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
     local_candidates = _local_branch_candidates(
         root, prs, cleanup_base_ref, default
     )
-    local = [candidate["branch"] for candidate in local_candidates]
+    ancestry_local = [
+        candidate["branch"]
+        for candidate in local_candidates
+        if candidate.get("reason") == "ancestor"
+    ]
     remote = _remote_branch_candidates(root, prs)
     issues = _closing_issue_candidates(merged_prs)
-    wts = _worktrees(root, local)
+    wts = _worktrees(root, _safe_worktree_branches(local_candidates))
     untracked = _untracked(root)
     return {
         "project_dir": root,
@@ -312,7 +330,7 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
         "default_branch": default,
         "cleanup_base_ref": cleanup_base_ref,
         "sync": sync,
-        "local_merged_branches": local,
+        "local_merged_branches": ancestry_local,
         "local_branch_candidates": local_candidates,
         "remote_branch_candidates": remote,
         "closing_issue_candidates": issues,
@@ -374,16 +392,19 @@ def render(result):
                     f"  {branch}  ← PR #{candidate.get('pr')} {candidate.get('state')}  "
                     f"{candidate.get('url') or ''}".rstrip()
                 )
-                if candidate.get("state") == "closed":
-                    lines.append(
-                        f"       후보 명령: git branch -D {shlex.quote(branch)} "
-                        "(주의: PR이 머지되지 않아 커밋이 main에 없을 수 있음 — 삭제 전 확인)"
-                    )
-                else:
-                    lines.append(
-                        f"       후보 명령: git branch -D {shlex.quote(branch)} "
-                        "(squash merge는 git ancestry에 없어 -d가 거부할 수 있음)"
-                    )
+                lines.append(
+                    f"       후보 명령: git branch -D {shlex.quote(branch)} "
+                    "(squash merge는 git ancestry에 없어 -d가 거부할 수 있음)"
+                )
+            elif candidate.get("reason") == "pr-closed":
+                lines.append(
+                    f"  {branch}  ← PR #{candidate.get('pr')} closed  "
+                    f"{candidate.get('url') or ''}".rstrip()
+                )
+                lines.append(
+                    f"       후보 명령: git branch -d {shlex.quote(branch)} "
+                    "(미머지 커밋이 있으면 git이 삭제를 거부함 — 강제 삭제 제안 안 함)"
+                )
             elif candidate.get("reason") == "pr-diverged":
                 lines.append(
                     f"  {branch}  ← PR #{candidate.get('pr')} {candidate.get('state')} 이후 "
@@ -409,8 +430,7 @@ def render(result):
                 lines.append("       삭제 제안 안 함 — 원격 tip 이 PR head 이후 변경됨")
             elif c.get("state") == "closed":
                 lines.append(
-                    f"       후보 명령: git push origin --delete {shlex.quote(c['branch'])} "
-                    "(주의: PR이 머지되지 않아 원격이 유일한 사본일 수 있음)"
+                    "       삭제 제안 안 함 — PR이 머지되지 않아 원격이 유일한 사본일 수 있음"
                 )
             else:
                 lines.append(
