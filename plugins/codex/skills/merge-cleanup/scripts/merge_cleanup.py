@@ -54,7 +54,7 @@ def _pr_list_cmd(repo, state, limit):
         "--state", state,
         "--limit", str(limit),
         "--json",
-        "number,title,url,mergedAt,closedAt,headRefName,isCrossRepository,closingIssuesReferences",
+        "number,title,url,mergedAt,closedAt,headRefName,headRefOid,isCrossRepository,closingIssuesReferences",
     ]
     if repo:
         cmd.extend(["--repo", repo])
@@ -103,44 +103,123 @@ def _merged_local_branches(project_dir, base_ref, protected_base):
     return [b for b in raw.splitlines() if b and b not in protected]
 
 
+def _local_branches(project_dir):
+    raw = _out(["git", "branch", "--format", "%(refname:short)"], project_dir)
+    if raw is None:
+        return set()
+    return {b for b in raw.splitlines() if b}
+
+
+def _latest_prs_by_branch(prs):
+    latest = {}
+    for pr in prs:
+        if pr.get("isCrossRepository"):
+            continue
+        branch = pr.get("headRefName")
+        if not branch:
+            continue
+        timestamp = pr.get("closedAt") or pr.get("mergedAt") or ""
+        previous = latest.get(branch)
+        previous_timestamp = (
+            (previous.get("closedAt") or previous.get("mergedAt") or "")
+            if previous else ""
+        )
+        if previous is None or timestamp > previous_timestamp:
+            latest[branch] = pr
+    return latest
+
+
+def _local_branch_candidates(project_dir, prs, base_ref, protected_base):
+    current = _current_branch(project_dir)
+    protected = {protected_base, current, "main", "master", "develop"}
+    existing = _local_branches(project_dir) - protected
+    candidates = {
+        branch: {
+            "branch": branch,
+            "reason": "ancestor",
+            "force": False,
+            "pr": None,
+            "state": "",
+            "url": "",
+        }
+        for branch in _merged_local_branches(project_dir, base_ref, protected_base)
+    }
+
+    for branch, pr in _latest_prs_by_branch(prs).items():
+        if branch not in existing or branch in candidates:
+            continue
+        local_tip = _out(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch}"], project_dir
+        )
+        pr_tip = pr.get("headRefOid") or ""
+        tip_matches = bool(local_tip and pr_tip and local_tip == pr_tip)
+        state = "merged" if pr.get("mergedAt") else "closed"
+        candidates[branch] = {
+            "branch": branch,
+            "reason": (
+                "pr-diverged" if not tip_matches
+                else "pr" if state == "merged"
+                else "pr-closed"
+            ),
+            "force": tip_matches and state == "merged",
+            "pr": pr.get("number"),
+            "state": state,
+            "url": pr.get("url") or "",
+            "local_tip": local_tip or "",
+            "pr_tip": pr_tip,
+        }
+    return sorted(candidates.values(), key=lambda c: c["branch"])
+
+
 def _remote_branches(project_dir, remote="origin"):
     raw = _out(
-        ["git", "for-each-ref", "--format", "%(refname:short)", f"refs/remotes/{remote}"],
+        [
+            "git", "for-each-ref",
+            "--format", "%(refname:short) %(objectname)",
+            f"refs/remotes/{remote}",
+        ],
         project_dir,
     )
     if raw is None:
-        return set()
-    return {b.split("/", 1)[1] for b in raw.splitlines() if "/" in b and not b.endswith("/HEAD")}
+        return {}
+    branches = {}
+    for line in raw.splitlines():
+        ref, _, oid = line.partition(" ")
+        if "/" not in ref or ref.endswith("/HEAD"):
+            continue
+        branches[ref.split("/", 1)[1]] = oid
+    return branches
 
 
 def _recent_prs(project_dir, repo, state, limit):
     data = _out(_pr_list_cmd(repo, state, limit), project_dir, timeout=15)
+    if data is None:
+        return None
     if not data:
         return []
     try:
         rows = json.loads(data)
         return rows if isinstance(rows, list) else []
     except Exception:
-        return []
+        return None
 
 
-def _remote_branch_candidates(project_dir, repo, recent_limit):
+def _remote_branch_candidates(project_dir, prs):
     existing = _remote_branches(project_dir)
     candidates = []
-    prs = _recent_prs(project_dir, repo, "merged", recent_limit)
-    prs += _recent_prs(project_dir, repo, "closed", recent_limit)
-    for pr in prs:
-        if pr.get("isCrossRepository"):
+    for head, pr in _latest_prs_by_branch(prs).items():
+        if head not in existing:
             continue
-        head = pr.get("headRefName")
-        if head and head in existing:
-            candidates.append({
-                "branch": head,
-                "pr": pr.get("number"),
-                "state": "merged" if pr.get("mergedAt") else "closed",
-                "title": pr.get("title") or "",
-                "url": pr.get("url") or "",
-            })
+        pr_tip = pr.get("headRefOid") or ""
+        tip_matches = bool(pr_tip and existing[head] == pr_tip)
+        candidates.append({
+            "branch": head,
+            "pr": pr.get("number"),
+            "state": "merged" if pr.get("mergedAt") else "closed",
+            "title": pr.get("title") or "",
+            "url": pr.get("url") or "",
+            "tip_matches_pr": tip_matches,
+        })
     seen = set()
     out = []
     for c in candidates:
@@ -151,9 +230,11 @@ def _remote_branch_candidates(project_dir, repo, recent_limit):
     return out
 
 
-def _closing_issue_candidates(project_dir, repo, recent_limit):
+def _closing_issue_candidates(prs):
     rows = []
-    for pr in _recent_prs(project_dir, repo, "merged", recent_limit):
+    for pr in prs:
+        if not pr.get("mergedAt"):
+            continue
         issues = pr.get("closingIssuesReferences") or []
         if not issues:
             continue
@@ -194,6 +275,15 @@ def _worktrees(project_dir, merged_local):
     return out
 
 
+def _safe_worktree_branches(local_candidates):
+    return [
+        candidate["branch"]
+        for candidate in local_candidates
+        if candidate.get("reason") == "ancestor"
+        or (candidate.get("force") and candidate.get("state") == "merged")
+    ]
+
+
 def _untracked(project_dir):
     raw = _out(["git", "status", "--short"], project_dir)
     if raw is None:
@@ -212,10 +302,23 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
     default = _default_branch(root, resolved_repo)
     cleanup_base_ref = f"origin/{default}"
     sync = _sync_status(root, default)
-    local = _merged_local_branches(root, cleanup_base_ref, default)
-    remote = _remote_branch_candidates(root, resolved_repo, recent_limit)
-    issues = _closing_issue_candidates(root, resolved_repo, recent_limit)
-    wts = _worktrees(root, local)
+    merged_prs_result = _recent_prs(root, resolved_repo, "merged", recent_limit)
+    closed_prs_result = _recent_prs(root, resolved_repo, "closed", recent_limit)
+    pr_query_ok = merged_prs_result is not None and closed_prs_result is not None
+    merged_prs = merged_prs_result or []
+    closed_prs = closed_prs_result or []
+    prs = merged_prs + closed_prs
+    local_candidates = _local_branch_candidates(
+        root, prs, cleanup_base_ref, default
+    )
+    ancestry_local = [
+        candidate["branch"]
+        for candidate in local_candidates
+        if candidate.get("reason") == "ancestor"
+    ]
+    remote = _remote_branch_candidates(root, prs)
+    issues = _closing_issue_candidates(merged_prs)
+    wts = _worktrees(root, _safe_worktree_branches(local_candidates))
     untracked = _untracked(root)
     return {
         "project_dir": root,
@@ -223,10 +326,12 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
         "local_repo": cwd_repo,
         "repo_mismatch": bool(repo and cwd_repo and repo != cwd_repo),
         "fetch": fetch_result,
+        "pr_query_ok": pr_query_ok,
         "default_branch": default,
         "cleanup_base_ref": cleanup_base_ref,
         "sync": sync,
-        "local_merged_branches": local,
+        "local_merged_branches": ancestry_local,
+        "local_branch_candidates": local_candidates,
         "remote_branch_candidates": remote,
         "closing_issue_candidates": issues,
         "worktree_candidates": wts,
@@ -250,6 +355,8 @@ def render(result):
     fetch = result.get("fetch") or {}
     if fetch.get("ran") and fetch.get("ok") is False:
         lines.append("⚠ git fetch origin 실패 — 원격 기준 후보가 오래됐을 수 있음")
+    if result.get("pr_query_ok") is False:
+        lines.append("⚠ GitHub PR 조회 실패 — PR 기준 로컬·원격 후보를 못 찾았을 수 있음")
     lines.append("")
 
     sync = result["sync"]
@@ -270,13 +377,45 @@ def render(result):
     lines.append("")
 
     cleanup_base = result.get("cleanup_base_ref", f"origin/{default}")
+    candidates = result.get("local_branch_candidates") or [
+        {"branch": b, "force": False} for b in result["local_merged_branches"]
+    ]
     lines.append(
-        f"■ 로컬 merged 브랜치 삭제 후보 ({len(result['local_merged_branches'])}) "
+        f"■ 로컬 정리 브랜치 삭제 후보 ({len(candidates)}) "
         f"— 기준 {cleanup_base}"
     )
-    if result["local_merged_branches"]:
-        for b in result["local_merged_branches"]:
-            lines.append(f"  {b}  → 후보 명령: git branch -d {shlex.quote(b)}")
+    if candidates:
+        for candidate in candidates:
+            branch = candidate["branch"]
+            if candidate.get("force"):
+                lines.append(
+                    f"  {branch}  ← PR #{candidate.get('pr')} {candidate.get('state')}  "
+                    f"{candidate.get('url') or ''}".rstrip()
+                )
+                lines.append(
+                    f"       후보 명령: git branch -D {shlex.quote(branch)} "
+                    "(squash merge는 git ancestry에 없어 -d가 거부할 수 있음)"
+                )
+            elif candidate.get("reason") == "pr-closed":
+                lines.append(
+                    f"  {branch}  ← PR #{candidate.get('pr')} closed  "
+                    f"{candidate.get('url') or ''}".rstrip()
+                )
+                lines.append(
+                    f"       후보 명령: git branch -d {shlex.quote(branch)} "
+                    "(미머지 커밋이 있으면 git이 삭제를 거부함 — 강제 삭제 제안 안 함)"
+                )
+            elif candidate.get("reason") == "pr-diverged":
+                lines.append(
+                    f"  {branch}  ← PR #{candidate.get('pr')} {candidate.get('state')} 이후 "
+                    "로컬 tip 변경됨"
+                )
+                lines.append(
+                    f"       강제 삭제 제안 안 함 — 확인: git log --oneline "
+                    f"{shlex.quote('origin/' + default)}..{shlex.quote(branch)}"
+                )
+            else:
+                lines.append(f"  {branch}  → 후보 명령: git branch -d {shlex.quote(branch)}")
     else:
         lines.append("  (없음)")
     lines.append("")
@@ -287,7 +426,16 @@ def render(result):
             lines.append(
                 f"  origin/{c['branch']}  ← PR #{c['pr']} {c['state']}  {c['url']}"
             )
-            lines.append(f"       후보 명령: git push origin --delete {shlex.quote(c['branch'])}")
+            if c.get("tip_matches_pr") is False:
+                lines.append("       삭제 제안 안 함 — 원격 tip 이 PR head 이후 변경됨")
+            elif c.get("state") == "closed":
+                lines.append(
+                    "       삭제 제안 안 함 — PR이 머지되지 않아 원격이 유일한 사본일 수 있음"
+                )
+            else:
+                lines.append(
+                    f"       후보 명령: git push origin --delete {shlex.quote(c['branch'])}"
+                )
     else:
         lines.append("  (없음)")
     lines.append("")
