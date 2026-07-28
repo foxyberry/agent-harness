@@ -8,7 +8,7 @@
 - **core/** — 툴 무관 정본: Agent Skills(표준 `SKILL.md`), 자기개선 훅(`core/hooks/`), 공유 스크립트, 메모리 스키마, 핸드오프 포맷.
 - **adapters** — core 를 각 툴로 포장:
   - `plugins/harness/` = Claude 플러그인 (루트 `.claude-plugin/marketplace.json` 로 배포)
-  - `plugins/codex/` = Codex skill-only plugin (`.agents/plugins/marketplace.json` 로 배포) + `config.toml` merge (검증 후 채움)
+  - `plugins/codex/` = Codex skill-only plugin (`.agents/plugins/marketplace.json` 로 배포)
 - **opinion pack** (`project-template/`, 문서) — 개인/팀 워크플로·커밋 규칙·회고 방식 + **훅 데이터**(`routes.json`·`reflection-rules.json`). 취향이라 분리해 선택 채택.
 
 ## 자기개선 훅 루프 (엔진=core, 데이터=프로젝트)
@@ -39,10 +39,10 @@
 ## 배포 (비대칭 — 숨기지 말 것)
 
 - **Claude**: `/plugin marketplace add foxyberry/agent-harness` → `/plugin install agent-harness@foxyberry`
-- **Codex**: 현재 private repo 는 `codex plugin marketplace add git@github.com:foxyberry/agent-harness.git`(SSH 권한 필요), 공개 후 `foxyberry/agent-harness` 사용 가능 / 로컬 `codex plugin marketplace add ./`. `installers/install-codex.sh`(config merge)는 미구현 — 이슈 #2.
+- **Codex**: 현재 private repo 는 `codex plugin marketplace add git@github.com:foxyberry/agent-harness.git`(SSH 권한 필요), 공개 후 `foxyberry/agent-harness` 사용 가능 / 로컬 `codex plugin marketplace add ./`. 별도 installer 없이 공식 marketplace CLI가 설치·업데이트·캐시를 관리한다.
 - **공통**: 프로젝트에 `project-template/` 복사 (AGENTS.md 정본 + `.claude/memory` 템플릿)
 
-설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/history`, `/feedback-review`, `/memory-update`, `/merge-cleanup`, `/prettier-guard`, `/review-ledger`, `/verify-regression`.
+설치 방식은 툴마다 다르지만 **사용자-facing 명령 이름은 통일**한다: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/history`, `/feedback-review`, `/memory-update`, `/merge-cleanup`, `/prettier-guard`, `/review-ledger`, `/stale-scan`, `/verify-regression`.
 
 **handoff vs fw vs fw-both**: `handoff-save/load` = 사람이 명시적으로 커밋하는 이식 정본(크로스머신). `fw` = 저장 안 했어도 세션 로그(Claude `.jsonl`/Codex rollout)에서 자동 복원하는 보조(같은 머신, 툴 전환용). 렌더된 `fw` 는 **반대 툴**을 `--from` 기본값으로 넘겨 현재 세션 자기선택을 막는다. `fw-both` = **Claude·Codex 양쪽 로그를 한 번에** 보는 변형(`fw --from both`) — 여러 툴에 작업이 흩어졌을 때 합쳐서 이어받는다. 렌더된 `fw-both` 는 `--current <현재툴>`(빌드 시 어댑터별로 claude/codex 렌더)을 넘겨 **현재 툴의 live 세션만** 배제(반대 툴 최신은 진짜 직전 작업이라 유지). 셋 다 **현재 git 이 우선**.
 
