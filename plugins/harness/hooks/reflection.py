@@ -19,12 +19,18 @@ reflection-rules.json 형식:
        "message": "`!!` 사용 {count}곳 — requireNotNull 또는 ?: return 으로 교체 검토"},
       {"glob": "*.kt", "regex": "(?m)^\\s*var ", "min_count": 3,
        "message": "var 선언 다수({count}) — fold/associate/sumOf 등으로 대체 검토"}
+    ],
+    "packs": [
+      {"name": "react-async-timing", "enabled": false, "rules": [...]}
     ]
   }
 - glob:  이 규칙을 적용할 파일 (fnmatch, 생략 시 모든 파일).
+- globs: 여러 파일 패턴 중 하나에 적용할 때 쓰는 glob 배열.
 - regex: 새 코드에서 찾을 패턴 (Python re). 매칭 수(count) 계산.
+- enabled: false 면 이 규칙만 비활성.
 - min_count: 이 수 이상일 때만 경고 (기본 1).
 - message: 경고문. `{count}` 는 매칭 수로 치환.
+- packs: opt-in 규칙 묶음. enabled=true 인 pack 의 rules 만 적용.
 
 JSON 사용(무의존). 어떤 예외에도 조용히 통과(fail-open) — 편집 결과를 막지 않는다.
 """
@@ -52,8 +58,16 @@ def _load_config(memory_dir):
             data = json.load(f)
         if not isinstance(data, dict):
             return {"rules": [], "builtins": {}}
+        rules = data.get("rules", []) if isinstance(data.get("rules"), list) else []
+        packs = data.get("packs", []) if isinstance(data.get("packs"), list) else []
+        for pack in packs:
+            if not isinstance(pack, dict) or pack.get("enabled") is not True:
+                continue
+            pack_rules = pack.get("rules")
+            if isinstance(pack_rules, list):
+                rules.extend(pack_rules)
         return {
-            "rules": data.get("rules", []) if isinstance(data.get("rules"), list) else [],
+            "rules": rules,
             "builtins": data.get("builtins", {}) if isinstance(data.get("builtins"), dict) else {},
         }
     except Exception:
@@ -63,8 +77,27 @@ def _load_config(memory_dir):
 def _apply_rule(rule, file_path, content):
     if not isinstance(rule, dict):
         return None
-    glob = rule.get("glob")
-    if glob and not fnmatch.fnmatch(file_path, glob):
+    if rule.get("enabled") is False:
+        return None
+    if "globs" in rule:
+        globs = rule["globs"]
+        if isinstance(globs, str):
+            patterns = [globs]
+        elif isinstance(globs, list):
+            patterns = [pattern for pattern in globs if isinstance(pattern, str)]
+        else:
+            return None
+        if not patterns:
+            return None
+    else:
+        if "glob" in rule:
+            glob = rule["glob"]
+            if not isinstance(glob, str):
+                return None
+            patterns = [glob]
+        else:
+            patterns = []
+    if patterns and not any(fnmatch.fnmatch(file_path, pattern) for pattern in patterns):
         return None
     regex = rule.get("regex")
     msg = rule.get("message")
