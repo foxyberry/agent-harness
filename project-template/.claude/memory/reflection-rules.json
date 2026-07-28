@@ -1,7 +1,7 @@
 {
   "//": "reflection 훅 데이터 — 방금 쓴 코드에 대해 띄울 품질 경고 규칙(언어·팀 특정).",
   "//engine": "엔진(core)은 언어 규칙을 하드코딩하지 않는다. TODO/FIXME 범용 규칙만 내장. 나머지는 여기 데이터.",
-  "//format": "glob=적용 파일(생략시 전체), regex=Python re 패턴, min_count=이 수 이상일 때만(기본1), message={count}는 매칭수로 치환",
+  "//format": "glob=적용 파일, globs=여러 파일 패턴 배열(둘 다 생략시 전체), regex=Python re 패턴, enabled=false면 해당 규칙 비활성, min_count=이 수 이상일 때만(기본1), message={count}는 매칭수로 치환",
   "//packs": "packs는 opt-in 규칙 묶음. 사용할 프로젝트에서 해당 pack의 enabled를 true로 바꾼다.",
   "//builtins": "내장 TODO/FIXME 경고를 끄려면: \"builtins\": {\"todo_fixme\": false}",
   "//example": "rules는 기본 활성 Kotlin 예시, packs는 기본 비활성 opt-in 예시다. 네 언어/규칙에 맞게 고쳐라.",
@@ -25,23 +25,23 @@
       "description": "React effect·비동기 순서 위험 후보. 정규식 경고이므로 실제 scope와 실행 순서를 확인한다.",
       "rules": [
         {
-          "glob": "*.[jt]sx",
-          "regex": "set[A-Z]\\w*\\(\\s*(?:prev|current)\\w*\\s*=>[\\s\\S]{0,600}?(?:localStorage\\.|save[A-Z]\\w*\\s*\\(|fetch\\s*\\()",
+          "globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
+          "regex": "set[A-Z]\\w*\\(\\s*\\(?\\s*\\w+(?:\\s*:[^)=]+)?\\s*\\)?\\s*=>\\s*(?:\\{[^{}]{0,600}?|[^{}]{0,600}?)(?:localStorage\\.|save[A-Z]\\w*\\s*\\(|fetch\\s*\\()",
           "message": "state updater 안 부수효과 후보 {count}곳 — updater는 재실행될 수 있으므로 localStorage/save/fetch를 effect나 이벤트 경계로 이동 검토. tsc·기존 테스트가 순서를 보장하지 않으니 renderHook + rerender로 재현"
         },
         {
-          "glob": "*.[jt]sx",
-          "regex": "catch\\s*(?:\\([^)]*\\))?\\s*\\{(?!(?:[\\s\\S]{0,800}?)(?:set(?:Loaded|Ready|Settled)\\s*\\(|\\w+Ref\\.current\\s*=\\s*true))[\\s\\S]{0,800}?\\}",
+          "globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
+          "regex": "catch\\s*(?:\\([^)]*\\))?\\s*\\{(?!(?:[^{}]{0,800}?)(?:set\\w*(?:Loaded|Ready|Settled)\\s*\\(|\\w+Ref\\.current\\s*=\\s*true))[^{}]{0,800}?\\}",
           "message": "catch 실패 경로에 loaded/ready/settled 완료 신호가 없는 후보 {count}곳 — 이후 저장이 영구 차단되지 않는지 확인. pending→reject 순서를 renderHook + rerender로 재현"
         },
         {
-          "glob": "*.[jt]sx",
+          "globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
           "regex": "\\b\\w+Ref\\.current\\s*(?:===|!==|\\?)",
           "message": "ref.current로 분기하는 렌더 경로 후보 {count}곳 — ref 변경은 rerender를 일으키지 않는다. render scope인지 확인하고 state/derived value 전환 및 rerender 테스트 검토"
         },
         {
-          "glob": "*.[jt]sx",
-          "regex": "use(?:Layout)?Effect\\s*\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*set[A-Z]\\w*\\(\\s*(?:new\\s+(?:Set|Map)\\s*\\(\\s*\\)|\\[\\s*\\])\\s*\\)",
+          "globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
+          "regex": "use(?:Layout)?Effect\\s*\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*set[A-Z]\\w*\\(\\s*(?:new\\s+(?:Set|Map)\\s*(?:<[^>]*>)?\\s*\\(\\s*\\)|\\[\\s*\\])\\s*\\)",
           "message": "effect 첫 동작이 state 컬렉션 초기화인 후보 {count}곳 — 같은 commit의 부모/다른 effect가 채운 값을 덮는지 확인. mount·계정 전환·unmount 후 remount 순서를 테스트"
         }
       ]

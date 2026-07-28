@@ -60,6 +60,27 @@ class PackLoadingTest(unittest.TestCase):
             ["base", "pack"], [rule["regex"] for rule in config["rules"]]
         )
 
+    def test_disabled_rule_is_ignored(self):
+        warning = reflection._apply_rule(
+            {"enabled": False, "regex": "TODO", "message": "disabled"},
+            "src/example.ts",
+            "// TODO",
+        )
+        self.assertIsNone(warning)
+
+    def test_globs_match_only_listed_extensions(self):
+        rule = {
+            "globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
+            "regex": "catch",
+            "message": "candidate",
+        }
+        self.assertIsNotNone(
+            reflection._apply_rule(rule, "src/useProgress.ts", "catch")
+        )
+        self.assertIsNone(
+            reflection._apply_rule(rule, "fixtures/package.json", "catch")
+        )
+
 
 class ReactTimingPackTest(unittest.TestCase):
     @classmethod
@@ -75,10 +96,20 @@ class ReactTimingPackTest(unittest.TestCase):
         warning = reflection._apply_rule(self.rules[index], "src/hook.tsx", content)
         self.assertIsNotNone(warning)
 
+    def assert_rule_does_not_match(self, index, content):
+        warning = reflection._apply_rule(self.rules[index], "src/hook.tsx", content)
+        self.assertIsNone(warning)
+
     def test_updater_side_effect_candidate(self):
         self.assert_rule_matches(
             0,
-            "setWords(prev => { localStorage.setItem('words', '[]'); return prev; });",
+            "setWords((prev: Set<string>) => localStorage.setItem('words', '[]'));",
+        )
+
+    def test_updater_does_not_cross_function_boundary(self):
+        self.assert_rule_does_not_match(
+            0,
+            "setWords(prev => prev); function save() { localStorage.setItem('x', '1'); }",
         )
 
     def test_catch_without_completion_signal_candidate(self):
@@ -88,12 +119,24 @@ class ReactTimingPackTest(unittest.TestCase):
         )
 
     def test_catch_with_completion_signal_is_not_flagged(self):
+        self.assert_rule_does_not_match(
+            1,
+            "try { await load(); } catch (error) { report(error); setIsLoaded(true); }",
+        )
+
+    def test_completion_signal_after_catch_does_not_hide_candidate(self):
+        self.assert_rule_matches(
+            1,
+            "try { await load(); } catch (error) { report(error); } setLoaded(true);",
+        )
+
+    def test_typescript_hook_file_is_included(self):
         warning = reflection._apply_rule(
             self.rules[1],
-            "src/hook.tsx",
-            "try { await load(); } catch (error) { report(error); setLoaded(true); }",
+            "src/useProgress.ts",
+            "try { await load(); } catch (error) { report(error); }",
         )
-        self.assertIsNone(warning)
+        self.assertIsNotNone(warning)
 
     def test_ref_render_branch_candidate(self):
         self.assert_rule_matches(2, "const canSave = loadedRef.current === true;")
@@ -101,7 +144,7 @@ class ReactTimingPackTest(unittest.TestCase):
     def test_effect_initial_reset_candidate(self):
         self.assert_rule_matches(
             3,
-            "useEffect(() => { setCompleted(new Set()); persist(); }, [accountId]);",
+            "useEffect(() => { setCompleted(new Set<string>()); }, [accountId]);",
         )
 
     def test_enabled_pack_reaches_post_tool_context(self):

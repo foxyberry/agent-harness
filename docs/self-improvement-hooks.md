@@ -106,7 +106,8 @@ pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
       "name": "react-async-timing",
       "enabled": true,
       "rules": [
-        {"glob": "*.[jt]sx", "regex": "...", "message": "..."}
+        {"globs": ["*.js", "*.jsx", "*.ts", "*.tsx"],
+         "regex": "...", "message": "..."}
       ]
     }
   ]
@@ -118,8 +119,14 @@ pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
 렌더 중 `ref.current` 분기, effect 첫 동작의 컬렉션 초기화를 경고한다. 정규식은 AST나
 실행 순서를 확정하지 못하므로 경고를 버그 판정으로 취급하지 않는다. 실제 scope를 확인하고
 `renderHook` + `rerender`로 pending/reject, 계정 전환, unmount/remount 순서를 재현한다.
-- `glob`: 적용 파일(생략 시 전체). `regex`: Python re 패턴. `min_count`: 이 수 이상일 때만(기본 1).
+- `glob`: 적용 파일. `globs`: 여러 파일 패턴 배열(둘 다 생략 시 전체).
+- `regex`: Python re 패턴. `enabled: false`: 해당 규칙만 비활성.
+- `min_count`: 이 수 이상일 때만(기본 1).
 - `message`: `{count}` 는 매칭 수로 치환.
+
+PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조각만 검사한다. 여러 줄 구조가
+조각 밖에 걸쳐 있으면 경고를 놓치거나 문맥 부족으로 후보를 넓게 잡을 수 있다. `Write`는 파일
+전체를 검사하지만, 두 경우 모두 경고는 확인을 위한 신호이며 정적 분석 결과가 아니다.
 
 ### pr-merge-reflect — 머지 회고 루프 (핵심)
 - **이벤트**: PostToolUse `Bash`, SessionStart, UserPromptSubmit
