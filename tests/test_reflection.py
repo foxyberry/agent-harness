@@ -129,6 +129,15 @@ class ReactTimingPackTest(unittest.TestCase):
             "setWords((prev: Set<string>) => localStorage.setItem('words', '[]'));",
         )
 
+    def test_updater_side_effect_after_nested_object_candidate(self):
+        self.assert_rule_matches(
+            0,
+            (
+                "setUser(prev => { const next = { ...prev, name }; "
+                "localStorage.setItem('user', JSON.stringify(next)); return next; });"
+            ),
+        )
+
     def test_updater_does_not_cross_statement_boundary(self):
         self.assert_rule_does_not_match(
             0,
