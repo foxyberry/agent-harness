@@ -94,6 +94,30 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
   ]
 }
 ```
+
+규칙 묶음은 `packs` 로 opt-in 할 수 있다. 엔진은 pack 내용을 모르고, `enabled: true` 인
+pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
+
+```json
+{
+  "rules": [],
+  "packs": [
+    {
+      "name": "react-async-timing",
+      "enabled": true,
+      "rules": [
+        {"glob": "*.[jt]sx", "regex": "...", "message": "..."}
+      ]
+    }
+  ]
+}
+```
+
+`project-template`의 `react-async-timing` 스타터 팩은 기본 꺼짐이다. React 프로젝트에서
+`enabled`를 `true`로 바꾸면 state updater 안 부수효과, catch 완료 신호 누락 후보,
+렌더 중 `ref.current` 분기, effect 첫 동작의 컬렉션 초기화를 경고한다. 정규식은 AST나
+실행 순서를 확정하지 못하므로 경고를 버그 판정으로 취급하지 않는다. 실제 scope를 확인하고
+`renderHook` + `rerender`로 pending/reject, 계정 전환, unmount/remount 순서를 재현한다.
 - `glob`: 적용 파일(생략 시 전체). `regex`: Python re 패턴. `min_count`: 이 수 이상일 때만(기본 1).
 - `message`: `{count}` 는 매칭 수로 치환.
 

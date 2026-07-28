@@ -11,7 +11,11 @@
 | `reflection-rules.json` | reflection (PostToolUse Edit/Write) | 새 코드 → 품질 경고 정규식 규칙 | 내장 TODO/FIXME 규칙만 |
 | `prettier-guard.json` | prettier-guard skill | main 기준 non-clean 파일과 제외 glob 설정 | 기본 확장자만 검사 |
 
-두 예시 파일은 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
+기본 활성 예시는 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
+
+`reflection-rules.json`에는 기본 꺼짐인 `react-async-timing` 스타터 팩도 있다. React
+프로젝트에서만 해당 pack의 `enabled`를 `true`로 바꿔 사용한다. 정규식 경고는 타이밍
+위험 후보이므로 실제 scope를 확인하고 순서를 재현하는 테스트로 검증한다.
 
 ## 메모리 파일 (routes.json 이 가리키는 것)
 
