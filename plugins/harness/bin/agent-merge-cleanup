@@ -103,6 +103,48 @@ def _merged_local_branches(project_dir, base_ref, protected_base):
     return [b for b in raw.splitlines() if b and b not in protected]
 
 
+def _local_branches(project_dir):
+    raw = _out(["git", "branch", "--format", "%(refname:short)"], project_dir)
+    if raw is None:
+        return set()
+    return {b for b in raw.splitlines() if b}
+
+
+def _local_branch_candidates(project_dir, repo, base_ref, protected_base, recent_limit):
+    current = _current_branch(project_dir)
+    protected = {protected_base, current, "main", "master", "develop"}
+    existing = _local_branches(project_dir) - protected
+    candidates = {
+        branch: {
+            "branch": branch,
+            "reason": "ancestor",
+            "force": False,
+            "pr": None,
+            "state": "",
+            "url": "",
+        }
+        for branch in _merged_local_branches(project_dir, base_ref, protected_base)
+    }
+
+    prs = _recent_prs(project_dir, repo, "merged", recent_limit)
+    prs += _recent_prs(project_dir, repo, "closed", recent_limit)
+    for pr in prs:
+        if pr.get("isCrossRepository"):
+            continue
+        branch = pr.get("headRefName")
+        if not branch or branch not in existing or branch in candidates:
+            continue
+        candidates[branch] = {
+            "branch": branch,
+            "reason": "pr",
+            "force": True,
+            "pr": pr.get("number"),
+            "state": "merged" if pr.get("mergedAt") else "closed",
+            "url": pr.get("url") or "",
+        }
+    return sorted(candidates.values(), key=lambda c: c["branch"])
+
+
 def _remote_branches(project_dir, remote="origin"):
     raw = _out(
         ["git", "for-each-ref", "--format", "%(refname:short)", f"refs/remotes/{remote}"],
@@ -212,7 +254,10 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
     default = _default_branch(root, resolved_repo)
     cleanup_base_ref = f"origin/{default}"
     sync = _sync_status(root, default)
-    local = _merged_local_branches(root, cleanup_base_ref, default)
+    local_candidates = _local_branch_candidates(
+        root, resolved_repo, cleanup_base_ref, default, recent_limit
+    )
+    local = [candidate["branch"] for candidate in local_candidates]
     remote = _remote_branch_candidates(root, resolved_repo, recent_limit)
     issues = _closing_issue_candidates(root, resolved_repo, recent_limit)
     wts = _worktrees(root, local)
@@ -227,6 +272,7 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
         "cleanup_base_ref": cleanup_base_ref,
         "sync": sync,
         "local_merged_branches": local,
+        "local_branch_candidates": local_candidates,
         "remote_branch_candidates": remote,
         "closing_issue_candidates": issues,
         "worktree_candidates": wts,
@@ -271,12 +317,26 @@ def render(result):
 
     cleanup_base = result.get("cleanup_base_ref", f"origin/{default}")
     lines.append(
-        f"■ 로컬 merged 브랜치 삭제 후보 ({len(result['local_merged_branches'])}) "
+        f"■ 로컬 정리 브랜치 삭제 후보 ({len(result['local_merged_branches'])}) "
         f"— 기준 {cleanup_base}"
     )
     if result["local_merged_branches"]:
-        for b in result["local_merged_branches"]:
-            lines.append(f"  {b}  → 후보 명령: git branch -d {shlex.quote(b)}")
+        candidates = result.get("local_branch_candidates") or [
+            {"branch": b, "force": False} for b in result["local_merged_branches"]
+        ]
+        for candidate in candidates:
+            branch = candidate["branch"]
+            if candidate.get("force"):
+                lines.append(
+                    f"  {branch}  ← PR #{candidate.get('pr')} {candidate.get('state')}  "
+                    f"{candidate.get('url') or ''}".rstrip()
+                )
+                lines.append(
+                    f"       후보 명령: git branch -D {shlex.quote(branch)} "
+                    "(squash/closed PR은 git ancestry에 없어 -d가 거부할 수 있음)"
+                )
+            else:
+                lines.append(f"  {branch}  → 후보 명령: git branch -d {shlex.quote(branch)}")
     else:
         lines.append("  (없음)")
     lines.append("")
