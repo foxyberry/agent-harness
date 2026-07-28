@@ -514,6 +514,7 @@ def _review_ledger_summary(root, branch):
     except OSError:
         return ""
     candidates = []
+    other_branches = []
     for name in names:
         if not re.fullmatch(r"pr-\d+\.json", name):
             continue
@@ -523,11 +524,36 @@ def _review_ledger_summary(root, branch):
                 ledger = json.load(handle)
         except (OSError, ValueError):
             continue
-        if ledger.get("branch") != branch:
+        try:
+            mtime_ns = os.stat(path).st_mtime_ns
+        except OSError:
             continue
-        candidates.append((ledger.get("updated_at", ""), name, ledger))
+        candidate = (mtime_ns, name, ledger)
+        if ledger.get("branch") == branch:
+            candidates.append(candidate)
+        else:
+            other_branches.append(candidate)
+    branch_warning = ""
+    if not candidates and len(other_branches) == 1:
+        candidates = other_branches
+        old_branch = candidates[0][2].get("branch") or "(unknown)"
+        branch_warning = (
+            f"- ⚠️ 원장 브랜치 `{old_branch}`와 현재 `{branch}`가 다름 — "
+            "브랜치 rename 여부 확인"
+        )
+    elif not candidates and other_branches:
+        branches = sorted({
+            item[2].get("branch") or "(unknown)" for item in other_branches
+        })
+        return (
+            "## 리뷰 원장 경고\n"
+            f"- 현재 브랜치 `{branch}`와 일치하는 원장은 없고 다른 브랜치 원장이 "
+            f"{len(other_branches)}개 있음: {', '.join(f'`{item}`' for item in branches)}"
+        )
     if candidates:
-        _updated_at, name, ledger = max(candidates)
+        latest_mtime = max(item[0] for item in candidates)
+        latest = [item for item in candidates if item[0] == latest_mtime]
+        _mtime, name, ledger = latest[0]
         findings = [
             item for item in ledger.get("findings", [])
             if isinstance(item, dict) and item.get("status") == "open"
@@ -536,6 +562,13 @@ def _review_ledger_summary(root, branch):
             f"## 리뷰 원장 — PR #{ledger.get('pr', '?')}",
             f"- 로컬 원장: `.claude/.cache/review-ledger/{name}` (gitignore, 원본은 이 머신 한정)",
         ]
+        if branch_warning:
+            lines.append(branch_warning)
+        if len(latest) > 1:
+            lines.append(
+                "- ⚠️ 최신 원장 시각이 같은 후보가 여러 개임: "
+                + ", ".join(f"`{item[1]}`" for item in latest)
+            )
         reviewers = ledger.get("reviewers", [])
         for reviewer in reviewers:
             if not isinstance(reviewer, dict):
