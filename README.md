@@ -71,6 +71,8 @@ SSH로 등록한 marketplace에서도 위 `marketplace upgrade` 명령이 동작
 | `/handoff-save` | 넘기기 전 이식 가능한 상태를 커밋 파일로 저장 |
 | `/handoff-load` | 이어받기 — 커밋된 핸드오프 1순위 + 현재 git 대조 |
 | `/fw` | 툴 전환 이어받기 — **저장 안 했어도** 반대 툴(Codex↔Claude) 세션 로그에서 자동 복원 (같은 머신 한정, 요금제 소진 시) |
+| `/fw-both` | Claude·Codex 양쪽 세션 로그를 함께 대조해 이어받기 |
+| `/history` | Claude·Codex 로컬 세션을 시간순 조회·검색하고 선택한 로그의 `fw` 명령 출력 |
 | `/feedback-review` | 받은 지적을 규칙/스킬로 승격 검토 |
 | `/memory-update` | 배운 것을 공유 메모리로 영속화 (`_pending` 검토·승격) |
 | `/merge-cleanup` | PR merge/close 후 로컬 브랜치·원격 브랜치·이슈·worktree 정리 후보 리포트 |

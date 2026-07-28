@@ -34,6 +34,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -240,7 +241,7 @@ def _summarize_claude_transcript(path):
         "rate_limit": "",
     }
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
                     data = json.loads(line)
@@ -383,40 +384,35 @@ def _codex_rollout_meta(path):
 
 def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
     """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
-    [(mtime, size, path)]. 최근 `days` 일 날짜 디렉토리만 순회해 시작 비용을 제한한다
-    (~/.codex/sessions 는 YYYY/MM/DD 로 분할 저장). +2일 버퍼: 자정 넘긴 세션 포함.
+    [(mtime, size, path)]. 시작 날짜 디렉터리와 무관하게 전체 트리에서 mtime이 최근
+    `days` 안인 파일만 metadata를 읽는다(resume된 오래된 세션 누락 방지).
     exclude_sid: session_meta.id 가 이것과 같으면 제외 — fw both 에서 현재 실행 중인
     Codex 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
     base = _codex_sessions_dir()
     if not os.path.isdir(base):
         return []
     today = datetime.now()
-    date_dirs = [
-        os.path.join(base, f"{d.year:04d}", f"{d.month:02d}", f"{d.day:02d}")
-        for d in (today - timedelta(days=i) for i in range(days + 2))
-    ]
+    cutoff = today.timestamp() - (days * 86400)
     rows = []
-    for dd in date_dirs:
-        if not os.path.isdir(dd):
-            continue
-        try:
-            names = os.listdir(dd)
-        except OSError:
-            continue
+    for directory, _dirs, names in os.walk(base):
         for fn in names:
             if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
                 continue
-            fp = os.path.join(dd, fn)
+            fp = os.path.join(directory, fn)
+            try:
+                mtime = os.path.getmtime(fp)
+                size = os.path.getsize(fp)
+            except OSError:
+                continue
+            if mtime < cutoff:
+                continue
             sid, cwd = _codex_rollout_meta(fp)
             in_project = cwd == root or bool(cwd and cwd.startswith(root + os.sep))
             if not in_project:
                 continue
             if exclude_sid and sid == exclude_sid:
                 continue
-            try:
-                rows.append((os.path.getmtime(fp), os.path.getsize(fp), fp))
-            except OSError:
-                continue
+            rows.append((mtime, size, fp))
     rows.sort(reverse=True)
     return rows[:limit]
 
@@ -425,7 +421,7 @@ def _summarize_codex_rollout(path):
     """Codex rollout JSONL 에서 이어받기 신호(최근 user/assistant 텍스트, 도구명)만 요약."""
     summary = {"last_users": [], "last_assistants": [], "last_tools": []}
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -493,6 +489,141 @@ def _format_codex_deep_recovery(root, limit=1, session=None, exclude_sid=None):
             for item in s["last_tools"]:
                 out.append(f"  - `{item}`")
     return out
+
+
+def _parse_since(value):
+    match = re.fullmatch(r"(\d+)([mhdw])", value or "")
+    if not match:
+        raise ValueError("--since 형식: 30m, 12h, 7d, 2w")
+    amount = int(match.group(1))
+    if amount <= 0:
+        raise ValueError("--since는 1 이상이어야 합니다")
+    units = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
+    seconds = amount * units[match.group(2)]
+    if seconds > 3650 * 86400:
+        raise ValueError("--since는 최대 10년까지 허용합니다")
+    return seconds
+
+
+def _contains_keyword(path, keyword):
+    if not keyword:
+        return True
+    needle = keyword.casefold()
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return any(needle in line.casefold() for line in handle)
+    except OSError:
+        return False
+
+
+def _history_rows(root, from_tool="both", limit=20, since="30d", grep=None, no_content=False):
+    cutoff = datetime.now().timestamp() - _parse_since(since)
+    candidates = []
+    if from_tool in ("claude", "both"):
+        for mtime, size, path in _recent_claude_transcripts(root, limit=10000):
+            if mtime >= cutoff:
+                candidates.append(("claude", mtime, size, path))
+    if from_tool in ("codex", "both"):
+        days = max(1, int(_parse_since(since) / 86400) + 1)
+        for mtime, size, path in _recent_codex_rollouts(root, limit=10000, days=days):
+            if mtime >= cutoff:
+                candidates.append(("codex", mtime, size, path))
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    if grep:
+        candidates = candidates[:200]
+
+    rows = []
+    for tool, mtime, size, path in candidates:
+        if grep and not _contains_keyword(path, grep):
+            continue
+        if no_content:
+            snippet = ""
+            if tool == "claude":
+                project_match = "Claude project directory key"
+            else:
+                _sid, cwd = _codex_rollout_meta(path)
+                project_match = "exact cwd" if cwd == root else "nested cwd"
+        elif tool == "claude":
+            summary = _summarize_claude_transcript(path)
+            snippet = summary["last_prompt"]
+            project_match = "Claude project directory key"
+        else:
+            _sid, cwd = _codex_rollout_meta(path)
+            summary = _summarize_codex_rollout(path)
+            snippet = summary["last_users"][-1] if summary["last_users"] else ""
+            project_match = "exact cwd" if cwd == root else "nested cwd"
+        if "\ufffd" in snippet:
+            snippet = ""
+        rows.append({
+            "time": datetime.fromtimestamp(mtime).astimezone().isoformat(timespec="seconds"),
+            "tool": tool,
+            "path": path,
+            "size": size,
+            "project_match": project_match,
+            "snippet": _clip(snippet, 160),
+            "resume_command": _history_resume_command(root, path),
+        })
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def _history_resume_command(root, path):
+    return " ".join([
+        shlex.quote(sys.executable),
+        shlex.quote(os.path.abspath(__file__)),
+        "fw",
+        "--session",
+        shlex.quote(path),
+        "--project-dir",
+        shlex.quote(root),
+    ])
+
+
+def _render_history(root, rows, no_content=False):
+    if not rows:
+        return "# Session history\n\n조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+    lines = [
+        "# Session history (read-only)",
+        "",
+        f"- Project: `{root}`",
+        f"- Results: {len(rows)}",
+    ]
+    for index, row in enumerate(rows, 1):
+        lines.extend([
+            "",
+            f"## {index}. {row['time']} · {row['tool']}",
+            f"- 로그 경로: `{row['path']}`",
+            f"- 프로젝트 매치: {row['project_match']} · {row['size']} bytes",
+        ])
+        if not no_content:
+            lines.append(f"- 마지막 사용자 입력: {row['snippet'] or '(파싱 가능한 입력 없음)'}")
+        lines.append(f"- 이어받기: `{row['resume_command']}`")
+    return "\n".join(lines)
+
+
+def cmd_history(args):
+    root = repo_root(getattr(args, "project_dir", None))
+    if args.limit <= 0:
+        print("ERROR: --limit은 1 이상이어야 합니다.", file=sys.stderr)
+        return 2
+    try:
+        rows = _history_rows(
+            root,
+            from_tool=args.from_tool,
+            limit=args.limit,
+            since=args.since,
+            grep=args.grep,
+            no_content=args.no_content,
+        )
+    except ValueError as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps({"project": root, "rows": rows}, ensure_ascii=False, indent=2))
+    else:
+        print(_render_history(root, rows, no_content=args.no_content))
+    return 0
 
 
 def _facts_lines(facts, header):
@@ -795,7 +926,7 @@ def cmd_fw(args):
 
 
 def main():
-    p = argparse.ArgumentParser(description="작업 핸드오프 (save/load/fw)")
+    p = argparse.ArgumentParser(description="작업 핸드오프 (save/load/fw/history)")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("save", help="현재 작업 상태를 핸드오프 파일로 저장")
@@ -837,6 +968,20 @@ def main():
                     help="프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR env → cwd 의 git 루트 순. "
                          "스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
     fw.set_defaults(func=cmd_fw)
+
+    history = sub.add_parser("history", help="Claude·Codex 세션 로그 읽기 전용 목록·검색")
+    history.add_argument("--from", dest="from_tool", default="both",
+                         choices=["claude", "codex", "both"],
+                         help="조회할 툴 (기본 both)")
+    history.add_argument("--limit", type=int, default=20, help="최대 결과 수 (기본 20)")
+    history.add_argument("--since", default="30d", help="조회 기간: 30m, 12h, 7d, 2w (기본 30d)")
+    history.add_argument("--grep", help="후보 JSONL 전체에서 대소문자 무시 키워드 검색")
+    history.add_argument("--no-content", action="store_true",
+                         help="프롬프트 snippet을 숨기고 경로·메타데이터만 출력")
+    history.add_argument("--json", action="store_true", help="JSON 출력")
+    history.add_argument("--project-dir", dest="project_dir",
+                         help="프로젝트 루트 절대경로. 플러그인 캐시에서 실행할 때 필수.")
+    history.set_defaults(func=cmd_history)
 
     args = p.parse_args()
     sys.exit(args.func(args))
