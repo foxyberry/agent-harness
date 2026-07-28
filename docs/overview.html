@@ -494,7 +494,7 @@ type: feedback | project | reference
   <table>
     <thead><tr><th>명령</th><th>언제 쓰나</th><th>찾아주는 것</th></tr></thead>
     <tbody>
-      <tr><td><code>/merge-cleanup</code></td><td>PR 머지한 직후</td><td>뒤처진 main, 남은 브랜치, 안 닫힌 이슈, worktree·임시파일 잔여물<br><span class="muted">squash merge의 로컬 브랜치 판정은 이슈 #50에서 보완 예정</span></td></tr>
+      <tr><td><code>/merge-cleanup</code></td><td>PR 머지한 직후</td><td>뒤처진 main, 남은 브랜치, 안 닫힌 이슈, worktree·임시파일 잔여물<br><span class="muted">squash merge의 로컬 브랜치·연결 worktree 판정은 이슈 #50에서 보완 예정</span></td></tr>
       <tr><td><code>/stale-scan</code></td><td>이슈 백로그 정리할 때</td><td>오래 열려 있지만 <b>이미 해결된</b> 이슈 — 근거로 머지된 PR을 함께 보여줌</td></tr>
       <tr><td><code>/prettier-guard</code></td><td><code>prettier --write</code> 돌리기 전</td><td>남의 미완성 변경이 섞인 파일을 빼고, 안전한 명령을 대신 제안</td></tr>
     </tbody>
@@ -601,7 +601,7 @@ codex plugin add agent-harness@foxyberry
 
   <h2>상태</h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Claude용 사본 — 스킬 9개 + 스스로 돌아보는 훅 4개 구현·스모크 테스트 완료</li>
+    <li><span class="badge done">DONE</span> Claude용 사본 — 스킬 9개 스모크 테스트 완료 + 스스로 돌아보는 훅 4개 구현</li>
     <li><span class="badge done">DONE</span> 정리·점검 명령 — <code>/merge-cleanup</code>·<code>/stale-scan</code>·<code>/prettier-guard</code>. 셋 다 제안만 하고 직접 실행하지 않는다</li>
     <li><span class="badge soon">NEXT</span> <code>/merge-cleanup</code>의 squash merge 로컬 브랜치 판정 보완 — 이슈 #50</li>
     <li><span class="badge done">DONE</span> 실제 설치 검증 — Claude·Codex 양쪽에서 marketplace로 받아 설치하고, <b>설치된 사본으로</b> 스킬을 돌려봤다. Claude가 저장한 핸드오프를 Codex가 그대로 읽는 것까지 확인</li>
