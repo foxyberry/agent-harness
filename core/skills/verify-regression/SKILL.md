@@ -24,6 +24,7 @@ argument-hint: "테스트 경로, source 경로, 테스트 실행 명령"
 옵션:
 - 테스트 경로는 마지막에 하나 이상 지정한다. 각 경로를 별도 프로세스로 실행해 개별 분류한다.
 - `--source`는 base로 되돌릴 구현 파일이다. 여러 개면 반복 지정한다.
+- `--source`는 파일만 허용하며 디렉터리는 잘못된 판정을 막기 위해 거부한다.
 - `--base merge-base`가 기본이며 `HEAD`와 `origin/main`의 merge-base를 사용한다.
 - 아직 source 수정이 커밋 전이면 `--base HEAD`를 사용한다.
 - 기본 브랜치가 다르면 `--base-ref origin/master`처럼 명시한다.
@@ -48,6 +49,10 @@ PASS 테스트를 삭제하라는 뜻이 아니다. 회귀 재현이 아니라 �
 base로 바꾼 뒤 다시 실행한다. 수정 후 baseline 자체가 실패하면 회귀로 과대 보고하지 않고
 `inconclusive`로 분류한다. 성공·실패·timeout·중단 시 `finally`에서 worktree를 제거한다.
 실행 전후 원본 `git status --porcelain`이 다르거나 cleanup 경고/inconclusive가 있으면 exit 2다.
+
+첫 실행은 임시 worktree가 실행 중 `git status`나 `git add -A`에 노출되지 않도록 사용자
+저장소의 로컬 `.git/info/exclude`에 `.claude/.cache/`를 영구적으로 한 번 등록한다.
+커밋되는 `.gitignore`는 수정하지 않으며, 같은 항목을 중복 추가하지 않는다.
 
 임시 worktree는 프로젝트 아래에 있어 상위 `node_modules`를 찾을 수 있지만, `.env` 등
 gitignore된 런타임 파일은 자동 복사하지 않는다. 필요한 설정은 테스트 명령에서 안전하게 주입한다.

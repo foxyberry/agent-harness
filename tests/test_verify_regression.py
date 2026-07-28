@@ -136,8 +136,17 @@ class VerifyRegressionTest(unittest.TestCase):
             "slow_test.py", extra=["--timeout", "1", "--json"], check=False
         )
         self.assertEqual(result.returncode, 2)
-        self.assertIn('"classification": "inconclusive (fixed baseline failed)"', result.stdout)
+        self.assertIn('"classification": "inconclusive (fixed baseline timeout)"', result.stdout)
         self.assertIn('"exit_code": null', result.stdout)
+
+    def test_rejects_source_directory(self):
+        (self.root / "pkg").mkdir()
+        (self.root / "pkg" / "new.py").write_text("VALUE = True\n")
+        result = self.run_cli(
+            "guard_test.py", extra=["--source", "pkg"], check=False
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--source는 파일만", result.stderr)
 
     def test_locked_worktree_is_unlocked_and_removed(self):
         path = self.root / ".claude" / ".cache" / "locked-worktree"

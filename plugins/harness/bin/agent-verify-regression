@@ -108,16 +108,21 @@ def ensure_local_exclude(root):
 def execute_test(argv, cwd, timeout):
     try:
         completed = run(argv, cwd, timeout=timeout)
+        combined = "\n".join(
+            value for value in (completed.stdout, completed.stderr) if value
+        )
         return {
             "exit_code": completed.returncode,
-            "output": clip_output(completed.stdout or completed.stderr).replace(
+            "output": clip_output(combined).replace(
                 str(cwd), "<temp-worktree>"
             ),
+            "timed_out": False,
         }
     except subprocess.TimeoutExpired:
         return {
             "exit_code": None,
             "output": f"timeout after {timeout}s",
+            "timed_out": True,
         }
 
 
@@ -213,10 +218,15 @@ def verify(root, tests, sources, base, command, timeout):
             baseline = execute_test(argv, temp_dir, timeout)
             baselines[test] = (argv, baseline)
             if baseline["exit_code"] != 0:
+                reason = (
+                    "inconclusive (fixed baseline timeout)"
+                    if baseline["timed_out"]
+                    else "inconclusive (fixed baseline failed)"
+                )
                 results.append({
                     "test": test,
                     "pre_fix": "NOT RUN",
-                    "classification": "inconclusive (fixed baseline failed)",
+                    "classification": reason,
                     "exit_code": baseline["exit_code"],
                     "output": baseline["output"],
                 })
@@ -301,6 +311,13 @@ def main():
         if args.timeout <= 0:
             raise RuntimeError("--timeout은 1초 이상이어야 합니다")
         base = resolve_base(root, args.base, args.base_ref)
+        for source in sources:
+            current = root / source
+            base_type = run(["git", "cat-file", "-t", f"{base}:{source}"], root)
+            if current.is_dir() or (
+                base_type.returncode == 0 and base_type.stdout.strip() == "tree"
+            ):
+                raise RuntimeError(f"--source는 파일만 허용합니다: {source}")
         result = verify(root, tests, sources, base, args.command, args.timeout)
         print(json.dumps(result, ensure_ascii=False, indent=2) if args.json else render_markdown(result))
         return (
