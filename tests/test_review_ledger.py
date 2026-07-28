@@ -133,14 +133,30 @@ class ReviewLedgerTest(unittest.TestCase):
         self.assertIn("Codex thread `codex-thread`", summary)
 
     def test_handoff_uses_latest_ledger_for_same_branch(self):
-        self.run_cli("init", "--pr", "123")
-        first_path = review_ledger.ledger_path(self.root, 123)
+        self.run_cli("init", "--pr", "10")
+        first_path = review_ledger.ledger_path(self.root, 10)
         os.utime(first_path, ns=(1_000_000_000, 1_000_000_000))
-        self.run_cli("init", "--pr", "124")
+        self.run_cli("init", "--pr", "2")
 
         summary = handoff._review_ledger_summary(str(self.root), "feature")
 
-        self.assertIn("PR #124", summary)
+        self.assertIn("PR #2", summary)
+        self.assertNotIn("PR #10", summary)
+
+    def test_handoff_includes_ledger_freshness_and_finding_round(self):
+        self.run_cli("init", "--pr", "123")
+        self.run_cli("add", "--pr", "123", "--severity", "P1", "--claim", "race")
+        summary = handoff._review_ledger_summary(str(self.root), "feature")
+        self.assertIn("원장 상태: round 1 · updated", summary)
+        self.assertIn("(opened round 1)", summary)
+
+    def test_same_status_update_does_not_double_count_resolution(self):
+        self.run_cli("init", "--pr", "123")
+        self.run_cli("add", "--pr", "123", "--severity", "P2", "--claim", "race")
+        self.run_cli("update", "--pr", "123", "F-001", "--status", "fixed")
+        self.run_cli("update", "--pr", "123", "F-001", "--status", "fixed")
+        report = self.run_cli("show", "--pr", "123").stdout
+        self.assertIn("Round 1: new 1 / fixed 1", report)
 
     def test_handoff_warns_after_branch_rename_when_only_one_ledger_exists(self):
         self.run_cli("init", "--pr", "123")

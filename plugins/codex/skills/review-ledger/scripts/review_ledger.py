@@ -162,7 +162,7 @@ def event(ledger, action, finding=None, **extra):
 
 ABSENCE_PATTERN = re.compile(
     r"(없(?:다|음|는)|누락|존재하지|missing|does not exist|doesn't exist|"
-    r"no (?:test|file|case|reference|implementation)|lacks?\b)",
+    r"no (?:test|file|case|reference|implementation|guard|handler|function|method)|lacks?\b)",
     re.IGNORECASE,
 )
 
@@ -333,7 +333,12 @@ def cmd_update(args):
         if args.evidence:
             finding.setdefault("evidence", []).extend(args.evidence)
         finding["updated_at"] = now_iso()
-        action = "opened" if args.status == "open" and previous != "open" else args.status
+        if args.status == previous:
+            action = "evidence_updated"
+        elif args.status == "open":
+            action = "opened"
+        else:
+            action = args.status
         event(ledger, action, args.id, previous=previous, evidence=args.evidence or [])
         ledger["branch"] = current_branch(root)
         save_ledger(root, args.pr, ledger)

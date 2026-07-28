@@ -561,6 +561,7 @@ def _review_ledger_summary(root, branch):
         lines = [
             f"## 리뷰 원장 — PR #{ledger.get('pr', '?')}",
             f"- 로컬 원장: `.claude/.cache/review-ledger/{name}` (gitignore, 원본은 이 머신 한정)",
+            f"- 원장 상태: round {ledger.get('round', '?')} · updated `{ledger.get('updated_at', '?')}`",
         ]
         if branch_warning:
             lines.append(branch_warning)
@@ -590,7 +591,8 @@ def _review_ledger_summary(root, branch):
                         source += f" thread `{thread}`"
                 lines.append(
                     f"  - {item.get('id', '?')} [{item.get('severity', '?')}] "
-                    f"{loc} — {item.get('claim', '')}{source}"
+                    f"{loc} — {item.get('claim', '')}{source} "
+                    f"(opened round {item.get('round_opened', '?')})"
                 )
         else:
             lines.append("- open findings: 없음")
