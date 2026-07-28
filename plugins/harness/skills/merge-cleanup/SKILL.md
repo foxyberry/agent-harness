@@ -33,10 +33,10 @@ agent-merge-cleanup
 ## 리포트가 보는 것
 
 - 기본 브랜치 동기화: local `<default>` 와 `origin/<default>` 의 ahead/behind, fast-forward 가능 여부
-- 로컬 merged 브랜치 삭제 후보: 기본 브랜치에 이미 병합된 로컬 브랜치
+- 로컬 정리 브랜치 삭제 후보: git ancestry 로 병합됐거나, 같은 저장소의 merged/closed PR head 와 일치하는 로컬 브랜치. PR 이후 tip 이 바뀌었으면 강제 삭제를 제안하지 않음
 - 원격 브랜치 삭제 후보: 최근 merged/closed PR 의 head branch 가 아직 `origin/` 에 남아 있는 경우
 - 관련 이슈 close 확인 후보: 최근 merged PR 의 `closingIssuesReferences`
-- worktree 정리 후보: 이미 병합된 로컬 브랜치를 물고 있는 worktree
+- worktree 정리 후보: 위 로컬 정리 브랜치를 물고 있는 worktree
 - untracked 잔여물: `git status --short` 의 `??` 파일
 - memory-update 리마인드: 남길 교훈이 있으면 `/feedback-review`·`/memory-update`
 
