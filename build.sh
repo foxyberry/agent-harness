@@ -23,6 +23,8 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       -e "s|{{PRETTIER_GUARD}}|$PRETTIER_GUARD|g" \
       -e "s|{{PRETTIER_GUARD_EXAMPLE}}|$PRETTIER_GUARD_EXAMPLE|g" \
       -e "s|{{PRETTIER_GUARD_NOTE}}|$PRETTIER_GUARD_NOTE|g" \
+      -e "s|{{REVIEW_LEDGER_EXAMPLE}}|$REVIEW_LEDGER_EXAMPLE|g" \
+      -e "s|{{REVIEW_LEDGER_NOTE}}|$REVIEW_LEDGER_NOTE|g" \
       "$1" > "$2"
 }
 
@@ -41,15 +43,19 @@ cp core/scripts/stale_collect.py plugins/harness/bin/stale_collect.py
 cp core/scripts/stale_resolve.py plugins/harness/bin/stale_resolve.py
 cp core/scripts/merge_cleanup.py plugins/harness/bin/agent-merge-cleanup
 cp core/scripts/prettier_guard.py plugins/harness/bin/agent-prettier-guard
+cp core/scripts/review_ledger.py plugins/harness/bin/agent-review-ledger
 chmod +x plugins/harness/bin/agent-stale
 chmod +x plugins/harness/bin/agent-merge-cleanup
 chmod +x plugins/harness/bin/agent-prettier-guard
+chmod +x plugins/harness/bin/agent-review-ledger
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff
 STALE=agent-stale; STALE_NOTE=''   # Claude: bin/ 이 PATH 등록 — 경로 주석 불필요
 MERGE_CLEANUP=agent-merge-cleanup; MERGE_CLEANUP_NOTE=''
 MERGE_CLEANUP_EXAMPLE='agent-merge-cleanup'
 PRETTIER_GUARD=agent-prettier-guard; PRETTIER_GUARD_NOTE=''
 PRETTIER_GUARD_EXAMPLE='agent-prettier-guard'
+REVIEW_LEDGER_EXAMPLE='agent-review-ledger'
+REVIEW_LEDGER_NOTE=''
 DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
@@ -101,6 +107,8 @@ MERGE_CLEANUP_EXAMPLE='python3 scripts/merge_cleanup.py --project-dir "<지금 �
 PRETTIER_GUARD='python3 scripts/prettier_guard.py'
 PRETTIER_GUARD_NOTE='> ⚠️ 위 `scripts/prettier_guard.py` 는 이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로다. 그 스킬 폴더로 cd 한 뒤 실행하되, `--project-dir` 에 지금 작업 중인 사용자 프로젝트의 실제 절대경로를 넘겨라. 이 인자 없이는 플러그인 캐시를 검사할 수 있다.'
 PRETTIER_GUARD_EXAMPLE='python3 scripts/prettier_guard.py --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>"'
+REVIEW_LEDGER_EXAMPLE='python3 scripts/review_ledger.py --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>"'
+REVIEW_LEDGER_NOTE='> ⚠️ `scripts/review_ledger.py` 는 이 스킬 폴더 기준 상대경로다. 스킬 폴더에서 실행하고 `--project-dir` 에 사용자 프로젝트 절대경로를 넘겨라.'
 DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 스킬 폴더로 cd 해 실행하되,
 # 스크립트가 cwd 기준 git 루트로 프로젝트를 찾으므로(스킬 폴더=플러그인 캐시는 사용자 repo 밖일 수 있음)
@@ -125,6 +133,7 @@ cp core/scripts/stale.py core/scripts/stale_collect.py core/scripts/stale_resolv
    plugins/codex/skills/stale-scan/scripts/
 cp core/scripts/merge_cleanup.py plugins/codex/skills/merge-cleanup/scripts/
 cp core/scripts/prettier_guard.py plugins/codex/skills/prettier-guard/scripts/
+cp core/scripts/review_ledger.py plugins/codex/skills/review-ledger/scripts/
 
 # 렌더 후 미치환 placeholder 가드 — SKILL.md 만 검사한다.
 # (번들된 스크립트는 검사 제외: stale_resolve.py 의 GraphQL f-string `{{` 처럼
