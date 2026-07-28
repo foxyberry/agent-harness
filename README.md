@@ -26,7 +26,7 @@
 Claude Code는 등록된 GitHub 인증을 재사용해 현재 private repo도 `owner/repo` 형식으로 설치된다.
 로컬 테스트: `/plugin marketplace add ./` (repo 루트에서)
 
-### Codex (skill-only plugin) — *installer 구축 중*
+### Codex (skill-only plugin)
 ```
 codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
 codex plugin add agent-harness@foxyberry
@@ -34,7 +34,8 @@ codex plugin add agent-harness@foxyberry
 ```
 현재 저장소는 비공개라 GitHub SSH 접근 권한이 필요하다. `owner/repo` 형식은 HTTPS clone 을
 사용하므로 공개 저장소가 되기 전에는 인증 없이 실패한다.
-`installers/install-codex.sh`(config.toml merge)는 아직 미구현 — 현재는 위 marketplace 방식.
+별도 installer가 사용자 설정을 직접 수정하지 않는다. 설치·업데이트·캐시는 Codex의 공식
+plugin marketplace CLI가 관리한다.
 
 ### 업데이트
 
@@ -103,9 +104,11 @@ CI(`.github/workflows/validate.yml`)가 JSON·스크립트 문법 + **core↔ada
 
 ## 상태
 
-구축 중.
-- ✅ Claude GitHub marketplace 설치 live 검증 — 스킬 9개·훅 이벤트 4개 정상 인식, 설치 캐시의 handoff-save 실행 완료
-- ✅ Codex GitHub marketplace 설치 live 검증 — `0.4.1`, 스킬 9개 정상 노출, 설치 캐시의 handoff-load·stale-scan 실행 완료 ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3))
+사용 가능.
+- ✅ Claude GitHub marketplace 설치 live 검증 — 훅 이벤트 인식과 설치 캐시의 handoff-save 실행 완료
+- ✅ Codex GitHub marketplace 설치 live 검증 — `0.4.1`의 스킬 9개 노출과 설치 캐시의 handoff-load·stale-scan 실행 완료 ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3))
+- ✅ 현재 `0.4.6` 패키지 — 양쪽 어댑터에 스킬 12개 포함, 빌드·CI로 동기화 검증
 - ✅ 크로스툴 스모크 테스트 — Claude 설치본이 저장한 handoff 를 Codex 설치본이 정상 로드
+- ✅ 프로젝트 템플릿·공유 메모리 governance — `_pending` 초안은 사람 승인 후에만 승격
 - 🔜 Claude 훅 live-fire 검증 — 설치본의 훅 이벤트 인식은 확인했지만 실제 발화·주입은 별도 검증 필요
-- 🔜 Codex 어댑터 훅(버전 취약으로 defer)·installer(config merge)·governance 자동화
+- 🔜 Codex 어댑터 훅(버전 취약으로 defer)
