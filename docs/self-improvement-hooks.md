@@ -119,7 +119,8 @@ pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
 렌더 중 `ref.current` 분기, effect 첫 동작의 컬렉션 초기화를 경고한다. 정규식은 AST나
 실행 순서를 확정하지 못하므로 경고를 버그 판정으로 취급하지 않는다. 실제 scope를 확인하고
 `renderHook` + `rerender`로 pending/reject, 계정 전환, unmount/remount 순서를 재현한다.
-- `glob`: 적용 파일. `globs`: 여러 파일 패턴 배열(둘 다 생략 시 전체).
+- `glob`: 적용 파일. `globs`: 여러 파일 패턴 배열(둘 다 생략 시 전체). 지정한 값이
+  문자열/문자열 배열이 아니거나 배열이 비어 있으면 범위를 넓히지 않고 해당 규칙을 건너뛴다.
 - `regex`: Python re 패턴. `enabled: false`: 해당 규칙만 비활성.
 - `min_count`: 이 수 이상일 때만(기본 1).
 - `message`: `{count}` 는 매칭 수로 치환.

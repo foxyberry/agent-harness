@@ -89,6 +89,14 @@ class PackLoadingTest(unittest.TestCase):
                 msg=f"unexpected match for globs={globs!r}",
             )
 
+    def test_invalid_glob_does_not_expand_to_all_files(self):
+        for glob in ([], 42):
+            rule = {"glob": glob, "regex": "catch", "message": "candidate"}
+            self.assertIsNone(
+                reflection._apply_rule(rule, "README.md", "catch"),
+                msg=f"unexpected match for glob={glob!r}",
+            )
+
     def test_string_globs_is_treated_as_one_pattern(self):
         rule = {"globs": "*.ts", "regex": "catch", "message": "candidate"}
         self.assertIsNotNone(
@@ -121,10 +129,22 @@ class ReactTimingPackTest(unittest.TestCase):
             "setWords((prev: Set<string>) => localStorage.setItem('words', '[]'));",
         )
 
-    def test_updater_does_not_cross_function_boundary(self):
+    def test_updater_does_not_cross_statement_boundary(self):
         self.assert_rule_does_not_match(
             0,
             "setWords(prev => new Set(prev));\nlocalStorage.setItem('x', '1');",
+        )
+
+    def test_updater_does_not_cross_asi_statement_boundary(self):
+        self.assert_rule_does_not_match(
+            0,
+            "setWords(prev => new Set(prev))\nlocalStorage.setItem('x', '1')",
+        )
+
+    def test_updater_does_not_cross_function_boundary(self):
+        self.assert_rule_does_not_match(
+            0,
+            "setWords(prev => prev); function save() { localStorage.setItem('x', '1'); }",
         )
 
     def test_catch_without_completion_signal_candidate(self):
@@ -161,6 +181,9 @@ class ReactTimingPackTest(unittest.TestCase):
 
     def test_ref_render_branch_candidate(self):
         self.assert_rule_matches(2, "const canSave = loadedRef.current === true;")
+
+    def test_ref_optional_chain_is_not_a_branch_candidate(self):
+        self.assert_rule_does_not_match(2, "const value = loadedRef.current?.value;")
 
     def test_effect_initial_reset_candidate(self):
         self.assert_rule_matches(

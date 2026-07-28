@@ -90,8 +90,13 @@ def _apply_rule(rule, file_path, content):
         if not patterns:
             return None
     else:
-        glob = rule.get("glob")
-        patterns = [glob] if isinstance(glob, str) else []
+        if "glob" in rule:
+            glob = rule["glob"]
+            if not isinstance(glob, str):
+                return None
+            patterns = [glob]
+        else:
+            patterns = []
     if patterns and not any(fnmatch.fnmatch(file_path, pattern) for pattern in patterns):
         return None
     regex = rule.get("regex")
