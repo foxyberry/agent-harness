@@ -81,6 +81,21 @@ class PackLoadingTest(unittest.TestCase):
             reflection._apply_rule(rule, "fixtures/package.json", "catch")
         )
 
+    def test_invalid_or_empty_globs_do_not_expand_to_all_files(self):
+        for globs in ([], [1, 2], 42):
+            rule = {"globs": globs, "regex": "catch", "message": "candidate"}
+            self.assertIsNone(
+                reflection._apply_rule(rule, "README.md", "catch"),
+                msg=f"unexpected match for globs={globs!r}",
+            )
+
+    def test_string_globs_is_treated_as_one_pattern(self):
+        rule = {"globs": "*.ts", "regex": "catch", "message": "candidate"}
+        self.assertIsNotNone(
+            reflection._apply_rule(rule, "src/useProgress.ts", "catch")
+        )
+        self.assertIsNone(reflection._apply_rule(rule, "README.md", "catch"))
+
 
 class ReactTimingPackTest(unittest.TestCase):
     @classmethod
@@ -109,7 +124,7 @@ class ReactTimingPackTest(unittest.TestCase):
     def test_updater_does_not_cross_function_boundary(self):
         self.assert_rule_does_not_match(
             0,
-            "setWords(prev => prev); function save() { localStorage.setItem('x', '1'); }",
+            "setWords(prev => new Set(prev));\nlocalStorage.setItem('x', '1');",
         )
 
     def test_catch_without_completion_signal_candidate(self):
@@ -121,7 +136,13 @@ class ReactTimingPackTest(unittest.TestCase):
     def test_catch_with_completion_signal_is_not_flagged(self):
         self.assert_rule_does_not_match(
             1,
-            "try { await load(); } catch (error) { report(error); setIsLoaded(true); }",
+            "try { await load(); } catch (error) { report(error); setIsLoadedFlag(true); }",
+        )
+
+    def test_promise_catch_without_completion_signal_candidate(self):
+        self.assert_rule_matches(
+            1,
+            "load().catch((error) => { report(error); });",
         )
 
     def test_completion_signal_after_catch_does_not_hide_candidate(self):

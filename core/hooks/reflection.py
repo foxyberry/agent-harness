@@ -79,9 +79,16 @@ def _apply_rule(rule, file_path, content):
         return None
     if rule.get("enabled") is False:
         return None
-    globs = rule.get("globs")
-    if isinstance(globs, list):
-        patterns = [pattern for pattern in globs if isinstance(pattern, str)]
+    if "globs" in rule:
+        globs = rule["globs"]
+        if isinstance(globs, str):
+            patterns = [globs]
+        elif isinstance(globs, list):
+            patterns = [pattern for pattern in globs if isinstance(pattern, str)]
+        else:
+            return None
+        if not patterns:
+            return None
     else:
         glob = rule.get("glob")
         patterns = [glob] if isinstance(glob, str) else []

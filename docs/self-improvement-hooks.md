@@ -126,7 +126,8 @@ pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
 
 PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조각만 검사한다. 여러 줄 구조가
 조각 밖에 걸쳐 있으면 경고를 놓치거나 문맥 부족으로 후보를 넓게 잡을 수 있다. `Write`는 파일
-전체를 검사하지만, 두 경우 모두 경고는 확인을 위한 신호이며 정적 분석 결과가 아니다.
+전체를 검사하지만, 두 경우 모두 경고는 확인을 위한 신호이며 정적 분석 결과가 아니다. 스타터
+팩의 bounded regex는 중첩 블록을 따라가지 않으므로 경고가 없다고 안전이 보장되는 것도 아니다.
 
 ### pr-merge-reflect — 머지 회고 루프 (핵심)
 - **이벤트**: PostToolUse `Bash`, SessionStart, UserPromptSubmit
