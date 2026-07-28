@@ -34,10 +34,10 @@ import argparse
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
-import shlex
 from datetime import datetime, timedelta, timezone
 
 HANDOFF_DIR = ".claude/handoff"
@@ -241,7 +241,7 @@ def _summarize_claude_transcript(path):
         "rate_limit": "",
     }
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
                     data = json.loads(line)
@@ -384,40 +384,35 @@ def _codex_rollout_meta(path):
 
 def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
     """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
-    [(mtime, size, path)]. 최근 `days` 일 날짜 디렉토리만 순회해 시작 비용을 제한한다
-    (~/.codex/sessions 는 YYYY/MM/DD 로 분할 저장). +2일 버퍼: 자정 넘긴 세션 포함.
+    [(mtime, size, path)]. 시작 날짜 디렉터리와 무관하게 전체 트리에서 mtime이 최근
+    `days` 안인 파일만 metadata를 읽는다(resume된 오래된 세션 누락 방지).
     exclude_sid: session_meta.id 가 이것과 같으면 제외 — fw both 에서 현재 실행 중인
     Codex 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
     base = _codex_sessions_dir()
     if not os.path.isdir(base):
         return []
     today = datetime.now()
-    date_dirs = [
-        os.path.join(base, f"{d.year:04d}", f"{d.month:02d}", f"{d.day:02d}")
-        for d in (today - timedelta(days=i) for i in range(days + 2))
-    ]
+    cutoff = today.timestamp() - (days * 86400)
     rows = []
-    for dd in date_dirs:
-        if not os.path.isdir(dd):
-            continue
-        try:
-            names = os.listdir(dd)
-        except OSError:
-            continue
+    for directory, _dirs, names in os.walk(base):
         for fn in names:
             if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
                 continue
-            fp = os.path.join(dd, fn)
+            fp = os.path.join(directory, fn)
+            try:
+                mtime = os.path.getmtime(fp)
+                size = os.path.getsize(fp)
+            except OSError:
+                continue
+            if mtime < cutoff:
+                continue
             sid, cwd = _codex_rollout_meta(fp)
             in_project = cwd == root or bool(cwd and cwd.startswith(root + os.sep))
             if not in_project:
                 continue
             if exclude_sid and sid == exclude_sid:
                 continue
-            try:
-                rows.append((os.path.getmtime(fp), os.path.getsize(fp), fp))
-            except OSError:
-                continue
+            rows.append((mtime, size, fp))
     rows.sort(reverse=True)
     return rows[:limit]
 
@@ -426,7 +421,7 @@ def _summarize_codex_rollout(path):
     """Codex rollout JSONL 에서 이어받기 신호(최근 user/assistant 텍스트, 도구명)만 요약."""
     summary = {"last_users": [], "last_assistants": [], "last_tools": []}
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 try:
                     d = json.loads(line)
@@ -534,7 +529,8 @@ def _history_rows(root, from_tool="both", limit=20, since="30d", grep=None, no_c
             if mtime >= cutoff:
                 candidates.append(("codex", mtime, size, path))
     candidates.sort(key=lambda item: item[1], reverse=True)
-    candidates = candidates[:200]
+    if grep:
+        candidates = candidates[:200]
 
     rows = []
     for tool, mtime, size, path in candidates:
@@ -549,15 +545,15 @@ def _history_rows(root, from_tool="both", limit=20, since="30d", grep=None, no_c
                 project_match = "exact cwd" if cwd == root else "nested cwd"
         elif tool == "claude":
             summary = _summarize_claude_transcript(path)
-            snippet = summary["last_prompt"] or (
-                summary["last_users"][-1] if summary["last_users"] else ""
-            )
+            snippet = summary["last_prompt"]
             project_match = "Claude project directory key"
         else:
             _sid, cwd = _codex_rollout_meta(path)
             summary = _summarize_codex_rollout(path)
             snippet = summary["last_users"][-1] if summary["last_users"] else ""
             project_match = "exact cwd" if cwd == root else "nested cwd"
+        if "\ufffd" in snippet:
+            snippet = ""
         rows.append({
             "time": datetime.fromtimestamp(mtime).astimezone().isoformat(timespec="seconds"),
             "tool": tool,

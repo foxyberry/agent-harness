@@ -32,12 +32,15 @@ agent-handoff history --no-content
 - `--from claude|codex|both` (기본 both)
 - `--limit N` (기본 20)
 - `--since 30m|12h|7d|2w` (기본 30d)
-- `--grep <키워드>` — 최근 기간의 최신 후보 최대 200개 안에서 JSONL 전체를 대소문자 무시 검색
+- `--grep <키워드>` — 최근 기간의 최신 후보 최대 200개(파일 개수 기준) 안에서 JSONL 전체를 대소문자 무시 검색
 - `--no-content` — 프롬프트를 터미널에 표시하지 않고 경로·메타데이터만 조회
 - `--json` — 자동화용
 
 로그 형식은 툴 버전에 따라 바뀔 수 있어 best-effort로 파싱한다. 파싱할 수 없는 snippet은
 비워 두되 목록 전체를 실패시키지 않는다. Claude는 프로젝트 디렉터리 키, Codex는 rollout의
 `cwd`로 프로젝트를 판별하므로 오탐·누락 가능성이 있다.
+
+Codex rollout은 시작 날짜 디렉터리가 오래됐어도 최근 resume로 파일 mtime이 바뀔 수 있어,
+날짜 폴더가 아니라 전체 세션 트리의 mtime을 먼저 확인한 뒤 `--since`를 적용한다.
 
 `history`는 목록·검색·경로 출력까지만 한다. 자동 복원하거나 로그를 수정하지 않는다.

@@ -25,6 +25,9 @@ class HistoryTest(unittest.TestCase):
                     "role": "user",
                     "content": [{"type": "text", "text": "fix payment retry"}],
                 }
+            }) + "\n" + json.dumps({
+                "type": "last-prompt",
+                "lastPrompt": "fix payment retry",
             }) + "\n"
         )
         self.codex.write_text(
@@ -99,6 +102,65 @@ class HistoryTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 handoff._parse_since(value)
         self.assertEqual(handoff._parse_since("2w"), 14 * 86400)
+
+    def test_since_filters_old_mtime(self):
+        claude, _codex = self.candidates()
+        old = (time.time() - 3 * 86400, claude[0][1], claude[0][2])
+        with patch.object(
+            handoff, "_recent_claude_transcripts", return_value=[old]
+        ):
+            rows = handoff._history_rows(
+                str(self.root), from_tool="claude", since="1d"
+            )
+        self.assertEqual(rows, [])
+
+    def test_codex_resume_in_old_date_directory_is_found_by_recent_mtime(self):
+        sessions = self.root / "sessions"
+        old_dir = sessions / "2020" / "01" / "01"
+        old_dir.mkdir(parents=True)
+        rollout = old_dir / "rollout-old.jsonl"
+        rollout.write_text(self.codex.read_text())
+        now = time.time()
+        rollout.touch()
+        with patch.object(handoff, "_codex_sessions_dir", return_value=str(sessions)):
+            rows = handoff._recent_codex_rollouts(
+                str(self.root), limit=10, days=1
+            )
+        self.assertEqual([row[2] for row in rows], [str(rollout)])
+        self.assertGreaterEqual(rows[0][0], now)
+
+    def test_malformed_utf8_does_not_crash_history(self):
+        malformed = self.root / "malformed.jsonl"
+        malformed.write_bytes(b'{"type":"last-prompt","lastPrompt":"caf\xe9"}\n')
+        candidate = [(time.time(), malformed.stat().st_size, str(malformed))]
+        with patch.object(
+            handoff, "_recent_claude_transcripts", return_value=candidate
+        ):
+            rows = handoff._history_rows(
+                str(self.root), from_tool="claude", since="1d"
+            )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["snippet"], "")
+
+    def test_claude_tool_result_is_not_used_as_prompt_fallback(self):
+        tool_result = self.root / "tool-result.jsonl"
+        tool_result.write_text(json.dumps({
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "content": "SECRET COMMAND OUTPUT",
+                }],
+            }
+        }) + "\n")
+        candidate = [(time.time(), tool_result.stat().st_size, str(tool_result))]
+        with patch.object(
+            handoff, "_recent_claude_transcripts", return_value=candidate
+        ):
+            rows = handoff._history_rows(
+                str(self.root), from_tool="claude", since="1d"
+            )
+        self.assertEqual(rows[0]["snippet"], "")
 
 
 if __name__ == "__main__":
