@@ -76,6 +76,7 @@ SSH로 등록한 marketplace에서도 위 `marketplace upgrade` 명령이 동작
 | `/merge-cleanup` | PR merge/close 후 로컬 브랜치·원격 브랜치·이슈·worktree 정리 후보 리포트 |
 | `/prettier-guard` | prettier --write 전 main 기준 non-clean 파일을 보호하고 safe 대상만 제안 |
 | `/review-ledger` | 여러 라운드 PR 리뷰 findings를 ID·상태·근거로 추적하고 댓글용 요약 생성 |
+| `/verify-regression` | 새 테스트를 수정 전 source에서 실행해 실제 회귀 재현 여부를 분류 |
 
 ## 자동 훅 (Claude 어댑터)
 
