@@ -20,6 +20,7 @@ class ProjectTemplateTest(unittest.TestCase):
             git_env = os.environ.copy()
             git_env["GIT_CONFIG_GLOBAL"] = os.devnull
             git_env["GIT_CONFIG_NOSYSTEM"] = "1"
+            git_env["XDG_CONFIG_HOME"] = str(project / ".xdg-config")
             subprocess.run(
                 ["git", "init", "-q"], cwd=project, check=True, env=git_env
             )
@@ -62,6 +63,9 @@ class ProjectTemplateTest(unittest.TestCase):
                 text=True,
                 env=git_env,
             ).stdout
+            status_paths = {
+                line[3:] for line in status.splitlines() if len(line) >= 4
+            }
             ignored_by = subprocess.run(
                 ["git", "check-ignore", "-v", str(pending.relative_to(project))],
                 cwd=project,
@@ -88,8 +92,8 @@ class ProjectTemplateTest(unittest.TestCase):
             self.assertNotIn("_pending/decisions/draft.md", status)
             self.assertNotIn(".claude/.cache/reflect.log", status)
             self.assertNotIn(".claude/.cache/review-ledger/pr-123.json", status)
-            self.assertIn(".cache/keep.txt", status)
-            self.assertIn("src/.cache/keep.txt", status)
+            self.assertIn(".cache/keep.txt", status_paths)
+            self.assertIn("src/.cache/keep.txt", status_paths)
             self.assertIn(".claude/memory/approved.md", status)
             self.assertIn(".claude/memory/decisions/approved.md", status)
             self.assertIn(".claude/.gitignore", status)
