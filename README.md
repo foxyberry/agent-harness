@@ -107,7 +107,7 @@ CI(`.github/workflows/validate.yml`)가 JSON·스크립트 문법 + **core↔ada
 사용 가능 (스킬 기준. Claude 훅은 이벤트 인식까지 확인했고 실제 발화·주입은 검증 중).
 - ✅ Claude GitHub marketplace 설치 live 검증 — 훅 이벤트 인식과 설치 캐시의 handoff-save 실행 완료
 - ✅ Codex GitHub marketplace 설치 live 검증 — `0.4.1`의 스킬 9개 노출과 설치 캐시의 handoff-load·stale-scan 실행 완료 ([이슈 #3](https://github.com/foxyberry/agent-harness/issues/3))
-- ✅ 현재 `0.4.8` 패키지 — 양쪽 어댑터에 스킬 12개 포함, 빌드·CI로 동기화 검증
+- ✅ 현재 `0.4.9` 패키지 — 양쪽 어댑터에 스킬 12개 포함, 빌드·CI로 동기화 검증
 - ✅ 크로스툴 스모크 테스트 — Claude 설치본이 저장한 handoff 를 Codex 설치본이 정상 로드
 - ✅ 프로젝트 템플릿·공유 메모리 governance — `_pending` 초안은 사람 승인 후에만 승격
 - 🔜 Claude 훅 live-fire 검증 — 설치본의 훅 이벤트 인식은 확인했지만 실제 발화·주입은 별도 검증 필요
