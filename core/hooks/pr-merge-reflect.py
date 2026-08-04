@@ -111,6 +111,41 @@ def _cache_path(project_dir):
     return os.path.join(project_dir, ".claude/.cache/pr-merge-seen.json")
 
 
+def _ensure_local_cache_exclude(project_dir):
+    """기존 프로젝트에서도 런타임 캐시가 커밋되지 않게 로컬 exclude를 보강한다.
+
+    사용자의 tracked .gitignore는 수정하지 않는다. Git이 아니거나 read-only인 프로젝트는
+    훅 실행을 막지 않도록 조용히 통과한다.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-path", "info/exclude"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return
+        path = result.stdout.strip()
+        if not os.path.isabs(path):
+            path = os.path.join(project_dir, path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        existing = ""
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                existing = handle.read()
+        entry = ".claude/.cache/"
+        if entry in existing.splitlines():
+            return
+        with open(path, "a", encoding="utf-8") as handle:
+            if existing and not existing.endswith("\n"):
+                handle.write("\n")
+            handle.write(entry + "\n")
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _reflect_skip_config_path(project_dir):
     memory_dir = os.path.realpath(os.path.join(project_dir, ".claude/memory"))
     path = os.path.realpath(os.path.join(memory_dir, "reflect-skip.json"))
@@ -591,6 +626,7 @@ def main():
         sys.exit(0)
 
     try:
+        _ensure_local_cache_exclude(project_dir)
         if event == "SessionStart":
             _on_session_start(project_dir, cache)
         elif event == "PostToolUse":
