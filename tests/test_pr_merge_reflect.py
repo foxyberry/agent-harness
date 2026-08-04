@@ -83,6 +83,25 @@ class PrMergeReflectTest(unittest.TestCase):
             )
             self.assertEqual(ignored.returncode, 0)
 
+    def test_monorepo_subdirectory_uses_repo_relative_rule(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            project = root / "packages" / "api"
+            project.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+            pr_merge_reflect._ensure_local_cache_exclude(str(project))
+
+            ignored = subprocess.run(
+                ["git", "check-ignore", "packages/api/.claude/.cache/reflect.log"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(ignored.returncode, 0)
+            exclude = root / ".git" / "info" / "exclude"
+            self.assertIn("packages/api/.claude/.cache/", exclude.read_text().splitlines())
+
     def test_non_git_project_is_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:
             pr_merge_reflect._ensure_local_cache_exclude(tmp)
@@ -92,6 +111,8 @@ class PrMergeReflectTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            exclude = root / ".git" / "info" / "exclude"
+            before = exclude.read_text()
             real_open = builtins.open
 
             def deny_exclude(path, *args, **kwargs):
@@ -101,3 +122,4 @@ class PrMergeReflectTest(unittest.TestCase):
 
             with patch("builtins.open", side_effect=deny_exclude):
                 pr_merge_reflect._ensure_local_cache_exclude(str(root))
+            self.assertEqual(exclude.read_text(), before)

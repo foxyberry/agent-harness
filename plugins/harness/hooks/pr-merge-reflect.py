@@ -119,15 +119,23 @@ def _ensure_local_cache_exclude(project_dir):
     """
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--git-path", "info/exclude"],
+            [
+                "git",
+                "rev-parse",
+                "--git-path",
+                "info/exclude",
+                "--show-prefix",
+            ],
             cwd=project_dir,
             capture_output=True,
             text=True,
             timeout=3,
         )
-        if result.returncode != 0 or not result.stdout.strip():
+        lines = result.stdout.splitlines()
+        if result.returncode != 0 or not lines:
             return
-        path = result.stdout.strip()
+        path = lines[0]
+        prefix = lines[1] if len(lines) > 1 else ""
         if not os.path.isabs(path):
             path = os.path.join(project_dir, path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -135,7 +143,7 @@ def _ensure_local_cache_exclude(project_dir):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as handle:
                 existing = handle.read()
-        entry = ".claude/.cache/"
+        entry = prefix + ".claude/.cache/"
         if entry in existing.splitlines():
             return
         with open(path, "a", encoding="utf-8") as handle:
