@@ -11,6 +11,27 @@ TEMPLATE = ROOT / "project-template"
 
 
 class ProjectTemplateTest(unittest.TestCase):
+    def test_pr_template_and_check_require_bilingual_implementation_logic(self):
+        template = (TEMPLATE / ".github" / "pull_request_template.md").read_text()
+        workflow = (
+            TEMPLATE / ".github" / "workflows" / "pr-body-check.yml"
+        ).read_text()
+        agents = (TEMPLATE / "AGENTS.md").read_text()
+        sections = [
+            "## 구현 내용 (KR)",
+            "## 구현 로직 (KR)",
+            "## Implementation Summary (EN)",
+            "## Implementation Logic (EN)",
+        ]
+
+        for section in sections:
+            self.assertIn(section, template)
+            self.assertIn(section.removeprefix("## "), workflow)
+            self.assertIn(section.removeprefix("## "), agents)
+        self.assertIn("feat|fix|refactor|perf", workflow)
+        self.assertIn("length < 20", workflow)
+        self.assertIn("파일 이름", agents)
+
     def test_runtime_files_are_ignored_but_approved_memory_is_trackable(self):
         self.assertFalse((TEMPLATE / ".gitignore").exists())
 
