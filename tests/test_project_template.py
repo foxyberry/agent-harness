@@ -1,8 +1,10 @@
+import json
 import os
 import pathlib
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -31,6 +33,77 @@ class ProjectTemplateTest(unittest.TestCase):
         self.assertIn("feat|fix|refactor|perf", workflow)
         self.assertIn("length < 20", workflow)
         self.assertIn("파일 이름", agents)
+
+    @unittest.skipUnless(shutil.which("node"), "node is required")
+    def test_pr_body_check_behavior(self):
+        workflow = (
+            TEMPLATE / ".github" / "workflows" / "pr-body-check.yml"
+        ).read_text()
+        script = textwrap.dedent(workflow.split("          script: |\n", 1)[1])
+        runner = """
+const pr = JSON.parse(process.argv[2]);
+let failure = null;
+const context = { payload: { pull_request: pr } };
+const core = {
+  info: () => {},
+  setFailed: (message) => { failure = String(message); },
+};
+(async () => {
+%s
+})().then(() => console.log(JSON.stringify({ failure })));
+""" % textwrap.indent(script, "  ")
+        valid_body = """## 구현 내용 (KR)
+사용자가 저장 버튼을 누르면 초안을 서버에 저장합니다.
+## 구현 로직 (KR)
+입력값을 검증한 뒤 저장하고, 실패하면 기존 초안을 유지합니다.
+## Implementation Summary (EN)
+Save the user's draft through the API when requested.
+## Implementation Logic (EN)
+Validate input, persist the draft, and preserve existing data on failure.
+"""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runner_path = pathlib.Path(tmp) / "pr-body-check.js"
+            runner_path.write_text(runner)
+
+            def check(title, body="", labels=None):
+                result = subprocess.run(
+                    [
+                        "node",
+                        str(runner_path),
+                        json.dumps(
+                            {"title": title, "body": body, "labels": labels or []},
+                            ensure_ascii=False,
+                        ),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                return json.loads(result.stdout)["failure"]
+
+            self.assertIsNone(check("feat(save): 초안 저장", valid_body))
+            self.assertIsNone(check("docs(readme): 설치 안내", ""))
+            self.assertIsNone(check('Revert "feat(save): 초안 저장"', ""))
+            self.assertIsNone(check('Revert "Revert \\"feat(save): 초안 저장\\""', ""))
+            self.assertIsNone(
+                check("feat(save): 초안 저장", "", [{"name": "skip-pr-body-check"}])
+            )
+            self.assertIn("Missing or too short", check("fix(save): 저장 복구"))
+            for title in (
+                "[feature/issue1] feat: 저장",
+                "✨ feat(save): 저장",
+                "feat (save): 저장",
+            ):
+                self.assertIn("PR titles must start", check(title))
+            self.assertIn(
+                "PR titles must start",
+                check(
+                    "[feature/issue1] feat: 저장",
+                    "",
+                    [{"name": "skip-pr-body-check"}],
+                ),
+            )
 
     def test_runtime_files_are_ignored_but_approved_memory_is_trackable(self):
         self.assertFalse((TEMPLATE / ".gitignore").exists())

@@ -21,8 +21,18 @@ jobs:
             const labels = (pr.labels || []).map((label) => label.name);
             const skipLabels = new Set(["skip-pr-body-check", "docs-only", "no-pr-body-check"]);
 
+            const conventionalTitle = /^(feat|fix|refactor|perf|docs|test|chore|style|ci|build|revert)(\(.+\))?!?:\s*\S/i.test(title);
+            const githubRevertTitle = /^Revert\s+".+"$/i.test(title);
+            if (!conventionalTitle && !githubRevertTitle) {
+              core.setFailed(
+                "PR titles must start with a conventional type, for example: feat(scope): description. " +
+                "Do not prefix the title with a branch name or emoji."
+              );
+              return;
+            }
+
             if (labels.some((label) => skipLabels.has(label))) {
-              core.info("Skipping PR body check because skip label is present.");
+              core.info("Skipping PR body section check because skip label is present.");
               return;
             }
 

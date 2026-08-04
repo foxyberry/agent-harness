@@ -16,6 +16,8 @@ Codex 는 이 파일을 직접 읽고, Claude Code 는 `CLAUDE.md` 가 이 파�
 
 ## PR 설명 규칙
 
+- 모든 PR 제목은 conventional type으로 시작한다. 예: `feat(scope): 설명`, `docs: 설명`.
+  브랜치 이름이나 이모지를 제목 앞에 붙이지 않는다. GitHub 자동 revert 제목은 예외다.
 - `feat`, `fix`, `refactor`, `perf` PR은 무엇을 바꿨는지와 실제로 어떻게 동작하는지를
   한국어·영어로 각각 설명한다.
 - PR 본문에는 `구현 내용 (KR)`, `구현 로직 (KR)`, `Implementation Summary (EN)`,
