@@ -52,7 +52,9 @@ SSH로 등록한 marketplace에서도 위 `marketplace upgrade` 명령이 동작
 사용자에게는 버전된 릴리스 단위로 업데이트를 안내한다.
 
 ### 공통 (프로젝트 층)
-프로젝트 repo 에 `project-template/` 를 복사 — `AGENTS.md`(정본) + `CLAUDE.md`(@import) + `.claude/memory/` 템플릿.
+프로젝트 repo 에 `project-template/` 를 복사 — `AGENTS.md`(정본) + `CLAUDE.md`(@import) +
+`.claude/memory/` + `.github/`(PR 템플릿·검사 workflow). 기존 파일이 있으면 덮어쓰지 말고
+프로젝트 규칙과 병합한다.
 
 ## 구조 (3층)
 

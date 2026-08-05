@@ -14,6 +14,18 @@ Codex 는 이 파일을 직접 읽고, Claude Code 는 `CLAUDE.md` 가 이 파�
 - <커밋 승인 규칙: 예) 커밋 전 사용자에게 확인>
 - <빌드/테스트 명령: 예) ./gradlew test>
 
+## PR 설명 규칙
+
+- 모든 PR 제목은 conventional type으로 시작한다. 예: `feat(scope): 설명`, `docs: 설명`.
+  브랜치 이름이나 이모지를 제목 앞에 붙이지 않는다. GitHub 자동 revert 제목은 예외다.
+- `feat`, `fix`, `refactor`, `perf` PR은 무엇을 바꿨는지와 실제로 어떻게 동작하는지를
+  한국어·영어로 각각 설명한다.
+- PR 본문에는 `구현 내용 (KR)`, `구현 로직 (KR)`, `Implementation Summary (EN)`,
+  `Implementation Logic (EN)` 네 섹션을 모두 작성한다.
+- 구현 로직에는 핵심 실행 순서, 조건 분기, 데이터 흐름, 실패·예외 처리를 쉬운 말로 적는다.
+  변경 파일 이름이나 함수 이름만 나열하는 것은 구현 설명으로 보지 않는다.
+- `.github/workflows/pr-body-check.yml`이 네 섹션의 존재와 최소 내용을 검사한다.
+
 ## 메모리 (agent-harness)
 
 - 공유 메모리는 `.claude/memory/` 에 **커밋**된다. 목록은 `.claude/memory/INDEX.md`.
