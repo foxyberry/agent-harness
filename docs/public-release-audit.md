@@ -6,9 +6,9 @@ Tracking issue: [#71](https://github.com/foxyberry/agent-harness/issues/71)
 
 ## Current decision
 
-**READY FOR VISIBILITY CHANGE**. Git history will be preserved with its existing identity metadata,
-and the repository will use the MIT License. The final repository and GitHub surface scans found no
-secret or credential exposure.
+**PUBLIC AND VERIFIED**. Git history is preserved with its existing identity metadata, the
+repository uses the MIT License, and the final repository and GitHub surface scans found no secret
+or credential exposure.
 
 ## Checks completed
 
@@ -54,13 +54,17 @@ metadata will become public. No history rewrite will be performed. The decision 
 
 ## Visibility change and post-change verification
 
-- Merge PR #72, rerun the branch-history scan at the resulting commit, and then change repository
-  visibility.
-- Enable GitHub private vulnerability reporting.
-- Replace the temporary Codex SSH marketplace command in README and `docs/overview.html` with the
-  public `foxyberry/agent-harness` address.
-- Verify Claude Code and Codex installation from an account without collaborator access after the
-  repository is public.
+- Repository visibility changed to public after PR #72 merged.
+- GitHub private vulnerability reporting is enabled.
+- README, `docs/overview.html`, and `AGENTS.md` use the public `foxyberry/agent-harness` Codex address.
+- The agent-harness plugin version `0.4.11` installed through Codex from the public address in an
+  empty `CODEX_HOME` with Git credentials disabled.
+- The same agent-harness plugin version installed through Claude Code in an empty
+  `CLAUDE_CONFIG_DIR`; with SSH forced to fail, Claude automatically retried the public repository
+  over anonymous HTTPS and completed installation.
+- Commands and observed results are recorded in
+  [issue #71](https://github.com/foxyberry/agent-harness/issues/71#issuecomment-5200842740).
+- Issue #71 remains open until this documentation update is merged and verified on `main`.
 - Obtain an independent Claude Code review and record its findings. Completed: Claude Code confirmed
   the history metadata and missing license findings and found no regression in the audit changes.
   The result is recorded in
