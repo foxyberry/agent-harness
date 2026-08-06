@@ -7,9 +7,10 @@
 - [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — 플러그인 dev설치(작업 repo 직접 참조); 훅 삭제 시 다른 세션 Bash 블록 주의
 - [build-drift](build-drift.md) — core가 정본, core 수정 후 항상 ./build.sh 하고 생성물까지 커밋
 - [plugin-release-updates](plugin-release-updates.md) — 사용자-facing 플러그인 배포는 버전 bump 와 업데이트 안내를 릴리스 단위로 관리
-- [adapter-cross-project-testing](adapter-cross-project-testing.md) — 어댑터 동작은 harness repo 밖 별도 프로젝트에서 검증 (dev 설치가 버그 가림)
+- [adapter-cross-project-testing](adapter-cross-project-testing.md) — 어댑터 동작과 공개 설치는 repo·인증·캐시를 격리해 검증
 - [skill-command-examples](skill-command-examples.md) — SKILL.md 필수 인자는 각주 말고 복붙되는 명령 예시 자체에
 - [tool-placement-heuristic](tool-placement-heuristic.md) — 새 훅·도구 배치: 범용이면 하네스 core / 취향이면 개인 ~/.claude 또는 repo 커밋; 훅은 core 에 넣지 말 것
+- [review-evidence-on-target-thread](review-evidence-on-target-thread.md) — 외부 리뷰 결과는 대상 PR·이슈 댓글에 원문 또는 링크로 남김
 
 ## 결정 기록 (ADR)
 
