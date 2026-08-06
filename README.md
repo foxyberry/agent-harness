@@ -23,17 +23,16 @@
 /plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry
 ```
-Claude Code는 등록된 GitHub 인증을 재사용해 현재 private repo도 `owner/repo` 형식으로 설치된다.
 로컬 테스트: `/plugin marketplace add ./` (repo 루트에서)
 
 ### Codex (skill-only plugin)
 ```
-codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
+codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./
 ```
-현재 저장소는 비공개라 GitHub SSH 접근 권한이 필요하다. `owner/repo` 형식은 HTTPS clone 을
-사용하므로 공개 저장소가 되기 전에는 인증 없이 실패한다.
+공개 전환 전에는 저장소 접근 권한이 있는 사용자가 marketplace 주소를
+`git@github.com:foxyberry/agent-harness.git`로 지정할 수 있다.
 별도 installer 없이 Codex의 공식 plugin marketplace CLI가 설치·업데이트·캐시를 관리한다.
 
 ### 업데이트
