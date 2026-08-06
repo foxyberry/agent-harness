@@ -35,7 +35,6 @@ import json
 import os
 import re
 import shlex
-import socket
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -93,8 +92,8 @@ def now_iso():
 
 
 def machine_name():
-    # 머신 식별 (크로스머신 핸드오프 추적용). 플랫폼 무관하게 hostname.
-    return socket.gethostname()
+    """Return an explicit machine label without leaking the host name by default."""
+    return os.environ.get("HARNESS_HANDOFF_MACHINE", "비공개")
 
 
 def git_facts(root):

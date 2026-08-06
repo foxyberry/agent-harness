@@ -569,15 +569,13 @@ type: feedback | project | reference
   <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(현재는 스킬만 제공 — 설치 도구는 만드는 중)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(skill-only plugin)</span>:</p>
   <pre><code>codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
   <div class="note warn">
-    <b>⚠️ Codex는 지금 SSH 주소를 써야 한다.</b> 이 저장소가 아직 비공개라서다.
-    <code>owner/repo</code> 짧은 형식은 인증 없이 HTTPS로 받아오려 하기 때문에 비공개 상태에서는 실패한다
-    <span class="muted">(실제로 <code>Repository not found</code>로 막히는 걸 확인했다)</span>.
-    저장소가 공개되면 짧은 형식을 쓸 수 있다. Claude 쪽은 짧은 형식 그대로 설치되는 것을 확인했다.
+    <b>현재 비공개 상태에서는 GitHub 접근 권한과 SSH 인증이 필요하다.</b>
+    공개 전환 후 marketplace 주소를 <code>foxyberry/agent-harness</code>로 바꾸면 별도 저장소 권한 없이 설치할 수 있다.
   </div>
   <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
   <p class="muted"><b>업데이트</b> — Codex에는 아직 <code>plugin update</code>가 없어서, 새 버전은
