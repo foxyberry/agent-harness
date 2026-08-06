@@ -27,12 +27,11 @@
 
 ### Codex (skill-only plugin)
 ```
-codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
+codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./
 ```
-현재 비공개 상태에서는 GitHub 접근 권한과 SSH 인증이 필요하다. 공개 전환 후 marketplace 주소를
-`foxyberry/agent-harness`로 바꾸면 별도 저장소 권한 없이 설치할 수 있다.
+공개 marketplace 주소는 별도 저장소 권한이나 SSH 인증 없이 HTTPS로 설치된다.
 별도 installer 없이 Codex의 공식 plugin marketplace CLI가 설치·업데이트·캐시를 관리한다.
 
 ### 업데이트
@@ -45,7 +44,7 @@ codex plugin marketplace upgrade foxyberry
 codex plugin remove agent-harness@foxyberry
 codex plugin add agent-harness@foxyberry
 ```
-SSH로 등록한 marketplace에서도 위 `marketplace upgrade` 명령이 동작함을 live 검증했다.
+공개 marketplace에서도 위 `marketplace upgrade` 명령이 동작한다.
 
 개발 중 로컬 dogfooding 은 repo 루트에서 `./build.sh` 후 `codex plugin marketplace add ./` 를 쓰고,
 사용자에게는 버전된 릴리스 단위로 업데이트를 안내한다.
