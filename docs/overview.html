@@ -570,11 +570,13 @@ type: feedback | project | reference
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
   <p><b>Codex</b> <span class="muted">(skill-only plugin)</span>:</p>
-  <pre><code>codex plugin marketplace add foxyberry/agent-harness
+  <pre><code>codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
-  <p class="muted">공개 전환 전에는 저장소 접근 권한이 있는 사용자가 marketplace 주소를
-    <code>git@github.com:foxyberry/agent-harness.git</code>로 지정할 수 있다.</p>
+  <div class="note warn">
+    <b>현재 비공개 상태에서는 GitHub 접근 권한과 SSH 인증이 필요하다.</b>
+    공개 전환 후 marketplace 주소를 <code>foxyberry/agent-harness</code>로 바꾸면 별도 저장소 권한 없이 설치할 수 있다.
+  </div>
   <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
   <p class="muted"><b>업데이트</b> — Codex에는 아직 <code>plugin update</code>가 없어서, 새 버전은
     <code>marketplace upgrade</code> 뒤 <code>remove</code>·<code>add</code>로 캐시를 다시 받는다.

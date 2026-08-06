@@ -20,14 +20,15 @@ secret or credential exposure.
   Actions runs, and release metadata were reviewed.
 - Recent Actions runs pass, PR #72 is the only open pull request, and there are no published
   releases.
-- Gitleaks 8.30.1 scanned the branch history and found no leaks. A separate working-tree scan covers
-  the uncommitted final files before commit.
+- Gitleaks 8.30.1 scanned every Git ref with `--log-opts=--all` and found no leaks. A separate
+  working-tree scan covers final files that are not yet committed.
 - Issue and pull request bodies, issue comments, review comments, and the 10 most recent Actions logs
   were checked for credential and local-identity patterns. One local path in merged PR #42 was
   replaced with `<repo>`; the repeated scan found no remaining match outside the accepted Git
   identity metadata.
 
-The targeted pattern scan and a dedicated Gitleaks full-history scan both completed.
+The targeted pattern scan and dedicated Gitleaks scans of all Git refs and the working tree both
+completed.
 
 ## Resolved decisions
 
@@ -56,6 +57,8 @@ metadata will become public. No history rewrite will be performed. The decision 
 - Merge PR #72, rerun the branch-history scan at the resulting commit, and then change repository
   visibility.
 - Enable GitHub private vulnerability reporting.
+- Replace the temporary Codex SSH marketplace command in README and `docs/overview.html` with the
+  public `foxyberry/agent-harness` address.
 - Verify Claude Code and Codex installation from an account without collaborator access after the
   repository is public.
 - Obtain an independent Claude Code review and record its findings. Completed: Claude Code confirmed

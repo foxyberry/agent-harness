@@ -27,12 +27,12 @@
 
 ### Codex (skill-only plugin)
 ```
-codex plugin marketplace add foxyberry/agent-harness
+codex plugin marketplace add git@github.com:foxyberry/agent-harness.git
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./
 ```
-공개 전환 전에는 저장소 접근 권한이 있는 사용자가 marketplace 주소를
-`git@github.com:foxyberry/agent-harness.git`로 지정할 수 있다.
+현재 비공개 상태에서는 GitHub 접근 권한과 SSH 인증이 필요하다. 공개 전환 후 marketplace 주소를
+`foxyberry/agent-harness`로 바꾸면 별도 저장소 권한 없이 설치할 수 있다.
 별도 installer 없이 Codex의 공식 plugin marketplace CLI가 설치·업데이트·캐시를 관리한다.
 
 ### 업데이트
