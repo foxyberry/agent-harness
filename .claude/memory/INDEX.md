@@ -11,6 +11,7 @@
 - [skill-command-examples](skill-command-examples.md) — SKILL.md 필수 인자는 각주 말고 복붙되는 명령 예시 자체에
 - [tool-placement-heuristic](tool-placement-heuristic.md) — 새 훅·도구 배치: 범용이면 하네스 core / 취향이면 개인 ~/.claude 또는 repo 커밋; 훅은 core 에 넣지 말 것
 - [review-evidence-on-target-thread](review-evidence-on-target-thread.md) — 외부 리뷰 결과는 대상 PR·이슈 댓글에 원문 또는 링크로 남김
+- [committed-artifact-env-leak](committed-artifact-env-leak.md) — 커밋되는 산출물에 호스트명·절대경로 자동 삽입 금지; 기본 비공개 + 환경변수 opt-in
 
 ## 결정 기록 (ADR)
 

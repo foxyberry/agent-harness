@@ -7,6 +7,7 @@
     { "glob": "*/core/*", "memory": ["build-drift.md"] },
     { "glob": "*SKILL.md", "memory": ["build-drift.md", "plugin-release-updates.md", "skill-command-examples.md"] },
     { "contains": ["codex/"], "memory": ["plugin-release-updates.md"] },
-    { "contains": ["handoff.py", "scripts/"], "memory": ["adapter-cross-project-testing.md"] }
+    { "contains": ["handoff.py", "scripts/"], "memory": ["adapter-cross-project-testing.md"] },
+    { "contains": ["handoff.py", "reflect.py"], "memory": ["committed-artifact-env-leak.md"] }
   ]
 }
