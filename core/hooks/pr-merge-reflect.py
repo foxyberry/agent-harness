@@ -32,6 +32,13 @@ import re
 import subprocess
 import sys
 
+# repo_identity 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(reflect.py 와 동일 규약).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from repo_identity import ProjectMatcher
+except ImportError:  # 단독 복사본 등 helper 부재 — 스윕만 비활성, 나머지 훅 기능은 유지
+    ProjectMatcher = None
+
 # "머지를 끝냈다"는 완료형만 매칭. 제안/질문/부정("머지하자/머지 언제해?/머지하지마",
 # "is this merged?", "not merged yet")은 제외.
 MERGE_DONE = re.compile(
@@ -438,37 +445,36 @@ def _sweep_codex_sessions(project_dir):
     """
     if not _auto_reflect_enabled():
         return
+    if ProjectMatcher is None:
+        return
     import time
     base = os.path.expanduser("~/.codex/sessions")
     if not os.path.isdir(base):
         return
     try:
-        from datetime import datetime, timedelta
         now = time.time()
         recent_cutoff = now - CODEX_SWEEP_RECENT_DAYS * 86400
         idle_cutoff = now - CODEX_SWEEP_MIN_IDLE_MIN * 60  # 이보다 최근 수정이면 진행 중 가능 → 제외
-        # 세션은 YYYY/MM/DD 로 날짜 분할 저장 → 최근 날짜 디렉토리만 순회(전체 히스토리 walk 회피 = 시작 비용 상한).
-        # +2일 버퍼: 자정 넘겨 이어진 세션(시작일 디렉토리는 더 과거)도 포함.
-        today = datetime.now()
-        date_dirs = [
-            os.path.join(base, f"{d.year:04d}", f"{d.month:02d}", f"{d.day:02d}")
-            for d in (today - timedelta(days=i) for i in range(CODEX_SWEEP_RECENT_DAYS + 2))
-        ]
+        # 날짜 디렉토리(YYYY/MM/DD)만 훑으면 **오래 전 시작해 최근 resume 한 세션을 놓친다**
+        # (시작일 기준으로 저장되므로). handoff.py 의 _recent_codex_rollouts 와 동일하게
+        # 전체 트리를 훑되 mtime 으로 거른다 — 파일 열기는 mtime 통과분만이라 비용은 stat 수준.
         rollouts = []  # (mtime, path) — 최근 N일 & 충분히 idle(완료 추정) 한 것만
-        for dd in date_dirs:
-            if not os.path.isdir(dd):
-                continue
-            for fn in os.listdir(dd):
+        for directory, _dirs, names in os.walk(base):
+            for fn in names:
                 if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
                     continue
-                fp = os.path.join(dd, fn)
+                fp = os.path.join(directory, fn)
                 try:
                     mt = os.path.getmtime(fp)
-                except Exception:
+                except OSError:
                     continue
                 if recent_cutoff <= mt <= idle_cutoff:
                     rollouts.append((mt, fp))
         rollouts.sort(reverse=True)  # 최신 우선
+
+        # worktree 를 지금 관측해 alias 캐시에 남긴다 — 나중에 제거돼도 되짚을 수 있게.
+        matcher = ProjectMatcher(project_dir)
+        matcher.record_worktrees()
 
         seen_path = _codex_seen_path(project_dir)
         first_run = not os.path.exists(seen_path)
@@ -483,8 +489,9 @@ def _sweep_codex_sessions(project_dir):
         fresh = []  # (sid, fp): 이 프로젝트 + 미회고
         for _, fp in rollouts:
             sid, cwd = _codex_meta(fp)
-            in_project = cwd == project_dir or bool(cwd and cwd.startswith(project_dir + os.sep))
-            if sid and in_project and sid not in seen:
+            # 경로 prefix 가 아니라 git 저장소 identity 로 판정 — worktree 가 프로젝트
+            # 폴더 밖(`~/.codex/worktrees/`, 형제 `.agent-worktrees/`)에 있어도 잡힌다.
+            if sid and sid not in seen and matcher.belongs(cwd):
                 fresh.append((sid, fp))
 
         if first_run:

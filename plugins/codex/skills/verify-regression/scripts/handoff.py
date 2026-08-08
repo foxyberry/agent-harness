@@ -381,6 +381,25 @@ def _codex_rollout_meta(path):
     return None, None
 
 
+def _project_matcher(root):
+    """`cwd` → 이 프로젝트 소속인가 를 판정하는 콜러블.
+
+    repo_identity 는 build.sh 가 이 스크립트와 같은 디렉토리에 co-locate 한다. 없으면
+    (스크립트만 단독 복사된 경우) 예전 경로 prefix 판정으로 떨어진다 — worktree 를 놓치지만
+    죽지는 않는다."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from repo_identity import ProjectMatcher
+    except ImportError:
+        return lambda cwd: cwd == root or bool(cwd and cwd.startswith(root + os.sep))
+    m = ProjectMatcher(root)
+    # 지금 살아있는 worktree 를 관측 기록한다. 자동 회고(HARNESS_AUTO_REFLECT)는 **기본 꺼짐**
+    # 이라 그쪽에만 기록을 맡기면 캐시가 영영 안 생긴다 — 그러면 worktree 를 지운 뒤 fw/history
+    # 가 그 세션을 못 찾는다. 회고를 안 켠 사용자도 되짚기가 되도록 여기서도 남긴다.
+    m.record_worktrees()
+    return m.belongs
+
+
 def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
     """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
     [(mtime, size, path)]. 시작 날짜 디렉터리와 무관하게 전체 트리에서 mtime이 최근
@@ -392,6 +411,7 @@ def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
         return []
     today = datetime.now()
     cutoff = today.timestamp() - (days * 86400)
+    matcher = _project_matcher(root)
     rows = []
     for directory, _dirs, names in os.walk(base):
         for fn in names:
@@ -406,8 +426,9 @@ def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
             if mtime < cutoff:
                 continue
             sid, cwd = _codex_rollout_meta(fp)
-            in_project = cwd == root or bool(cwd and cwd.startswith(root + os.sep))
-            if not in_project:
+            # 경로 prefix 가 아니라 git 저장소 identity 로 판정 — worktree 가 프로젝트
+            # 폴더 밖에 있어도(`~/.codex/worktrees/`, 형제 `.agent-worktrees/`) 잡힌다.
+            if not matcher(cwd):
                 continue
             if exclude_sid and sid == exclude_sid:
                 continue

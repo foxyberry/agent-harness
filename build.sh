@@ -38,6 +38,8 @@ rm -rf plugins/harness/skills plugins/harness/bin plugins/harness/hooks
 mkdir -p plugins/harness/bin
 cp core/scripts/handoff.py plugins/harness/bin/agent-handoff
 chmod +x plugins/harness/bin/agent-handoff
+# repo_identity: agent-handoff 가 dirname(__file__)=bin/ 에서 import 한다(co-locate 규약).
+cp core/scripts/repo_identity.py plugins/harness/bin/repo_identity.py
 # stale detector: orchestrator(stale.py→agent-stale) + A/B 헬퍼를 bin/ 에 co-locate.
 # agent-stale 이 dirname(__file__)=bin/ 에서 stale_collect·stale_resolve 를 import 한다.
 cp core/scripts/stale.py plugins/harness/bin/agent-stale
@@ -78,6 +80,8 @@ done
 # ⚠️ Codex 훅은 pass 1 미포함(버전 취약 openai/codex#19385·#21639) — 스킬만 양쪽 배포. (이슈 #1)
 mkdir -p plugins/harness/hooks
 cp core/hooks/*.py plugins/harness/hooks/
+# repo_identity 는 core/scripts 에 있지만 pr-merge-reflect 훅도 import 한다 → hooks/ 에도 co-locate.
+cp core/scripts/repo_identity.py plugins/harness/hooks/repo_identity.py
 chmod +x plugins/harness/hooks/*.py
 {
   printf '%s\n' '{'
@@ -132,6 +136,8 @@ for s in $SKILLS; do
   mkdir -p "plugins/codex/skills/$s/scripts"
   if [ "$s" != "merge-cleanup" ] && [ "$s" != "prettier-guard" ]; then
     cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
+    # handoff.py 가 같은 폴더에서 import 한다 — 번들되는 곳마다 함께 둔다.
+    cp core/scripts/repo_identity.py "plugins/codex/skills/$s/scripts/repo_identity.py"
   fi
   render "core/skills/$s/SKILL.md" "plugins/codex/skills/$s/SKILL.md"
 done
