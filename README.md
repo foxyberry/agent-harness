@@ -29,6 +29,11 @@ codex plugin add agent-harness@foxyberry
 
 공개 marketplace는 별도 저장소 권한이나 SSH 인증 없이 HTTPS로 설치됩니다.
 
+> **⚠️ Codex 훅은 신뢰를 등록해야 동작합니다.** Codex는 신뢰하지 않은 훅을 **아무 메시지 없이
+> 건너뜁니다** — 설치는 됐는데 훅만 조용히 안 도는 상태가 됩니다. 설치 후 Codex가 안내하는
+> 훅 신뢰 절차(`hook_trust`)를 승인해 주세요. 스킬만 쓰실 거면 등록하지 않아도 됩니다.
+> 자세한 내용은 [docs/codex-hooks.md](docs/codex-hooks.md).
+
 ## Claude Code와 Codex
 
 두 어댑터는 같은 core 스킬을 사용하지만 설치와 호출 방식은 다릅니다.
@@ -37,7 +42,7 @@ codex plugin add agent-harness@foxyberry
 |---|---|---|
 | 배포 형태 | 플러그인 | skill-only 플러그인 |
 | 호출 방식 | `/handoff-save` 같은 슬래시 커맨드 | skill description 매칭 |
-| 자동 훅 | 자기개선 훅 제공 | 버전 안정성 문제로 보류 |
+| 자동 훅 | 자기개선 훅 4종 제공 | 메모리 인덱스 훅 1종 (신뢰 등록 필요, 아래 참고) |
 | 로컬 marketplace | `/plugin marketplace add ./` (저장소 루트) | `codex plugin marketplace add ./` (저장소 루트) |
 
 사용자-facing 기능 이름은 같지만 Codex에서 슬래시 호출을 보장하지는 않습니다.
@@ -128,12 +133,12 @@ CI는 JSON과 Python 문법, 테스트, core와 adapter의 동기화를 검사�
 
 ## 상태
 
-- 현재 플러그인 버전: `0.4.11`
+- 현재 플러그인 버전: `0.5.0`
 - Claude Code와 Codex 공개 marketplace 설치 검증 완료
 - 양쪽 어댑터에 스킬 12개 배포 및 크로스툴 handoff 검증 완료
 - Claude 훅 이벤트 인식과 설치 캐시 실행 검증 완료
 - Claude 훅의 실제 발화·컨텍스트 주입 검증은 진행 중
-- Codex 자동 훅은 upstream 버전 안정성 문제로 보류
+- Codex 훅은 `project-memory-index` 1종 이식 완료 (codex-cli 0.145.0에서 주입 검증). 나머지 3종은 순차 이식
 
 시각 자료가 포함된 상세 개요는 [`docs/overview.html`](docs/overview.html), 설계 문서는
 [`docs/`](docs/)에서 확인할 수 있습니다.

@@ -24,9 +24,20 @@ DEFAULT_MAX_CHARS = 12000
 MAX_CAP = 50000
 
 
-def _project_dir():
-    # 플러그인 배포 시 스크립트는 프로젝트 밖에 있으므로 cwd fallback.
-    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+def _project_dir(data=None):
+    """프로젝트 루트. 툴마다 알려주는 방식이 다르다.
+
+    - Claude Code: `CLAUDE_PROJECT_DIR` 환경변수
+    - Codex: 이 변수를 안 준다. 대신 훅 입력 JSON 의 `cwd` 가 프로젝트다
+      (`CLAUDE_PLUGIN_ROOT` 는 Codex 도 호환 별칭으로 세팅해 주므로 hooks.json 은 공용).
+
+    프로세스 cwd 는 최후 수단 — 플러그인 배포 시 스크립트는 프로젝트 밖에 있다.
+    """
+    return (
+        os.environ.get("CLAUDE_PROJECT_DIR")
+        or (data or {}).get("cwd")
+        or os.getcwd()
+    )
 
 
 def _safe_child_path(parent, name):
@@ -106,7 +117,7 @@ def main():
     if event != "SessionStart":
         sys.exit(0)
 
-    project_dir = _project_dir()
+    project_dir = _project_dir(data)
     memory_dir = _safe_memory_dir(project_dir)
     if not memory_dir:
         sys.exit(0)

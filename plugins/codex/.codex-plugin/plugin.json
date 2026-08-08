@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "0.4.11",
+  "version": "0.5.0",
   "description": "핸드오프·자기개선 회고·워크플로 스킬 (Codex 어댑터). 정본은 repo core/ 에서 생성됨.",
   "author": {
     "name": "foxyberry",
@@ -16,6 +16,7 @@
     "workflow"
   ],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Agent Harness",
     "shortDescription": "핸드오프·회고·워크플로 스킬 (Claude·Codex 공용)",
