@@ -51,11 +51,34 @@ def _project_dir(data=None):
 
 Claude 에는 없는 단계이므로 **사용자 안내에 반드시 포함**해야 한다.
 
-**4. `matcher` 키가 없다**
+**4. `matcher` 는 동작하지만 도구 이름이 Claude 와 다르다** ⚠️
 
-Claude 는 `"matcher": "Edit|Write|MultiEdit"` 로 도구를 거른다. Codex 바이너리에 이 키가 없다.
-도구별 필터링이 필요한 훅(`memory-search`, `reflection`)은 **입력의 `tool_name` 을 스크립트가
-직접 보고 거르도록** 고쳐야 이식된다. 막힘은 아니고 수정 거리다.
+`matcher` 는 Codex 도 **정상 지원한다.** 절대 매칭될 수 없는 값(`ZZZ_NEVER_MATCHES`)을 걸고
+셸 명령을 실행시켰더니 훅이 뜨지 않았다 — 무시되는 게 아니라 제대로 걸러진다.
+
+문제는 **도구 이름**이다. Claude 의 `Edit`·`Write`·`Bash` 를 그대로 쓰면 하나도 안 맞는다.
+실제 Codex 세션 rollout 에서 도구는 `exec`(`custom_tool_call`) 하나로 나온다.
+
+```
+name='exec'  type='custom_tool_call'
+input=const r = await tools.exec_command({cmd:"..."})
+```
+
+`apply_patch` 도 **도구 이름이 아니다** — `cmd` 문자열 안의 텍스트로만 등장한다.
+
+즉 도구별 필터가 필요한 훅(`memory-search`, `reflection`)은 matcher 값을 Codex 도구 이름으로
+바꾸거나, matcher 를 빼고 **입력의 `tool_name` 을 스크립트가 직접 보고 거르도록** 해야 한다.
+
+**매칭 안 된 훅은 완전히 무음이다** — 에러도 경고도 없다. hooks.json 은 잘 등록됐고 `/hooks`
+에도 보이는데 실제로는 안 도는 상태가 되므로, 이식할 때 반드시 실측으로 확인한다.
+
+> 여기 적힌 `exec` 는 rollout 로그에 기록된 이름이다. 훅 입력의 `tool_name` 필드가 같은
+> 문자열인지는 아직 직접 확인하지 못했다. 이식 전에 matcher 없는 임시 훅으로 `tool_name` 을
+> 한 번 찍어 확정할 것.
+>
+> **정정 이력:** 최초 작성 때 "Codex 에 `matcher` 키가 없다"고 적었다. 바이너리 문자열에서
+> `"matcher"` 를 못 찾은 것만 근거로 삼은 잘못된 단정이었다. 실제로 돌려보니 지원한다.
+> 부재는 grep 으로 증명되지 않는다.
 
 ## 검증 방법 (재현용)
 
@@ -83,6 +106,6 @@ codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → C
 | 훅 | Claude | Codex | 비고 |
 |---|---|---|---|
 | `project-memory-index` | ✅ | ✅ | 스파이크로 이식 완료 |
-| `memory-search` | ✅ | ⬜ | `matcher` 대체 필요(`tool_name` 자체 필터) |
+| `memory-search` | ✅ | ⬜ | matcher 값을 Codex 도구 이름으로 바꿔야 함. 먼저 `tool_name` 실측 |
 | `reflection` | ✅ | ⬜ | 위와 동일 |
 | `pr-merge-reflect` | ✅ | ⬜ | 마지막에 — LLM 잡을 띄우고 seen 캐시를 쓴다. Codex 세션에서 Codex 회고를 또 띄우는 중복도 정리해야 함 |
