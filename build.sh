@@ -150,6 +150,26 @@ cp core/scripts/prettier_guard.py plugins/codex/skills/prettier-guard/scripts/
 cp core/scripts/review_ledger.py plugins/codex/skills/review-ledger/scripts/
 cp core/scripts/verify_regression.py plugins/codex/skills/verify-regression/scripts/
 
+# ── Codex 훅 (스파이크: project-memory-index 하나만) ────────────
+# 검증된 사실(codex 0.145.0): 플러그인 매니페스트의 "hooks" 키가 hooks.json 을 가리키고,
+# Codex 가 **`CLAUDE_PLUGIN_ROOT` 를 호환 별칭으로 세팅**해 준다 → hooks.json 은 Claude 와 공용 형식.
+# 단 `CLAUDE_PROJECT_DIR` 은 안 준다 — 훅 스크립트가 입력 JSON 의 `cwd` 로 프로젝트를 찾는다.
+# ⚠️ 상대경로 command 는 실패한다(프로세스 cwd = 사용자 프로젝트). 반드시 ${CLAUDE_PLUGIN_ROOT} 기준.
+# ⚠️ 사용자가 훅 신뢰를 등록하기 전까지 Codex 는 훅을 **조용히 무시**한다(에러 없음).
+rm -rf plugins/codex/hooks
+mkdir -p plugins/codex/hooks
+cp core/hooks/project-memory-index.py plugins/codex/hooks/
+chmod +x plugins/codex/hooks/*.py
+{
+  printf '%s\n' '{'
+  printf '%s\n' '  "hooks": {'
+  printf '%s\n' '    "SessionStart": ['
+  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] }'
+  printf '%s\n' '    ]'
+  printf '%s\n' '  }'
+  printf '%s\n' '}'
+} > plugins/codex/hooks/hooks.json
+
 # 렌더 후 미치환 placeholder 가드 — SKILL.md 만 검사한다.
 # (번들된 스크립트는 검사 제외: stale_resolve.py 의 GraphQL f-string `{{` 처럼
 #  정당한 이중중괄호가 있어 placeholder 로 오탐된다. placeholder 는 SKILL.md 만의 개념.)
