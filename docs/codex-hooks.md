@@ -48,19 +48,42 @@ Claude 대비 `PermissionRequest`·`PreCompact`/`PostCompact`·`Stop`/`SubagentS
 | `apply_patch` | 파일 편집 — matcher 는 `Edit`·`Write` 도 받는다 |
 | `mcp__<server>__<tool>` | MCP 도구 |
 
-⚠️ **rollout 로그에 보이는 `exec` 는 훅의 도구 이름이 아니다.** code mode 내부 표현이다.
-로그로 matcher 값을 정하지 말 것.
+⚠️ **rollout 로그에 보이는 `exec` 는 훅의 도구 이름이 아니다.** 실측으로 정체가 밝혀졌다 —
+훅 입력의 **`tool_use_id` 접두사**다(`exec-9fa03e9a-13d8-...`). `tool_name` 은 그와 별개로
+`Bash`·`apply_patch` 가 온다. 로그로 matcher 값을 정하지 말 것.
+
+실제 입력 예시(발췌):
+
+```json
+{"hook_event_name":"PreToolUse","tool_name":"Bash",
+ "tool_input":{"command":"echo hello"},
+ "tool_use_id":"exec-c22ab2e4-ba2c-44ac-81c1-7f8d99969ef7"}
+
+{"hook_event_name":"PreToolUse","tool_name":"apply_patch",
+ "tool_input":{"command":"*** Begin Patch\n*** Add File: /tmp/x/test.txt\n+world\n*** End Patch"},
+ "tool_use_id":"exec-9fa03e9a-13d8-438e-bb96-796a2717a0fe"}
+```
+
+**`apply_patch` 의 `tool_input.command` 는 패치 원문 그대로다** — JS 래퍼가 아니다.
+`*** Begin Patch` / `*** Add File:` / `*** Update File:` / `*** Move to:` / `+` 라인을 그대로
+파싱하면 된다. `PostToolUse` 에는 `tool_response` 가 추가로 온다.
 
 ## ⚠️ 커버리지 한계 — 이게 가장 중요하다
 
 > `PreToolUse` and `PostToolUse` intercept **"simple" shell calls only**, not the newer
 > `unified_exec` mechanism or tools like `WebSearch`. — *"doesn't intercept all shell calls yet"*
 
-**실측:** code mode 가 켜진 환경(기본값)에서 matcher 없는 `PreToolUse` 훅을 걸고 셸 명령을
-실행시켰으나 **훅이 뜨지 않았다.** 문서의 이 한계와 일치하는 것으로 보인다.
+**실측 (2026-08-10, 실제 사용자 환경 / code mode 기본값):** `PreToolUse`·`PostToolUse` 둘 다
+**정상 발화했다.** 셸 실행과 `apply_patch` 편집 모두 잡혔고, matcher 도 정확히 매칭됐다.
 
-즉 **matcher 이름을 맞춰도 셸 훅이 안 뜰 수 있다.** 이식 전에 대상 환경에서 실제로 뜨는지
-반드시 관측할 것. 안 뜨는 원인을 이름 문제로 오진하기 쉽다.
+| 동작 | `tool_name` | 매칭된 matcher |
+|---|---|---|
+| `echo hello` | `Bash` | matcher 없음, `Bash` |
+| 파일 생성 | `apply_patch` | matcher 없음, `apply_patch` |
+
+따라서 이 한계가 **평범한 셸·편집 호출에는 해당하지 않는다.** 다만 문서가 `unified_exec` 를
+명시적으로 제외하므로, 그 경로를 쓰는 환경에서는 여전히 안 걸릴 수 있다. 이식 시에는
+대상 환경에서 한 번 관측하는 게 안전하다 — **안 뜨는 걸 matcher 이름 문제로 오진하기 쉽다.**
 
 ## 입력 (stdin JSON)
 
@@ -192,6 +215,6 @@ codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → C
 | 훅 | Claude | Codex | 비고 |
 |---|---|---|---|
 | `project-memory-index` | ✅ | ✅ | SessionStart — 커버리지 한계와 무관 |
-| `memory-search` | ✅ | ⬜ | `apply_patch` matcher. 셸 커버리지 한계 확인 필요 |
-| `reflection` | ✅ | ⬜ | 위와 동일 |
+| `memory-search` | ✅ | ⬜ | **이식 가능 확정.** `apply_patch` matcher, `tool_input.command` 에서 패치 파싱 |
+| `reflection` | ✅ | ⬜ | 위와 동일 (`PostToolUse`) |
 | `pr-merge-reflect` | ✅ | ⬜ | 마지막 — LLM 잡·seen 캐시, Codex 세션에서 회고 중복 정리 필요 |
