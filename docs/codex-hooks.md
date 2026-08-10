@@ -21,22 +21,24 @@ Codex 훅은 Claude 와 **형식이 거의 같다.** 훅 스크립트 본문은 
 **턴 단위:** `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
 `UserPromptSubmit`, `SubagentStop`, `Stop`
 
-**세션 단위:** `SessionStart`, **`SessionEnd`**, `SubagentStart`
+**세션 단위:** `SessionStart`, `SubagentStart`, `SessionEnd`(⚠️ 아래 참조 — 발화 미검증)
 
 Claude 대비 `PermissionRequest`·`PreCompact`/`PostCompact`·`Stop`/`SubagentStop`·`SubagentStart`
 가 더 있다.
 
-> **문서와 실물이 어긋난 지점:** 위 공식 문서 페이지의 이벤트 목록에는 `SessionEnd` 가 없지만
-> 바이너리에는 있다(0.145.0 실측). 확인 방법:
+> **`SessionEnd` — 목록에는 있으나 발화는 미검증.** 위 공식 문서 페이지의 이벤트 목록에는
+> `SessionEnd` 가 없다. 그런데 **Codex 의 `/hooks` 화면이 이 이벤트를 목록에 표시한다**
+> (`Right before a session ends`, 0.145.0). 바이너리 문자열에도 있다.
 >
-> ```bash
-> BIN=$(find "$(npm root -g)/@openai/codex" -name codex -type f -size +1M | head -1)
-> strings "$BIN" | grep -oE '"(PreToolUse|SessionStart|SessionEnd|Stop|...)"' | sort -u
-> ```
+> 다만 **실제로 발화하는 것을 관측하지는 못했다.** `/hooks` 에 보이는 것은 "설정 가능한
+> 이벤트"라는 뜻이지 "우리 환경에서 반드시 dispatch 된다"는 증명이 아니다.
+> **정리 작업(cleanup) 훅을 여기에 걸기 전에 반드시 실제 발화를 한 번 관측하라** — 안 뜨면
+> 무음으로 안 도는데, 세션 종료 훅은 안 돌아도 티가 안 난다.
 >
-> 문서가 1차 출처인 건 맞지만 **완전하지 않을 수 있다.** 이벤트 목록처럼 열거형인 항목은
-> 실물로 교차 확인하는 게 값싸다. 반대로 도구 이름·스키마처럼 **계약**에 해당하는 건
-> 실물 역추론이 위험하다(내부 이름과 공개 이름이 다름) — 문서를 따른다.
+> 이 구분을 일반화하면: **열거형 항목**(이벤트 목록)은 문서가 불완전할 수 있어 실물 교차
+> 확인이 값싸지만, 그 결과는 "존재"까지만 말해준다. **계약**(도구 이름, 입출력 스키마)은
+> 실물 역추론이 특히 위험하다 — 이 문서의 앞선 판이 `tool_use_id` 접두사 `exec-` 를 도구
+> 이름으로 오인한 게 그 예다. 그리고 **"동작한다"는 발화 관측으로만 증명된다.**
 
 ## 도구 이름 (matcher 대상)
 
