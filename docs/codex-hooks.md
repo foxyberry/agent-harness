@@ -1,89 +1,198 @@
-# Codex 훅 — 실측 정리 (codex-cli 0.145.0)
+# Codex 훅 — 공식 문서 정리 + 실측 보완
 
-이 문서는 **추측이 아니라 실제로 돌려서 확인한 것**만 적는다. 예전에 "Codex 훅은 버전 취약으로
-defer"라고 적어뒀는데, 지금 기준으로 사실이 아니어서 다시 조사했다.
+**1차 출처는 공식 문서다.** 이 문서는 그 요약이고, 우리가 직접 확인한 것만 "실측" 으로 구분해
+덧붙인다.
+
+- 공식: <https://learn.chatgpt.com/docs/config-file/config-advanced>
+- 확인 시점: 2026-08-10 / codex-cli 0.145.0
+
+> **정정 이력:** 이 문서의 앞선 두 판은 바이너리 문자열과 rollout 로그 역추론으로 썼고,
+> **도구 이름을 틀렸다**(`exec` 라고 단정 → 실제 canonical 은 `Bash`·`apply_patch`).
+> 로그의 `exec` 는 code mode 내부 이름이라 훅 계층과 레이어가 다르다. 문서를 먼저 봤으면
+> 안 틀렸다. 역추론은 문서가 없을 때의 보조 수단이다.
 
 ## 결론
 
-Codex 는 훅을 정식 지원하고, **플러그인으로 배포할 수 있으며, 형식이 Claude 와 거의 같다.**
-훅 스크립트 본문은 대부분 손대지 않고 양쪽에서 돌릴 수 있다.
+Codex 훅은 Claude 와 **형식이 거의 같다.** 훅 스크립트 본문은 대부분 손대지 않고 양쪽에서
+돌릴 수 있다. 다만 **커버리지 한계**와 **신뢰 절차**가 다르다.
 
-## Claude 와 같은 것
+## 이벤트
 
-| 항목 | 내용 |
+**턴 단위:** `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
+`UserPromptSubmit`, `SubagentStop`, `Stop`
+
+**세션 단위:** `SessionStart`, `SubagentStart`, `SessionEnd`(⚠️ 아래 참조 — 발화 미검증)
+
+Claude 대비 `PermissionRequest`·`PreCompact`/`PostCompact`·`Stop`/`SubagentStop`·`SubagentStart`
+가 더 있다.
+
+> **`SessionEnd` — 목록에는 있으나 발화는 미검증.** 위 공식 문서 페이지의 이벤트 목록에는
+> `SessionEnd` 가 없다. 그런데 **Codex 의 `/hooks` 화면이 이 이벤트를 목록에 표시한다**
+> (`Right before a session ends`, 0.145.0). 바이너리 문자열에도 있다.
+>
+> 다만 **실제로 발화하는 것을 관측하지는 못했다.** `/hooks` 에 보이는 것은 "설정 가능한
+> 이벤트"라는 뜻이지 "우리 환경에서 반드시 dispatch 된다"는 증명이 아니다.
+> **정리 작업(cleanup) 훅을 여기에 걸기 전에 반드시 실제 발화를 한 번 관측하라** — 안 뜨면
+> 무음으로 안 도는데, 세션 종료 훅은 안 돌아도 티가 안 난다.
+>
+> 이 구분을 일반화하면: **열거형 항목**(이벤트 목록)은 문서가 불완전할 수 있어 실물 교차
+> 확인이 값싸지만, 그 결과는 "존재"까지만 말해준다. **계약**(도구 이름, 입출력 스키마)은
+> 실물 역추론이 특히 위험하다 — 이 문서의 앞선 판이 `tool_use_id` 접두사 `exec-` 를 도구
+> 이름으로 오인한 게 그 예다. 그리고 **"동작한다"는 발화 관측으로만 증명된다.**
+
+## 도구 이름 (matcher 대상)
+
+`matcher` 는 **도구 이름에 대한 정규식**이다. 생략하거나 `"*"`·`""` 이면 모든 발생에 매칭.
+
+| 이름 | 대상 |
 |---|---|
-| 이벤트 이름 | `PreToolUse`, `PostToolUse`, `SessionStart`, `UserPromptSubmit` (+ Codex 전용 `PermissionRequest`, `SubagentStart`) |
-| `hooks.json` 구조 | `{"hooks": {"<이벤트>": [{"hooks": [{"type": "command", "command": "..."}]}]}}` |
-| 입력 (stdin JSON) | `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `model`, `permission_mode`, `source` |
-| 출력 | `hookSpecificOutput` + `additionalContext` |
-| **`${CLAUDE_PLUGIN_ROOT}`** | **Codex 도 세팅한다.** `PLUGIN_ROOT` 도 같은 값으로 함께 준다 |
+| `Bash` | 셸 명령 |
+| `apply_patch` | 파일 편집 — matcher 는 `Edit`·`Write` 도 받는다 |
+| `mcp__<server>__<tool>` | MCP 도구 |
 
-`CLAUDE_PLUGIN_ROOT` 를 Codex 가 준다는 건 값으로 확인했다 — 값이 Codex 플러그인 캐시 경로
-(`$CODEX_HOME/plugins/cache/<marketplace>/<plugin>/<version>`)를 가리켰고, 실행한 셸에는 그
-변수가 없었다. 호환 별칭을 의도적으로 제공하는 것으로 보인다. `CLAUDE_PLUGIN_DATA` /
-`PLUGIN_DATA` 도 마찬가지로 주어진다.
+⚠️ **rollout 로그에 보이는 `exec` 는 훅의 도구 이름이 아니다.** 실측으로 정체가 밝혀졌다 —
+훅 입력의 **`tool_use_id` 접두사**다(`exec-9fa03e9a-13d8-...`). `tool_name` 은 그와 별개로
+`Bash`·`apply_patch` 가 온다. 로그로 matcher 값을 정하지 말 것.
 
-## Claude 와 다른 것 — 여기서 걸린다
+실제 입력 예시(발췌):
 
-**1. `CLAUDE_PROJECT_DIR` 을 안 준다**
+```json
+{"hook_event_name":"PreToolUse","tool_name":"Bash",
+ "tool_input":{"command":"echo hello"},
+ "tool_use_id":"exec-c22ab2e4-ba2c-44ac-81c1-7f8d99969ef7"}
 
-프로젝트 루트는 **입력 JSON 의 `cwd`** 에서 얻어야 한다. 훅 스크립트는 이렇게 쓴다:
+{"hook_event_name":"PreToolUse","tool_name":"apply_patch",
+ "tool_input":{"command":"*** Begin Patch\n*** Add File: /tmp/x/test.txt\n+world\n*** End Patch"},
+ "tool_use_id":"exec-9fa03e9a-13d8-438e-bb96-796a2717a0fe"}
+```
+
+**`apply_patch` 의 `tool_input.command` 는 패치 원문 그대로다** — JS 래퍼가 아니다.
+`*** Begin Patch` / `*** Add File:` / `*** Update File:` / `*** Move to:` / `+` 라인을 그대로
+파싱하면 된다. `PostToolUse` 에는 `tool_response` 가 추가로 온다.
+
+## ⚠️ 커버리지 한계 — 이게 가장 중요하다
+
+> `PreToolUse` and `PostToolUse` intercept **"simple" shell calls only**, not the newer
+> `unified_exec` mechanism or tools like `WebSearch`. — *"doesn't intercept all shell calls yet"*
+
+**실측 (2026-08-10, 실제 사용자 환경 / code mode 기본값):** `PreToolUse`·`PostToolUse` 둘 다
+**정상 발화했다.** 셸 실행과 `apply_patch` 편집 모두 잡혔고, matcher 도 정확히 매칭됐다.
+
+| 동작 | `tool_name` | 매칭된 matcher |
+|---|---|---|
+| `echo hello` | `Bash` | matcher 없음, `Bash` |
+| 파일 생성 | `apply_patch` | matcher 없음, `apply_patch` |
+
+따라서 이 한계가 **평범한 셸·편집 호출에는 해당하지 않는다.** 다만 문서가 `unified_exec` 를
+명시적으로 제외하므로, 그 경로를 쓰는 환경에서는 여전히 안 걸릴 수 있다. 이식 시에는
+대상 환경에서 한 번 관측하는 게 안전하다 — **안 뜨는 걸 matcher 이름 문제로 오진하기 쉽다.**
+
+## 입력 (stdin JSON)
+
+**공통:** `session_id`, `transcript_path`(nullable), `cwd`, `hook_event_name`, `model`,
+`permission_mode`(`default`|`acceptEdits`|`plan`|`dontAsk`|`bypassPermissions`)
+
+**턴 단위 추가:** `turn_id`
+
+**이벤트별:**
+
+| 이벤트 | 추가 필드 |
+|---|---|
+| `PreToolUse`/`PostToolUse` | `tool_name`, `tool_use_id`, `tool_input` (Bash·apply_patch 는 `command` 를 가진 객체) |
+| `PermissionRequest` | `tool_name`, `tool_input`(선택적 `description`) |
+| `SessionStart`/`SubagentStart` | `source` / `agent_type`, `agent_id` |
+| `PreCompact`/`PostCompact` | `trigger` (`manual`\|`auto`) |
+| `Stop`/`SubagentStop` | `stop_hook_active`, `last_assistant_message` |
+
+## 출력 (stdout)
+
+공통: `continue`, `stopReason`, `systemMessage`, `suppressOutput`
+
+| 이벤트 | 고유 출력 |
+|---|---|
+| `PreToolUse` | `permissionDecision`(`allow`\|`deny`) + `permissionDecisionReason`, `additionalContext`, `updatedInput` |
+| `PostToolUse` | `decision: "block"` + `reason`, `additionalContext` |
+| `UserPromptSubmit` | `decision: "block"` + `reason`; `additionalContext` 는 developer context 로 |
+| `SessionStart`/`SubagentStart` | 평문 stdout 이 developer context 가 된다. `hookSpecificOutput.additionalContext` JSON 도 동작 |
+
+평문 stdout 은 대부분의 이벤트에서 무시되고, `SessionStart`·`SubagentStart`·`UserPromptSubmit`
+에서만 컨텍스트로 들어간다.
+
+## exit code
+
+| 코드 | 의미 |
+|---|---|
+| `0` + JSON | 성공, 출력 파싱 |
+| `0` + 출력 없음 | 성공, 그대로 진행 |
+| **`2`** | **차단/거부** — 사유는 stderr 에 |
+| 그 외 non-zero | 훅 실패로 보고 |
+
+## 설정 위치 (우선순위 순)
+
+1. `~/.codex/hooks.json` 또는 `~/.codex/config.toml` 의 `[hooks]` (user)
+2. `<repo>/.codex/hooks.json` 또는 `<repo>/.codex/config.toml` 의 `[hooks]` (project)
+3. 플러그인 번들 `hooks/hooks.json` 또는 매니페스트가 지정한 경로
+
+한 레이어에 `hooks.json` 과 인라인 `[hooks]` 가 둘 다 있으면 병합하고 경고한다.
+
+플러그인은 매니페스트에 `"hooks": "./hooks/hooks.json"` 로 등록한다(실측).
+
+TOML 인라인 형태:
+
+```toml
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/policy.py"'
+timeout = 30
+statusMessage = "Checking Bash command"
+```
+
+`$(git rev-parse --show-toplevel)` 는 **문서가 쓰는 관용구**다.
+
+## 신뢰(trust) — 안 하면 무음으로 건너뛴다
+
+- **프로젝트 훅**(`<repo>/.codex/`): `.codex/` 레이어가 신뢰돼야 로드된다. 명시적 검토·신뢰 필요.
+  신뢰는 **훅 해시 기준**으로 기록되므로 **내용이 바뀌면 재검토**가 뜬다.
+- **user/system 훅**: 프로젝트가 미신뢰여도 자기 레이어에서 로드된다. 검토·신뢰 절차는 동일.
+- **managed 훅**(`requirements.toml`·MDM·정책): 정책상 신뢰 처리, 사용자가 못 끈다.
+- **우회**: `--dangerously-bypass-hook-trust` (검증된 훅에만).
+
+⚠️ 미신뢰 훅은 **에러도 경고도 없이** 건너뛴다. 설치 성공처럼 보이므로 사용자 안내에 반드시
+포함해야 한다.
+
+## 환경 변수
+
+**플러그인 훅:** `PLUGIN_ROOT`, `PLUGIN_DATA` (Codex 고유) + `CLAUDE_PLUGIN_ROOT`,
+`CLAUDE_PLUGIN_DATA` (**호환 별칭**)
+
+**모든 훅:** 세션 `cwd` 가 작업 디렉터리로 설정된다.
+
+⚠️ **`CLAUDE_PROJECT_DIR` 은 주어지지 않는다**(실측). 프로젝트 경로는 입력 JSON 의 `cwd` 로
+얻는다. 프로세스 cwd 가 플러그인 루트가 아니므로 **상대경로 `command` 는 실패**한다(실측) —
+`${CLAUDE_PLUGIN_ROOT}` 기준 절대경로나 문서의 `$(git rev-parse ...)` 관용구를 쓴다.
 
 ```python
 def _project_dir(data=None):
     return (os.environ.get("CLAUDE_PROJECT_DIR")     # Claude
             or (data or {}).get("cwd")               # Codex
-            or os.getcwd())                          # 최후 수단
+            or os.getcwd())
 ```
 
-**2. 상대경로 `command` 는 실패한다**
+## 기타 제약
 
-프로세스 cwd 가 **사용자 프로젝트**다(플러그인 루트가 아니다). `python3 hooks/foo.py` 는
-`hook: SessionStart Failed` 로 끝난다. 반드시 `${CLAUDE_PLUGIN_ROOT}` 기준 절대경로로 쓴다.
+- `type: "command"` 만 실행된다. `prompt`·`agent` 타입은 파싱만 하고 건너뛴다.
+- async command 훅은 파싱되나 실행되지 않는다.
+- 기본 타임아웃 600초, `timeout`(초)로 조정.
+- 같은 이벤트에 매칭된 훅 여러 개는 **동시 실행**되며 서로를 막을 수 없다.
+- `PreToolUse` 는 완전한 강제가 아니다 — 다른 도구로 우회 가능.
 
-**3. 훅 신뢰(trust)를 등록해야 한다 — 안 하면 조용히 무시**
-
-이게 배포 관점에서 가장 중요하다. 신뢰 등록 전에는 **에러도 경고도 없이 그냥 안 돈다.**
-설치했는데 아무 일도 안 일어나는 것처럼 보인다.
-
-- 확인/등록: `hook_trust`, `hook_sources` 설정
-- 자동화용 우회: `codex --dangerously-bypass-hook-trust` (이름 그대로 위험 — 검증된 훅에만)
-
-Claude 에는 없는 단계이므로 **사용자 안내에 반드시 포함**해야 한다.
-
-**4. `matcher` 는 동작하지만 도구 이름이 Claude 와 다르다** ⚠️
-
-`matcher` 는 Codex 도 **정상 지원한다.** 절대 매칭될 수 없는 값(`ZZZ_NEVER_MATCHES`)을 걸고
-셸 명령을 실행시켰더니 훅이 뜨지 않았다 — 무시되는 게 아니라 제대로 걸러진다.
-
-문제는 **도구 이름**이다. Claude 의 `Edit`·`Write`·`Bash` 를 그대로 쓰면 하나도 안 맞는다.
-실제 Codex 세션 rollout 에서 도구는 `exec`(`custom_tool_call`) 하나로 나온다.
-
-```
-name='exec'  type='custom_tool_call'
-input=const r = await tools.exec_command({cmd:"..."})
-```
-
-`apply_patch` 도 **도구 이름이 아니다** — `cmd` 문자열 안의 텍스트로만 등장한다.
-
-즉 도구별 필터가 필요한 훅(`memory-search`, `reflection`)은 matcher 값을 Codex 도구 이름으로
-바꾸거나, matcher 를 빼고 **입력의 `tool_name` 을 스크립트가 직접 보고 거르도록** 해야 한다.
-
-**매칭 안 된 훅은 완전히 무음이다** — 에러도 경고도 없다. hooks.json 은 잘 등록됐고 `/hooks`
-에도 보이는데 실제로는 안 도는 상태가 되므로, 이식할 때 반드시 실측으로 확인한다.
-
-> 여기 적힌 `exec` 는 rollout 로그에 기록된 이름이다. 훅 입력의 `tool_name` 필드가 같은
-> 문자열인지는 아직 직접 확인하지 못했다. 이식 전에 matcher 없는 임시 훅으로 `tool_name` 을
-> 한 번 찍어 확정할 것.
->
-> **정정 이력:** 최초 작성 때 "Codex 에 `matcher` 키가 없다"고 적었다. 바이너리 문자열에서
-> `"matcher"` 를 못 찾은 것만 근거로 삼은 잘못된 단정이었다. 실제로 돌려보니 지원한다.
-> 부재는 grep 으로 증명되지 않는다.
-
-## 검증 방법 (재현용)
+## 주입 검증법 (재현용)
 
 훅이 실제로 컨텍스트를 주입했는지는 **모델이 파일을 직접 읽어서 답한 것과 구별해야** 한다.
-canary 문자열을 `.claude/memory/INDEX.md` 에만 두고, 같은 프롬프트로 훅 켬/끔 두 번 돌린다.
+canary 문자열을 `.claude/memory/INDEX.md` 에만 두고 훅 켬/끔 두 번 돌린다.
 
 ```bash
 export CODEX_HOME=<격리 경로>            # 실제 ~/.codex 오염 방지
@@ -95,17 +204,19 @@ codex exec "$P"                                    # 대조군(훅 무시) → N
 codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → CANARY
 ```
 
-실측 결과가 정확히 `NONE` / `SPIKE_CANARY_12345` 로 갈렸다. **"파일을 읽지 마"를 넣지 않으면
-모델이 그냥 INDEX.md 를 읽어버려서 실험이 무의미해진다** — 이 대조가 없으면 주입을 증명한 게
-아니다.
+실측 결과가 `NONE` / `SPIKE_CANARY_12345` 로 갈렸다. **"파일을 읽지 마"를 넣지 않으면 모델이
+그냥 읽어버려서 실험이 무의미해진다.**
 
-검증은 harness repo **밖**의 별도 프로젝트에서 한다([[adapter-cross-project-testing]]).
+⚠️ **격리 `CODEX_HOME` 에 `auth.json` 을 복사하지 마라.** refresh token 은 1회용이라 원본과
+경쟁해 양쪽 다 깨질 수 있다. 격리 홈에서는 `codex login` 을 따로 한다.
+
+검증은 harness repo **밖** 별도 프로젝트에서 한다([[adapter-cross-project-testing]]).
 
 ## 현재 이식 상태
 
 | 훅 | Claude | Codex | 비고 |
 |---|---|---|---|
-| `project-memory-index` | ✅ | ✅ | 스파이크로 이식 완료 |
-| `memory-search` | ✅ | ⬜ | matcher 값을 Codex 도구 이름으로 바꿔야 함. 먼저 `tool_name` 실측 |
-| `reflection` | ✅ | ⬜ | 위와 동일 |
-| `pr-merge-reflect` | ✅ | ⬜ | 마지막에 — LLM 잡을 띄우고 seen 캐시를 쓴다. Codex 세션에서 Codex 회고를 또 띄우는 중복도 정리해야 함 |
+| `project-memory-index` | ✅ | ✅ | SessionStart — 커버리지 한계와 무관 |
+| `memory-search` | ✅ | ⬜ | **이식 가능 확정.** `apply_patch` matcher, `tool_input.command` 에서 패치 파싱 |
+| `reflection` | ✅ | ⬜ | 위와 동일 (`PostToolUse`) |
+| `pr-merge-reflect` | ✅ | ⬜ | 마지막 — LLM 잡·seen 캐시, Codex 세션에서 회고 중복 정리 필요 |
