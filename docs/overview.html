@@ -236,7 +236,7 @@
     </div>
   </div>
 
-  <h2>자동 훅 4개 <span class="muted">(Claude용 묶음)</span></h2>
+  <h2>자동 훅 4개 <span class="muted">(Claude 전부 · Codex는 첫 줄 하나)</span></h2>
   <table>
     <thead><tr><th>언제</th><th>훅</th><th>하는 일</th><th>프로젝트 설정</th></tr></thead>
     <tbody>
@@ -249,9 +249,15 @@
   <p class="muted"><code>project-memory-index</code>는 루프의 단계라기보다 <b>루프에 시동을 거는 쪽</b>이다.
     세션이 열리면 "이 프로젝트엔 이런 메모리가 있다"는 목록을 먼저 깔아두고, 그 뒤 파일을 열 때
     <code>memory-search</code>가 그중 지금 필요한 본문을 꺼내 ①로 넘긴다.</p>
+  <p class="muted"><b>Codex에는 지금 <code>project-memory-index</code> 하나만 올라가 있다.</b> 나머지 셋도
+    이식할 수 있다는 건 확인했다 — Codex도 파일 편집 전후에 훅을 띄우고, 편집 내용을 패치 원문
+    그대로 넘겨준다. 남은 일은 두 도구가 주는 입력 형식을 하나로 맞추는 것이다.
+    (<code>docs/codex-hooks.md</code>)</p>
 
   <h3>"자동"이라는 말의 뜻 — <span class="em">돌아가는 것</span>과 <span class="em">말을 거는 것</span>은 다르다</h3>
-  <p>4개 모두 플러그인만 깔면 <b>따로 켜지 않아도 해당 순간마다 실행된다</b>. 여기까지는 무조건이다.
+  <p><b>Claude에서는</b> 4개 모두 플러그인만 깔면 <b>따로 켜지 않아도 해당 순간마다 실행된다</b>. 여기까지는 무조건이다.
+    (<b>Codex</b>는 지금 <code>project-memory-index</code> 하나만 올라가 있고, 그것도 <b>훅을 신뢰해야</b> 실행된다.
+    나머지 셋은 Codex에서 아직 돌지 않는다.)
     하지만 실행됐다고 항상 뭔가를 알려주는 건 아니다. <b>대부분은 프로젝트에 재료가 있을 때만 입을 연다</b> —
     없으면 아무 말 없이 지나간다(고장이 아니다).</p>
   <div class="vis">
@@ -569,12 +575,18 @@ type: feedback | project | reference
   <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(skill-only plugin)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(스킬 12개 + 훅 1개)</span>:</p>
   <pre><code>codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
   <div class="note tip">
     공개 marketplace 주소는 별도 저장소 권한이나 SSH 인증 없이 HTTPS로 설치된다.
+  </div>
+  <div class="note warn">
+    <b>⚠️ Codex는 훅을 신뢰해야 실행한다.</b> 신뢰하지 않은 훅은 <b>아무 메시지 없이 건너뛴다</b> —
+    설치는 됐는데 훅만 조용히 안 도는 상태가 된다. 설치 후 Codex가 띄우는 검토 화면에서 훅을
+    확인하고 신뢰하면 된다(<code>/hooks</code>로 언제든 다시 볼 수 있다). 스킬만 쓸 거면 신뢰하지
+    않아도 된다. 플러그인 버전이 올라 훅 내용이 바뀌면 다시 물어본다.
   </div>
   <p class="muted">공통: 프로젝트에 <code>project-template/</code>를 복사한다 (AGENTS.md 기준 문서 + <code>.claude/memory/</code> 예시 파일).</p>
   <p class="muted"><b>업데이트</b> — Codex에는 아직 <code>plugin update</code>가 없어서, 새 버전은
@@ -597,7 +609,7 @@ codex plugin add agent-harness@foxyberry
     <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
     <div class="split">
       <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 12개 + 훅 <code>hooks.json</code> 자동발견</span></div>
-      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 12개 (훅은 나중에)</span></div>
+      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 12개 + 훅 1개 (<code>project-memory-index</code>, 나머지 3개는 이식 중)</span></div>
     </div>
     <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
     <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
@@ -657,8 +669,10 @@ codex plugin add agent-harness@foxyberry
     <li><span class="badge done">DONE</span> 정리·점검 명령 — <code>/merge-cleanup</code>·<code>/stale-scan</code>·<code>/prettier-guard</code>. 셋 다 제안만 하고 직접 실행하지 않는다</li>
     <li><span class="badge done">DONE</span> 실제 설치 검증 — Claude·Codex 양쪽에서 marketplace로 받아 설치하고, <b>설치된 사본으로</b> 스킬을 돌려봤다. Claude가 저장한 핸드오프를 Codex가 그대로 읽는 것까지 확인</li>
     <li><span class="badge done">POC</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + Claude용 수동 <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
-    <li><span class="badge soon">NEXT</span> 훅이 실제로 <b>발화</b>하는지 확인 — 지금까지 확인된 건 설치 후 훅이 <b>인식</b>된다는 것까지다</li>
-    <li><span class="badge soon">NEXT</span> Codex용 훅 (버전 변화에 약해 나중에 진행) · 설치 도구 · 사람 확인 절차 자동화</li>
+    <li><span class="badge done">DONE</span> 훅이 실제로 <b>발화</b>하는지 확인 — Codex에 <code>project-memory-index</code>를 올려 실제 사용자 환경에서 <b>메모리 인덱스가 컨텍스트에 주입되는 것</b>까지 확인했다. 훅을 끈 세션과 켠 세션을 같은 질문으로 비교해, 모델이 파일을 직접 읽은 게 아님을 가렸다</li>
+    <li><span class="badge done">DONE</span> Codex 훅 조사 — 예전엔 "버전 변화에 약해 나중에"로 미뤄뒀지만, 지금은 Codex도 훅을 정식 지원한다. 이벤트 이름·입출력 형식이 Claude와 거의 같고, <code>Bash</code>·<code>apply_patch</code> 편집 훅이 실제로 뜨는 것까지 측정했다 (<code>docs/codex-hooks.md</code>)</li>
+    <li><span class="badge soon">NEXT</span> Codex용 나머지 훅 3개 — <code>memory-search</code>·<code>reflection</code>·<code>pr-merge-reflect</code>. 이식 가능한 건 확인됐고, 두 도구의 입력 형식을 하나로 맞추는 작업이 남았다</li>
+    <li><span class="badge soon">NEXT</span> 설치 도구 · 사람 확인 절차 자동화</li>
   </ul>
 
   <footer>
