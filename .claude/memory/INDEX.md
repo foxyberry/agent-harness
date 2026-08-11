@@ -14,7 +14,6 @@
 - [committed-artifact-env-leak](committed-artifact-env-leak.md) — 커밋되는 산출물에 호스트명·절대경로 자동 삽입 금지; 기본 비공개 + 환경변수 opt-in
 - [squash-merge-consequences](squash-merge-consequences.md) — squash merge라 branch --merged 무력화; stacked PR은 base 머지 후 rebase
 - [cache-must-outlive-target](cache-must-outlive-target.md) — 캐시·alias 저장 위치: worktree/세션 안에 두지 말 것, worktree 상태는 .git 공통 디렉터리에
-- [docs-one-fact-one-place](docs-one-fact-one-place.md) — 같은 사실을 문서 여러 곳에 쓰지 말 것; 고치기 전에 grep 으로 사본 확인
 
 ## 결정 기록 (ADR)
 
