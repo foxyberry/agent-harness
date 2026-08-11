@@ -3,6 +3,8 @@
 [![validate](https://github.com/foxyberry/agent-harness/actions/workflows/validate.yml/badge.svg)](https://github.com/foxyberry/agent-harness/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+*English · [한국어](README.ko.md)*
+
 A reusable agent harness that ships handoffs, shared memory, retrospectives, and
 review/cleanup workflows to **both Claude Code and Codex**. It is for people who pick work
 back up in a different session or a different tool, and who want the lessons from merged
