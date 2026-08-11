@@ -47,15 +47,34 @@ The public marketplace installs over anonymous HTTPS — no repository access or
 
 Both adapters are built from the same `core/`, but they install and trigger differently.
 
+### Platform differences
+
+These are properties of the two tools. They are why `core/` has to be repackaged per adapter
+rather than copied.
+
 | | Claude Code | Codex |
 |---|---|---|
-| What ships | 12 skills + 4 hooks | 12 skills + 1 hook |
-| How it triggers | slash commands (`/handoff-save`) | skill description matching |
-| Hook trust | not required | **required** (see the warning above) |
+| How skills trigger | slash commands (`/handoff-save`) | the model matches on the skill's `description` |
+| Where scripts live | `bin/`, put on `PATH` when the plugin is enabled | bundled per skill under `scripts/` |
+| Hook trust | install implies consent | **each hook is reviewed and trusted separately**, keyed by hash, re-asked when it changes |
+| Edit tool seen by hooks | `Edit`, `Write`, `MultiEdit` | `apply_patch` — one patch covering possibly several files |
+| Project path for hooks | `CLAUDE_PROJECT_DIR` | not provided; read `cwd` from the hook's stdin JSON |
+| Plugin path for hooks | `CLAUDE_PLUGIN_ROOT` | same variable (Codex provides it as a compatibility alias) |
 | Local marketplace | `/plugin marketplace add ./` | `codex plugin marketplace add ./` |
 
-User-facing names are kept identical across tools, but slash-command invocation is not
-guaranteed on the Codex side.
+Because Codex picks skills by reading their `description`, a Codex-facing description has to
+say **when to use the skill**, not just what it does.
+
+### Porting status — not a platform limit
+
+| | Claude Code | Codex |
+|---|---|---|
+| Skills | 12 | 12 |
+| Hooks | 4 | **1** (`project-memory-index`) |
+
+Codex can run the other three hooks — `PreToolUse` and `PostToolUse` were measured firing
+correctly. They are simply not ported yet, because the edit payload differs enough to need a
+normalization step ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## Why this exists
 
