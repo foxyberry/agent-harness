@@ -3,18 +3,20 @@
 [![validate](https://github.com/foxyberry/agent-harness/actions/workflows/validate.yml/badge.svg)](https://github.com/foxyberry/agent-harness/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Claude Code와 Codex에 핸드오프, 공유 메모리, 회고, 리뷰·정리 워크플로를 함께 배포하는
-재사용 가능한 에이전트 하네스입니다. 작업을 다른 세션이나 도구에서 이어받고, 머지된 작업의
-교훈을 프로젝트 메모리로 남기는 팀을 대상으로 합니다.
+A reusable agent harness that ships handoffs, shared memory, retrospectives, and
+review/cleanup workflows to **both Claude Code and Codex**. It is for people who pick work
+back up in a different session or a different tool, and who want the lessons from merged
+work to survive as project memory instead of evaporating with the transcript.
 
-> 📖 **처음이거나 오랜만이라면 [사용 안내](docs/guide.md)부터 보세요.** "언제 무엇을 쓰나"를
-> 상황별로 정리했습니다. 이 README는 설치와 개요, 안내서는 실제 사용법입니다.
+> 📖 **New here, or coming back after a while? Start with the [usage guide](docs/guide.md).**
+> It is organized by situation — what to reach for and when. This README covers installation
+> and the shape of the system; the guide covers actually using it.
 
-## 빠른 설치
+## Install
 
 ### Claude Code
 
-Claude Code 안에서 실행합니다.
+Run inside a Claude Code session.
 
 ```text
 /plugin marketplace add foxyberry/agent-harness
@@ -23,131 +25,166 @@ Claude Code 안에서 실행합니다.
 
 ### Codex
 
-터미널에서 실행합니다.
+Run in a terminal.
 
 ```bash
 codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 ```
 
-공개 marketplace는 별도 저장소 권한이나 SSH 인증 없이 HTTPS로 설치됩니다.
+The public marketplace installs over anonymous HTTPS — no repository access or SSH key needed.
 
-> **⚠️ Codex 훅은 신뢰를 등록해야 동작합니다.** Codex는 신뢰하지 않은 훅을 **아무 메시지 없이
-> 건너뜁니다** — 설치는 됐는데 훅만 조용히 안 도는 상태가 됩니다. 설치 후 Codex가 안내하는
-> 훅 신뢰 절차(`hook_trust`)를 승인해 주세요. 스킬만 쓰실 거면 등록하지 않아도 됩니다.
-> 자세한 내용은 [docs/codex-hooks.md](docs/codex-hooks.md).
+> **⚠️ Codex hooks only run once you trust them.** Codex skips untrusted hooks **with no
+> message at all**, so the install looks successful while the hooks quietly do nothing.
+>
+> After installing, opening a Codex session shows a `Hooks need review` screen. Review the
+> hook and trust it. You can revisit this any time with `/hooks` — if the `Active` column
+> reads `0`, the hook is not running. Codex asks again whenever a plugin update changes the
+> hook. If you only want the skills, you can leave hooks untrusted.
+> Details: [docs/codex-hooks.md](docs/codex-hooks.md).
 
-## Claude Code와 Codex
+## Claude Code and Codex
 
-두 어댑터는 같은 core 스킬을 사용하지만 설치와 호출 방식은 다릅니다.
+Both adapters are built from the same `core/`, but they install and trigger differently.
 
 | | Claude Code | Codex |
 |---|---|---|
-| 배포 형태 | 플러그인 | skill-only 플러그인 |
-| 호출 방식 | `/handoff-save` 같은 슬래시 커맨드 | skill description 매칭 |
-| 자동 훅 | 자기개선 훅 4종 제공 | 메모리 인덱스 훅 1종 (신뢰 등록 필요, 아래 참고) |
-| 로컬 marketplace | `/plugin marketplace add ./` (저장소 루트) | `codex plugin marketplace add ./` (저장소 루트) |
+| What ships | 12 skills + 4 hooks | 12 skills + 1 hook |
+| How it triggers | slash commands (`/handoff-save`) | skill description matching |
+| Hook trust | not required | **required** (see the warning above) |
+| Local marketplace | `/plugin marketplace add ./` | `codex plugin marketplace add ./` |
 
-사용자-facing 기능 이름은 같지만 Codex에서 슬래시 호출을 보장하지는 않습니다.
+User-facing names are kept identical across tools, but slash-command invocation is not
+guaranteed on the Codex side.
 
-## 왜 agent-harness인가
+## Why this exists
 
-- 세션 종료 시 기록하는 데 그치지 않고, 편집 전 메모리 주입부터 머지 후 회고까지 연결합니다.
-- 로컬 transcript 대신 Git에 커밋되는 핸드오프와 메모리로 도구·사람·컴퓨터 사이에서 작업을 이어갑니다.
-- 자동 생성된 교훈은 바로 공유하지 않고 `_pending → 사람 승인 → committed` 절차를 거칩니다.
+- It does not stop at capturing state when a session ends. The loop runs from injecting
+  memory *before* an edit through prompting a retrospective *after* a merge.
+- Handoffs and memory are committed to Git rather than living in a local transcript, so work
+  crosses tools, machines, and people.
+- Automatically drafted lessons are not shared straight away — they go through
+  `_pending → human approval → committed`.
 
-## 주요 기능
+## What you get
 
-| 기능 | 하는 일 |
+| Skill | What it does |
 |---|---|
-| `handoff-save` | 넘기기 전 현재 작업 상태를 커밋 가능한 파일로 저장 |
-| `handoff-load` | 커밋된 핸드오프와 현재 Git 상태를 대조해 작업 재개 |
-| `fw` | 저장하지 못한 작업을 반대 도구의 로컬 세션 로그에서 복구 |
-| `fw-both` | Claude와 Codex 양쪽 세션 로그를 함께 대조 |
-| `history` | 로컬 세션을 시간순으로 조회·검색 |
-| `feedback-review` | 리뷰 피드백을 프로젝트 규칙이나 스킬로 승격할지 검토 |
-| `memory-update` | `_pending` 초안을 사람이 검토한 뒤 공유 메모리로 승격 |
-| `merge-cleanup` | PR 머지 후 브랜치, 이슈, worktree와 임시 파일 정리 후보 제시 |
-| `prettier-guard` | 기존부터 non-clean인 파일의 불필요한 전체 포맷 방지 |
-| `review-ledger` | 여러 라운드의 PR 리뷰 finding과 반영 상태 추적 |
-| `stale-scan` | 오래된 이슈를 코드와 머지된 PR 근거로 분류 |
-| `verify-regression` | 새 테스트를 수정 전 source에서 실행해 실제 회귀인지 검증 |
+| `handoff-save` | Save the current state to a committable file before handing off |
+| `handoff-load` | Resume by reading the committed handoff and diffing it against current Git state |
+| `fw` | Recover unsaved work from the other tool's local session log |
+| `fw-both` | Read Claude and Codex session logs together |
+| `history` | Browse and search local sessions by time |
+| `feedback-review` | Decide whether review feedback should become a project rule or a skill |
+| `memory-update` | Promote `_pending` drafts to shared memory after human review |
+| `merge-cleanup` | Report cleanup candidates after a merge: branches, issues, worktrees, leftovers |
+| `prettier-guard` | Keep `prettier --write` from reformatting files that were already dirty |
+| `review-ledger` | Track findings and their status across multiple review rounds |
+| `stale-scan` | Classify old issues using linked merged PRs as evidence |
+| `verify-regression` | Run a new test against the pre-fix source to confirm it catches a real regression |
 
-## 자기개선 루프
+## The self-improvement loop
 
-Claude 어댑터는 명시적으로 실행하는 기능 외에도 프로젝트 메모리를 활용하는 훅을 제공합니다.
+Beyond the skills you invoke explicitly, hooks fire on their own and use project memory.
 
-| 시점 | 훅 | 동작 |
+| When | Hook | What it does | Claude | Codex |
+|---|---|---|---|---|
+| Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
+| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ⬜ |
+| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ⬜ |
+| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | ⬜ |
+
+**Codex currently runs only the first one.** The other three are portable — that has been
+measured — but the port is still open work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+
+The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
+to check is decided by data in the project's `.claude/memory/`. With no data the hooks are
+silent no-ops. The automatic retrospective spawns `claude -p`, so it stays off until you set
+`HARNESS_AUTO_REFLECT=1`.
+
+[Hook details](docs/self-improvement-hooks.md) · [Codex hook constraints](docs/codex-hooks.md)
+
+## Adopting it in a project
+
+The plugin installs the shared machinery; `project-template/` supplies the per-repository
+rules and example data.
+
+1. Merge `project-template/AGENTS.md` into your project's canonical rules.
+2. On Claude Code, keep the `@AGENTS.md` import in `CLAUDE.md`.
+3. Adjust the route and reflection examples under `.claude/memory/` to your stack.
+4. Merge the PR template and workflow under `.github/` with your existing CI rules.
+
+Do not overwrite existing files wholesale. `AGENTS.md`, `CLAUDE.md`, and `.github/` are the
+ones most likely to collide with rules you already have.
+
+## Layout
+
+| Layer | Location | Role |
 |---|---|---|
-| 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md`를 컨텍스트에 주입 |
-| 편집 전 | `memory-search` | 수정 파일과 관련된 프로젝트 메모리 주입 |
-| 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 |
-| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림과 선택적 회고 초안 생성 |
+| core | `core/` | Tool-agnostic source of truth: skills, scripts, memory and handoff formats |
+| adapter | `plugins/harness/`, `plugins/codex/` | `core/` packaged for Claude and Codex |
+| opinion pack | `project-template/`, `docs/` | Team workflow and example data you adopt selectively |
 
-훅 엔진은 `core/`에 있고, 어떤 메모리를 주입하고 어떤 규칙을 검사할지는 프로젝트의
-`.claude/memory/` 데이터가 결정합니다. 데이터가 없으면 조용히 no-op하며, `claude -p`를 사용하는
-자동 회고는 `HARNESS_AUTO_REFLECT=1`로 명시적으로 켜기 전까지 실행되지 않습니다.
+`core/` is canonical; the adapters are **generated** by `build.sh`. Editing an adapter
+directly gets overwritten on the next build, and CI fails the diff.
 
-[자기개선 훅 상세 문서](docs/self-improvement-hooks.md)
-
-## 프로젝트에 적용
-
-플러그인은 공통 기능을 설치하고, `project-template/`은 저장소별 운영 규칙을 제공합니다.
-
-1. `project-template/AGENTS.md`를 프로젝트 규칙의 정본으로 병합합니다.
-2. Claude Code를 사용한다면 `CLAUDE.md`의 `@AGENTS.md` 연결을 유지합니다.
-3. `.claude/memory/`의 route와 reflection 예시를 프로젝트 기술 스택에 맞게 수정합니다.
-4. `.github/`의 PR 템플릿과 workflow를 기존 CI 규칙과 병합합니다.
-
-기존 파일을 통째로 덮어쓰지 마세요. 특히 `AGENTS.md`, `CLAUDE.md`, `.github/`는 프로젝트의
-기존 규칙과 충돌할 수 있습니다.
-
-## 구조
-
-| 층 | 위치 | 역할 |
-|---|---|---|
-| core | `core/` | 툴 무관 정본: Agent Skills, 스크립트, 메모리·핸드오프 형식 |
-| adapter | `plugins/harness/`, `plugins/codex/` | core를 Claude와 Codex 배포 형식으로 포장 |
-| opinion pack | `project-template/`, `docs/` | 선택적으로 채택하는 팀 워크플로와 예시 데이터 |
-
-`core/`가 정본이고 어댑터는 `build.sh`로 복사 생성됩니다.
-
-## 업데이트
-
-Claude Code에서는 marketplace의 플러그인 관리 화면을 사용합니다. Codex는 새 릴리스가 필요할 때
-marketplace snapshot과 설치 캐시를 갱신합니다.
+## Updating
 
 ```bash
+# Claude Code
+claude plugin marketplace update foxyberry
+
+# Codex — there is no `plugin update` yet, so refresh the snapshot and re-add
 codex plugin marketplace upgrade foxyberry
 codex plugin remove agent-harness@foxyberry
 codex plugin add agent-harness@foxyberry
 ```
 
-## 개발
+You do not need to do this often — only when a new release lands.
 
-core를 수정한 뒤 반드시 어댑터를 재생성합니다.
+## Development
+
+Regenerate the adapters after touching `core/`.
 
 ```bash
 ./build.sh
 python3 -m unittest discover -s tests
 ```
 
-CI는 JSON과 Python 문법, 테스트, core와 adapter의 동기화를 검사합니다.
+CI checks JSON manifest syntax, Python syntax, the test suite, and that `core/` and the
+generated adapters are in sync.
 
-## 상태
+## Status
 
-- 현재 플러그인 버전: `0.5.0`
-- Claude Code와 Codex 공개 marketplace 설치 검증 완료
-- 양쪽 어댑터에 스킬 12개 배포 및 크로스툴 handoff 검증 완료
-- Claude 훅 이벤트 인식과 설치 캐시 실행 검증 완료
-- Claude 훅의 실제 발화·컨텍스트 주입 검증은 진행 중
-- Codex 훅은 `project-memory-index` 1종 이식 완료 (codex-cli 0.145.0에서 주입 검증). 나머지 3종은 순차 이식
+- Plugin version: `0.5.0`
+- Public marketplace installation verified for both Claude Code and Codex
+- 12 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
+- Hook firing and context injection verified — the same question was asked with hooks off and
+  on, so an answer read straight from the file could be ruled out
+- Codex ships `project-memory-index` (codex-cli 0.145.0); the remaining three hooks are next
 
-시각 자료가 포함된 상세 개요는 [`docs/overview.html`](docs/overview.html), 설계 문서는
-[`docs/`](docs/)에서 확인할 수 있습니다.
+### Known issues
 
-## 보안 · 라이선스 · 기여
+- [#78](https://github.com/foxyberry/agent-harness/issues/78) — `merge-cleanup` reports zero
+  local branches in squash-merge repositories
+- [#79](https://github.com/foxyberry/agent-harness/issues/79) — `stale-scan` reads a plain
+  mention as a resolution
+- [#81](https://github.com/foxyberry/agent-harness/issues/81) — `feedback-review` ignores
+  `_pending` and past sessions
 
-- 보안 취약점은 공개 이슈 대신 [보안 정책](SECURITY.md)의 비공개 신고 경로로 제보해 주세요.
-- 이 프로젝트는 [MIT License](LICENSE)로 배포됩니다.
-- 변경 제안은 이슈에서 먼저 논의한 뒤 PR로 제출해 주세요.
+## Documentation
+
+| Document | For |
+|---|---|
+| [docs/guide.md](docs/guide.md) | **Start here** — what to use, and when |
+| [docs/overview.html](docs/overview.html) | Illustrated design overview |
+| [docs/self-improvement-hooks.md](docs/self-improvement-hooks.md) | How the hooks work |
+| [docs/codex-hooks.md](docs/codex-hooks.md) | Codex hook contract and constraints |
+| [AGENTS.md](AGENTS.md) | This repository's own rules |
+
+## Security, license, contributing
+
+- Report vulnerabilities through the private channel in the [security policy](SECURITY.md),
+  not a public issue.
+- Released under the [MIT License](LICENSE).
+- Discuss changes in an issue before opening a PR.
