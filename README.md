@@ -32,9 +32,12 @@ codex plugin add agent-harness@foxyberry
 
 공개 marketplace는 별도 저장소 권한이나 SSH 인증 없이 HTTPS로 설치됩니다.
 
-> **⚠️ Codex 훅은 신뢰를 등록해야 동작합니다.** Codex는 신뢰하지 않은 훅을 **아무 메시지 없이
-> 건너뜁니다** — 설치는 됐는데 훅만 조용히 안 도는 상태가 됩니다. 설치 후 Codex가 안내하는
-> 훅 신뢰 절차(`hook_trust`)를 승인해 주세요. 스킬만 쓰실 거면 등록하지 않아도 됩니다.
+> **⚠️ Codex 훅은 신뢰해야 동작합니다.** Codex는 신뢰하지 않은 훅을 **아무 메시지 없이
+> 건너뜁니다** — 설치는 됐는데 훅만 조용히 안 도는 상태가 됩니다.
+>
+> 설치 후 Codex 세션을 열면 `Hooks need review` 화면이 뜹니다. 내용을 확인하고 신뢰하면 됩니다.
+> 나중에 `/hooks` 로 언제든 다시 볼 수 있고, 거기서 `Active` 열이 `0`이면 아직 안 도는 상태입니다.
+> 플러그인 버전이 올라 훅 내용이 바뀌면 다시 물어봅니다. 스킬만 쓰실 거면 신뢰하지 않아도 됩니다.
 > 자세한 내용은 [docs/codex-hooks.md](docs/codex-hooks.md).
 
 ## Claude Code와 Codex
@@ -139,9 +142,8 @@ CI는 JSON과 Python 문법, 테스트, core와 adapter의 동기화를 검사�
 - 현재 플러그인 버전: `0.5.0`
 - Claude Code와 Codex 공개 marketplace 설치 검증 완료
 - 양쪽 어댑터에 스킬 12개 배포 및 크로스툴 handoff 검증 완료
-- Claude 훅 이벤트 인식과 설치 캐시 실행 검증 완료
-- Claude 훅의 실제 발화·컨텍스트 주입 검증은 진행 중
-- Codex 훅은 `project-memory-index` 1종 이식 완료 (codex-cli 0.145.0에서 주입 검증). 나머지 3종은 순차 이식
+- 훅의 실제 발화·컨텍스트 주입 검증 완료 — 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을 직접 읽은 게 아니라 훅이 넣어준 내용으로 답했음을 확인
+- Codex 훅은 `project-memory-index` 1종 이식 완료 (codex-cli 0.145.0). 나머지 3종은 순차 이식
 
 시각 자료가 포함된 상세 개요는 [`docs/overview.html`](docs/overview.html), 설계 문서는
 [`docs/`](docs/)에서 확인할 수 있습니다.
