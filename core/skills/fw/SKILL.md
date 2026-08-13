@@ -23,14 +23,25 @@ argument-hint: "선택: --from claude|codex (반대 툴이 기본) / 세션 로�
 ### 2. 세션 로그 자동 탐지 + git 사실 로드
 
 ```bash
-{{HANDOFF}} fw --from {{FW_FROM_DEFAULT}} {{PROJECT_DIR_ARG}}
+{{HANDOFF}} fw --from {{FW_FROM_DEFAULT}} --current {{AGENT}} {{PROJECT_DIR_ARG}}
 ```
 {{PATH_NOTE}}
-- `--from {{FW_FROM_DEFAULT}}` 는 **반대 툴**이 기본값이다 — 지금 이 세션(자기 자신)의 로그를 잘못 고르는 걸 막는다.
-  같은 툴 세션을 이어받아야 하면 `--session <로그 경로>` 로 직접 지정한다.
+- `--from {{FW_FROM_DEFAULT}}` 는 **반대 툴**이 기본값이다 — 툴을 갈아탔을 때 쓰는 값이다.
+- `--current {{AGENT}}` 는 **지금 이 세션**을 후보에서 뺀다. 이게 없으면 최신 = 방금 켠 세션이라
+  자기 자신을 "직전 작업"으로 요약한다.
 - 출력에서 확인할 것:
-  - **세션 로그 요약**: 반대 툴의 최근 세션에서 마지막 사용자 입력·assistant 응답·도구·task 알림
+  - **시간순 타임라인**: 어떤 지시 다음에 무슨 도구를 돌렸는지 — "마지막에 뭐 했나"는 여기서 읽는다
+  - **세션 로그 요약**: 마지막 사용자 입력·assistant 응답·도구·task 알림
   - **현재 git 사실**: 브랜치·origin/main 대비 커밋·변경 파일·열린 PR — 로그와 **대조**(git 우선)
+
+**같은 툴에서 세션이 끊겼으면**(재부팅·`/clear`·컨텍스트 소진) 반대 툴이 아니라 **이 툴**을 본다:
+
+```bash
+{{HANDOFF}} fw --from {{AGENT}} --current {{AGENT}} {{PROJECT_DIR_ARG}}
+```
+
+`--current` 가 live 세션을 빼주므로 **직전 세션**이 나온다. 양쪽에 작업이 흩어져 있으면 `/fw-both`.
+특정 로그를 지목하려면 `--session <로그 경로>` (`/history` 로 경로를 찾을 수 있다).
 
 ### 3. "완료 / 남은 일 / 다음 액션" 으로 정리
 로그 요약(무엇을 하고 있었나)과 현재 git 사실(실제로 어디까지 갔나)을 대조해 정리한다.
