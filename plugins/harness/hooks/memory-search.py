@@ -30,6 +30,13 @@ import json
 import os
 import sys
 
+# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(repo_identity 와 같은 규약).
+# core 소스 트리에서 직접 돌릴 때는 ../scripts 에 있다 — 테스트가 이 경로로 로드한다.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
+from hook_io import edited_files, emit_context  # noqa: E402
+
 
 def _project_dir():
     # 플러그인 배포 시 이 스크립트는 프로젝트 밖(플러그인 루트)에 있으므로 __file__ 기반
@@ -83,20 +90,22 @@ def main():
     except Exception:
         sys.exit(0)
 
-    file_path = data.get("tool_input", {}).get("file_path", "") or ""
+    # 한 번의 편집이 여러 파일을 건드릴 수 있다(Codex 패치 하나에 Add File 여러 개).
+    # 경로를 못 얻었으면 빈 문자열 하나로 — `match_empty` 규칙이 그 경우를 위한 것이다.
+    paths = [f.path for f in edited_files(data)] or [""]
     memory_dir = os.path.join(_project_dir(), ".claude/memory")
 
     rules = _load_rules(memory_dir)
     if not rules:
         sys.exit(0)  # 매핑 없음 → no-op (generic 엔진, 프로젝트 데이터 부재)
 
-    # 매칭된 규칙들의 memory 목록을 순서 유지하며 dedup
+    # 규칙을 바깥 루프로 둔다 — 파일이 하나일 때 기존 dedup 순서가 그대로 유지된다.
     rel_paths = []
     for rule in rules:
         if not isinstance(rule, dict):
             continue
         try:
-            if _matches(rule, file_path):
+            if any(_matches(rule, path) for path in paths):
                 for rel in rule.get("memory", []) or []:
                     if isinstance(rel, str) and rel not in rel_paths:
                         rel_paths.append(rel)
@@ -113,16 +122,9 @@ def main():
             except Exception:
                 continue
 
-    if output:
-        # PreToolUse 평문 stdout 은 디버그 로그로만 가고 Claude 에게 도달하지 않는다.
-        # additionalContext 로 내보내야 실제로 컨텍스트에 주입된다.
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": "\n\n".join(output),
-            }
-        }))
-
+    # PreToolUse 평문 stdout 은 디버그 로그로만 가고 모델에게 도달하지 않는다.
+    # additionalContext 로 내보내야 실제로 컨텍스트에 주입된다(키 형태는 hook_io 참고).
+    emit_context("PreToolUse", "\n\n".join(output))
     sys.exit(0)
 
 

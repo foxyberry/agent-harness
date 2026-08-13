@@ -72,11 +72,12 @@ say **when to use the skill**, not just what it does.
 | | Claude Code | Codex |
 |---|---|---|
 | Skills | 12 | 12 |
-| Hooks | 4 | **1** (`project-memory-index`) |
+| Hooks | 4 | **3** (`pr-merge-reflect` not ported) |
 
-Codex can run the other three hooks — `PreToolUse` and `PostToolUse` were measured firing
-correctly. They are simply not ported yet, because the edit payload differs enough to need a
-normalization step ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
+rather than a file path plus new text, so a normalization step turns both shapes into the same
+model. The last hook drives a background LLM job, so it needs its own decisions first
+([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## Why this exists
 
@@ -111,11 +112,12 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | When | Hook | What it does | Claude | Codex |
 |---|---|---|---|---|
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
-| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ⬜ |
-| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ⬜ |
+| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ |
+| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ |
 | After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | ⬜ |
 
-**Codex currently runs only the first one.** The other three are portable — that has been
+**Codex runs all but the last one.** A single Codex patch can touch several files, and the
+rules are applied to each of them. The remaining hook is portable — that has been
 measured — but the port is still open work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
@@ -182,7 +184,8 @@ generated adapters are in sync.
 - 12 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
-- Codex ships `project-memory-index` (codex-cli 0.145.0); the remaining three hooks are next
+- Codex ships `project-memory-index`, `memory-search` and `reflection` (codex-cli 0.145.0);
+  `pr-merge-reflect` is next
 
 ### Known issues
 

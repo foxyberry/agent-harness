@@ -40,6 +40,13 @@ import os
 import re
 import sys
 
+# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(repo_identity 와 같은 규약).
+# core 소스 트리에서 직접 돌릴 때는 ../scripts 에 있다 — 테스트가 이 경로로 로드한다.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
+from hook_io import edited_files, emit_context  # noqa: E402
+
 TODO_MESSAGE = "⚠️  TODO/FIXME 남아있음 — 작업 완료 후 제거 필요"
 
 
@@ -118,49 +125,46 @@ def main():
     except Exception:
         sys.exit(0)
 
-    ti = data.get("tool_input", {}) or {}
-    file_path = ti.get("file_path", "") or ""
-    # Edit: new_string / Write: content / MultiEdit: edits[*].new_string (합침).
-    content = ti.get("new_string", "") or ti.get("content", "")
-    if not content:
-        edits = ti.get("edits")
-        if isinstance(edits, list):
-            content = "\n".join(
-                e.get("new_string", "") for e in edits
-                if isinstance(e, dict) and e.get("new_string")
-            )
-    if not content:
+    # 내용이 실제로 추가된 파일만 본다. 한 번의 편집이 여러 파일을 건드릴 수 있고
+    # (Codex 패치), 삭제는 검사할 새 코드가 없다.
+    targets = [f for f in edited_files(data) if f.added]
+    if not targets:
         sys.exit(0)
 
     memory_dir = os.path.join(_project_dir(), ".claude/memory")
     cfg = _load_config(memory_dir)
 
+    # ⚠️ 규칙은 **파일마다 따로** 적용한다. 여러 파일의 추가 내용을 합쳐서 한 번에 돌리면
+    # `{"glob": "*.kt"}` 규칙이 .md 파일의 내용까지 보게 된다. 그래서 min_count 와
+    # `{count}` 는 **파일 단위** 값이다.
     warnings = []
+    for target in targets:
+        for warning in _file_warnings(cfg, target.path, target.added):
+            if warning not in warnings:   # 같은 경고가 파일마다 반복되면 한 번만
+                warnings.append(warning)
 
+    # PostToolUse 평문 stdout 은 모델에게 도달하지 않는다.
+    # additionalContext 로 내보내야 tool result 옆에 주입된다(키 형태는 hook_io 참고).
+    if warnings:
+        emit_context("PostToolUse", "## Reflection\n" + "\n".join(warnings))
+    sys.exit(0)
+
+
+def _file_warnings(cfg, file_path, content):
+    """파일 하나에 대한 경고 목록."""
+    out = []
     # 내장 범용 규칙: TODO/FIXME (끄지 않은 경우)
     if cfg["builtins"].get("todo_fixme", True) and re.search(r"TODO|FIXME", content):
-        warnings.append(TODO_MESSAGE)
-
+        out.append(TODO_MESSAGE)
     # 프로젝트 정의 규칙
     for rule in cfg["rules"]:
         try:
-            w = _apply_rule(rule, file_path, content)
-            if w:
-                warnings.append(w)
+            warning = _apply_rule(rule, file_path, content)
+            if warning:
+                out.append(warning)
         except Exception:
             continue
-
-    if warnings:
-        # PostToolUse 평문 stdout 은 Claude 에게 도달하지 않는다.
-        # additionalContext 로 내보내야 tool result 옆에 주입된다.
-        print(json.dumps({
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "additionalContext": "## Reflection\n" + "\n".join(warnings),
-            }
-        }))
-
-    sys.exit(0)
+    return out
 
 
 if __name__ == "__main__":

@@ -82,6 +82,8 @@ mkdir -p plugins/harness/hooks
 cp core/hooks/*.py plugins/harness/hooks/
 # repo_identity 는 core/scripts 에 있지만 pr-merge-reflect 훅도 import 한다 → hooks/ 에도 co-locate.
 cp core/scripts/repo_identity.py plugins/harness/hooks/repo_identity.py
+# hook_io: 편집 훅(memory-search·reflection)이 입력 정규화·출력 방출에 쓴다. 같은 규약으로 co-locate.
+cp core/scripts/hook_io.py plugins/harness/hooks/hook_io.py
 chmod +x plugins/harness/hooks/*.py
 {
   printf '%s\n' '{'
@@ -152,19 +154,33 @@ cp core/scripts/prettier_guard.py plugins/codex/skills/prettier-guard/scripts/
 cp core/scripts/review_ledger.py plugins/codex/skills/review-ledger/scripts/
 cp core/scripts/verify_regression.py plugins/codex/skills/verify-regression/scripts/
 
-# ── Codex 훅 (스파이크: project-memory-index 하나만) ────────────
+# ── Codex 훅 ───────────────────────────────────────────────────
 # 검증된 사실(codex 0.145.0): 플러그인 매니페스트의 "hooks" 키가 hooks.json 을 가리키고,
 # Codex 가 **`CLAUDE_PLUGIN_ROOT` 를 호환 별칭으로 세팅**해 준다 → hooks.json 은 Claude 와 공용 형식.
 # 단 `CLAUDE_PROJECT_DIR` 은 안 준다 — 훅 스크립트가 입력 JSON 의 `cwd` 로 프로젝트를 찾는다.
 # ⚠️ 상대경로 command 는 실패한다(프로세스 cwd = 사용자 프로젝트). 반드시 ${CLAUDE_PLUGIN_ROOT} 기준.
 # ⚠️ 사용자가 훅 신뢰를 등록하기 전까지 Codex 는 훅을 **조용히 무시**한다(에러 없음).
+# matcher 는 **실측된 도구 이름**을 쓴다: 파일 편집=`apply_patch`, 셸=`Bash`(0.145.0).
+# rollout 로그에 보이는 `exec` 는 tool_use_id 접두사지 도구 이름이 아니다 — 로그로 정하지 말 것.
+# `Edit|Write` 도 matcher 로 받아준다고 문서에 있으나, 실측된 이름만 쓴다.
+# pr-merge-reflect 는 아직 안 올린다 — LLM 잡·seen 캐시가 붙어 있고 Codex 세션에서
+# Codex 회고를 또 띄우는 중복 정리가 선행이다(이슈 #85 3단계).
 rm -rf plugins/codex/hooks
 mkdir -p plugins/codex/hooks
-cp core/hooks/project-memory-index.py plugins/codex/hooks/
+cp core/hooks/project-memory-index.py core/hooks/memory-search.py core/hooks/reflection.py \
+   plugins/codex/hooks/
+# 편집 훅이 dirname(__file__) 에서 import 한다 — 번들되는 곳마다 함께 둔다.
+cp core/scripts/hook_io.py plugins/codex/hooks/hook_io.py
 chmod +x plugins/codex/hooks/*.py
 {
   printf '%s\n' '{'
   printf '%s\n' '  "hooks": {'
+  printf '%s\n' '    "PreToolUse": ['
+  printf '%s\n' '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }'
+  printf '%s\n' '    ],'
+  printf '%s\n' '    "PostToolUse": ['
+  printf '%s\n' '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] }'
+  printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
   printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] }'
   printf '%s\n' '    ]'
