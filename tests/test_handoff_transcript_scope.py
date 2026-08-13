@@ -190,5 +190,48 @@ class LoadDeepTest(_TwoProjects):
         self.assertNotIn("rollout-b.jsonl", out)
 
 
+class TargetDisclosureTest(_TwoProjects):
+    """어느 프로젝트를 봤는지 출력에 드러나야 한다.
+
+    대상을 잘못 지목하는 것 자체는 툴의 결함이 아니다 — 시킨 대로 한 것이다. 결함은
+    **틀렸다는 걸 알아챌 방법이 없는 것**이다. 지금까지 출력에는 브랜치명만 있어서,
+    엉뚱한 저장소를 가리켜도 그 저장소의 브랜치와 세션이 멀쩡하게 나왔다.
+    """
+
+    def _run(self, *argv):
+        env = dict(os.environ)
+        env["HOME"] = str(self.home)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        proc = subprocess.run(
+            ["python3", str(SCRIPT), *argv],
+            capture_output=True, text=True, env=env, cwd=self.a,
+        )
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        return proc.stdout
+
+    def test_load_shows_resolved_root_and_why(self):
+        out = self._run("load", "--project-dir", self.b)
+
+        self.assertIn(self.b, out, "지목한 프로젝트 루트가 출력에 없으면 오지목을 못 알아챈다")
+        self.assertIn("--project-dir", out, "왜 그 루트로 정했는지도 밝혀야 한다")
+
+    def test_fw_shows_resolved_root(self):
+        out = self._run("fw", "--from", "claude", "--project-dir", self.b)
+
+        self.assertIn(self.b, out)
+
+    def test_root_source_says_cwd_when_not_given(self):
+        out = self._run("load")
+
+        self.assertIn(self.a, out)
+        self.assertIn("현재 디렉터리", out)
+
+    def test_history_names_project_even_with_no_results(self):
+        # 결과가 없을 때야말로 "대상을 잘못 골랐나" 와 "정말 없나" 가 구분돼야 한다.
+        out = self._run("history", "--project-dir", self.b)
+
+        self.assertIn(self.b, out)
+
+
 if __name__ == "__main__":
     unittest.main()

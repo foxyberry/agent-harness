@@ -640,7 +640,13 @@ def _history_resume_command(root, path):
 
 def _render_history(root, rows, no_content=False):
     if not rows:
-        return "# Session history\n\n조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+        # "없음" 일 때야말로 어느 프로젝트를 봤는지 밝혀야 한다 — 대상을 잘못 지목한 것과
+        # 정말 로그가 없는 것이 여기서는 똑같이 보인다.
+        return (
+            "# Session history\n\n"
+            f"- Project: `{root}`\n\n"
+            "조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+        )
     lines = [
         "# Session history (read-only)",
         "",
@@ -682,6 +688,23 @@ def cmd_history(args):
     else:
         print(_render_history(root, rows, no_content=args.no_content))
     return 0
+
+
+def _target_lines(root, explicit):
+    """이 실행이 **어느 프로젝트를 봤는지**, 그리고 **왜 거기로 정했는지** 를 맨 앞에 밝힌다.
+
+    이어받기는 대상을 잘못 지목해도 출력이 멀쩡해 보인다 — 그 저장소의 브랜치와 세션이
+    정상적으로 나오기 때문이다. 툴은 시킨 대로 한 것이라 그 자체는 결함이 아니지만,
+    **틀렸다는 걸 알아챌 방법이 없는 것**은 결함이다. 읽는 사람이 의도한 프로젝트와
+    대조할 수 있게 한 줄 남긴다(이슈 #95 의 "감지한 cwd/git root, 선택 이유를 표시").
+    """
+    if explicit:
+        why = "`--project-dir` 인자"
+    elif os.environ.get("CLAUDE_PROJECT_DIR"):
+        why = "`CLAUDE_PROJECT_DIR` 환경변수"
+    else:
+        why = "현재 디렉터리"
+    return [f"- 대상 프로젝트: `{root}` (지목: {why})", ""]
 
 
 def _facts_lines(facts, header):
@@ -864,6 +887,7 @@ def cmd_load(args):
     out = []
     out.append(f"# 작업 이어받기 — 브랜치 `{branch}`")
     out.append("")
+    out.extend(_target_lines(root, getattr(args, "project_dir", None)))
     if os.path.isfile(target):
         out.append(f"## 📄 커밋된 핸드오프 ({os.path.relpath(target, root)})")
         out.append("")
@@ -952,6 +976,7 @@ def cmd_fw(args):
     out = [
         f"# 툴 전환 이어받기 (fw) — source: {src}",
         "",
+        *_target_lines(root, getattr(args, "project_dir", None)),
         "> ⚠️ fw 는 **저장 안 한 세션 로그**에서 자동 복원하는 보조 경로다. 커밋된 핸드오프"
         "(`load`)가 있으면 그게 정본이고, **현재 git 상태가 로그보다 항상 우선**이다.",
         "",
