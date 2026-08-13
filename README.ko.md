@@ -69,10 +69,11 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | | Claude Code | Codex |
 |---|---|---|
 | 스킬 | 12 | 12 |
-| 훅 | 4 | **1** (`project-memory-index`) |
+| 훅 | 4 | **3** (`pr-merge-reflect` 만 이식 전) |
 
-Codex 도 나머지 훅 셋을 돌릴 수 있습니다 — `PreToolUse` 와 `PostToolUse` 가 정상 발화하는 것을
-측정했습니다. 아직 안 옮겼을 뿐이고, 편집 입력 형태가 달라 정규화 단계가 필요합니다
+편집 훅은 이제 Codex 에서도 돕니다. Codex 는 편집을 파일 경로와 새 내용이 아니라 `apply_patch`
+원문으로 넘겨서, 두 모양을 같은 모델로 바꾸는 정규화 단계를 뒀습니다. 남은 하나는 백그라운드
+LLM 잡을 띄우는 훅이라 별도 판단이 먼저입니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## 왜 만들었나
@@ -107,12 +108,13 @@ Codex 도 나머지 훅 셋을 돌릴 수 있습니다 — `PreToolUse` 와 `Pos
 | 시점 | 훅 | 하는 일 | Claude | Codex |
 |---|---|---|---|---|
 | 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md` 를 컨텍스트에 주입 | ✅ | ✅ |
-| 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ⬜ |
-| 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ⬜ |
+| 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ✅ |
+| 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ✅ |
 | 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | ⬜ |
 
-**Codex 는 현재 첫 줄 하나만 돕니다.** 나머지 셋도 이식 가능하다는 것은 측정으로 확인했고,
-작업만 남아 있습니다 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+**Codex 는 마지막 줄만 아직 안 돕니다.** Codex 패치 하나가 여러 파일을 건드리면 그 파일들
+전부에 규칙이 적용됩니다. 남은 하나도 이식 가능하다는 것은 측정으로 확인했고, 작업만
+남아 있습니다 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 훅 엔진은 `core/` 에 있고 generic 합니다. *어떤* 메모리를 넣고 *어떤* 규칙을 검사할지는 프로젝트의
 `.claude/memory/` 데이터가 정합니다. 데이터가 없으면 훅은 조용히 아무것도 안 합니다. 자동 회고는
@@ -176,7 +178,8 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 - 양쪽 어댑터에 스킬 12개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)
 - 훅 발화와 컨텍스트 주입 검증 완료 — 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을
   직접 읽어 답한 경우를 배제했습니다
-- Codex 에는 `project-memory-index` 가 올라가 있고(codex-cli 0.145.0), 나머지 훅 셋이 다음 작업입니다
+- Codex 에는 `project-memory-index`·`memory-search`·`reflection` 이 올라가 있고(codex-cli
+  0.145.0), `pr-merge-reflect` 가 다음 작업입니다
 
 ### 알려진 문제
 

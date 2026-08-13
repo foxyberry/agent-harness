@@ -217,6 +217,16 @@ codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → C
 | 훅 | Claude | Codex | 비고 |
 |---|---|---|---|
 | `project-memory-index` | ✅ | ✅ | SessionStart — 커버리지 한계와 무관 |
-| `memory-search` | ✅ | ⬜ | **이식 가능 확정.** `apply_patch` matcher, `tool_input.command` 에서 패치 파싱 |
-| `reflection` | ✅ | ⬜ | 위와 동일 (`PostToolUse`) |
+| `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch`. 패치 원문에서 편집 파일 목록을 뽑아 라우팅 |
+| `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. 규칙은 **파일마다** 적용 |
 | `pr-merge-reflect` | ✅ | ⬜ | 마지막 — LLM 잡·seen 캐시, Codex 세션에서 회고 중복 정리 필요 |
+
+입력 정규화는 `core/scripts/hook_io.py` 가 맡는다 — Claude(`file_path` + `new_string`/`content`/
+`edits`)와 Codex(`command` 에 담긴 패치 원문)를 **편집 파일 목록 + 추가된 내용**이라는 같은
+모델로 바꾼다. 훅은 `tool_name` 으로 분기하지 않는다(툴마다 이름이 다르고 새로 생긴다).
+
+**출력 키는 두 벌 낸다** — `hookSpecificOutput.additionalContext`(중첩)와 `additionalContext`
+(최상위). Claude 는 중첩을 읽는다(실증). Codex 문서는 `PreToolUse`/`PostToolUse` 출력으로
+`additionalContext` 를 나열하지만 **중첩인지 최상위인지 쓰지 않았고**, 중첩이 동작한 걸 확인한
+건 `SessionStart` 뿐이다 — 그건 평문 stdout 도 먹는 이벤트라 중첩 경로를 시험한 적이 없다.
+주입 실패는 성공과 구별이 안 되므로(훅은 조용히 exit 0) 관측 전까지 한쪽으로 줄이지 않는다.
