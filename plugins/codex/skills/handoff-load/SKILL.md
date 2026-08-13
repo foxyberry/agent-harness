@@ -29,7 +29,7 @@ python3 scripts/handoff.py load --deep --project-dir "<지금 작업 중인 사�
   방금 끊긴 작업이나 백그라운드 리뷰 결과를 이어받음
 
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
-`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 `~/.codex/sessions` 의 최근 세션 로그
+`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 `/fw --from codex` 또는 `/fw-both`
 로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
 `python3 scripts/handoff.py load --deep --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" --transcript <path/to/session.jsonl>` 를 사용한다.
 (다른 머신이면 생략 — 파일이 없음)

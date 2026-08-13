@@ -64,7 +64,7 @@ REVIEW_LEDGER_EXAMPLE='agent-review-ledger'
 REVIEW_LEDGER_NOTE=''
 VERIFY_REGRESSION_EXAMPLE='agent-verify-regression'
 VERIFY_REGRESSION_NOTE=''
-DEEP_RECOVERY='`/fw-claude` 또는 `/continue-claude`'
+DEEP_RECOVERY='`/fw --from claude` 또는 `/fw-both`'   # 실제 존재하는 명령만 (없는 이름을 안내하면 손 탐색을 부른다 — 이슈 #95)
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
 PROJECT_DIR_ARG=''   # Claude: CLAUDE_PROJECT_DIR env 로 자동 해석 — 명령에 인자 불필요
@@ -121,7 +121,9 @@ REVIEW_LEDGER_EXAMPLE='python3 scripts/review_ledger.py --project-dir "<지금 �
 REVIEW_LEDGER_NOTE='> ⚠️ `scripts/review_ledger.py` 는 이 스킬 폴더 기준 상대경로다. 스킬 폴더에서 실행하고 `--project-dir` 에 사용자 프로젝트 절대경로를 넘겨라.'
 VERIFY_REGRESSION_EXAMPLE='python3 scripts/verify_regression.py --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>"'
 VERIFY_REGRESSION_NOTE='> ⚠️ `scripts/verify_regression.py` 는 이 스킬 폴더 기준 상대경로다. 스킬 폴더에서 실행하고 `--project-dir` 에 사용자 프로젝트 절대경로를 넘겨라.'
-DEEP_RECOVERY='`~/.codex/sessions` 의 최근 세션 로그'
+# 예전 값은 "`~/.codex/sessions` 의 최근 세션 로그" 였다 — 폴더를 직접 뒤지라는 안내다.
+# 손 탐색에는 프로젝트 스코핑이 없어서 남의 프로젝트 세션을 집을 수 있다(이슈 #95).
+DEEP_RECOVERY='`/fw --from codex` 또는 `/fw-both`'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 스킬 폴더로 cd 해 실행하되,
 # 스크립트가 cwd 기준 git 루트로 프로젝트를 찾으므로(스킬 폴더=플러그인 캐시는 사용자 repo 밖일 수 있음)
 # 반드시 --project-dir 로 사용자 프로젝트를 명시하게 한다. (OpenAI 번들 스킬의 "cd to plugin root +

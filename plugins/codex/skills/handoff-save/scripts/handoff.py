@@ -124,31 +124,32 @@ def git_facts(root):
 
 
 def transcript_hint(root):
-    """같은 머신에 로컬 transcript 가 있으면 '깊은 복구 가능' 힌트 반환."""
-    home = os.path.expanduser("~")
+    """같은 머신에 **이 프로젝트의** 로컬 transcript 가 있으면 '깊은 복구 가능' 힌트 반환.
+
+    ⚠️ 양쪽 다 반드시 프로젝트로 스코프한다. 예전 Codex 분기는 `~/.codex/sessions` 전체를
+    훑어 "존재함"만 알렸는데, 그 문구는 어떤 세션이 이 프로젝트 것인지 말해주지 않아
+    사람·모델이 직접 로그를 뒤지게 만들었고, 손 탐색에는 스코핑이 없어서 **전역 mtime 최신인
+    남의 프로젝트 세션**을 직전 작업으로 오인했다(이슈 #95). 힌트는 개수를 세는 게 목적이
+    아니라 **다음에 칠 명령**을 알려주는 것이다 — 없으면 없다고 분명히 말한다.
+    """
     hints = []
-    # Claude: ~/.claude/projects/<cwd '/'→'-'>/*.jsonl
-    proj_key = _claude_project_key(root)
-    claude_dir = os.path.join(home, ".claude", "projects", proj_key)
+    # Claude: ~/.claude/projects/<cwd '/'→'-'>/*.jsonl — 디렉터리 자체가 프로젝트별로
+    # 갈리므로 한 번의 listdir 로 스코프와 개수가 동시에 나온다(싸다).
+    claude_dir = _claude_project_dir(root)
     if os.path.isdir(claude_dir):
         jsonls = [f for f in os.listdir(claude_dir) if f.endswith(".jsonl")]
         if jsonls:
             hints.append(
                 f"Claude transcript {len(jsonls)}개 @ {claude_dir} "
-                f"→ /fw-claude 또는 /continue-claude 로 깊은 복구 가능 (이 머신 한정)"
+                f"→ `/fw --from claude` 또는 `/fw-both` 로 깊은 복구 가능 (이 머신 한정)"
             )
-    # Codex: ~/.codex/sessions/**/*.jsonl
-    codex_dir = os.path.join(home, ".codex", "sessions")
-    if os.path.isdir(codex_dir):
-        found = False
-        for _r, _d, files in os.walk(codex_dir):
-            if any(f.endswith(".jsonl") for f in files):
-                found = True
-                break
-        if found:
-            hints.append(
-                f"Codex session transcript 존재 @ {codex_dir} (이 머신 한정)"
-            )
+    # Codex: 프로젝트 구분이 파일 안(session_meta.cwd)에 있어 개수를 세려면 전부 열어야 한다.
+    # 힌트에 필요한 건 개수가 아니라 **다음에 칠 명령**이므로 존재 여부만 확인하고 멈춘다.
+    if _has_project_codex_rollout(root):
+        hints.append(
+            f"Codex rollout 있음 @ {_codex_sessions_dir()} "
+            f"→ `/fw --from codex` 또는 `/fw-both` 로 깊은 복구 가능 (이 머신 한정)"
+        )
     return hints
 
 
@@ -437,6 +438,43 @@ def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
     return rows[:limit]
 
 
+def _has_project_codex_rollout(root, days=30):
+    """이 프로젝트의 Codex rollout 이 하나라도 있나 — 찾는 즉시 멈춘다.
+
+    `_recent_codex_rollouts` 를 불러 개수를 세면 rollout 전부의 metadata 를 열고 cwd 마다
+    git identity 를 물어야 한다(이 머신 기준 1200개 이상 = 수백 ms). 그 비용은 `--deep` 요약에는
+    값지지만, 힌트 한 줄 때문에 **평범한 `load` 마다** 물릴 이유가 없다.
+
+    그래서 (1) 최신 파일부터 보고 (2) 첫 매칭에서 끝낸다 — 있는 경우엔 대개 몇 개만 읽는다.
+    없는 경우에만 전부 확인하는데, 그 확인은 건너뛰지 않는다: 성급히 '있음' 이라고 하면
+    사용자를 손 탐색으로 보내고, 손 탐색에는 프로젝트 스코핑이 없다(이슈 #95).
+    """
+    base = _codex_sessions_dir()
+    if not os.path.isdir(base):
+        return False
+    cutoff = datetime.now().timestamp() - (days * 86400)
+    cands = []
+    for directory, _dirs, names in os.walk(base):
+        for fn in names:
+            if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
+                continue
+            fp = os.path.join(directory, fn)
+            try:
+                mtime = os.path.getmtime(fp)
+            except OSError:
+                continue
+            if mtime >= cutoff:
+                cands.append((mtime, fp))
+    if not cands:
+        return False
+    cands.sort(reverse=True)  # 최신부터 — 내 프로젝트 세션이 있으면 대개 앞쪽에 있다
+    matcher = _project_matcher(root)
+    for _mtime, fp in cands:
+        if matcher(_codex_rollout_meta(fp)[1]):
+            return True
+    return False
+
+
 def _summarize_codex_rollout(path):
     """Codex rollout JSONL 에서 이어받기 신호(최근 user/assistant 텍스트, 도구명)만 요약."""
     summary = {"last_users": [], "last_assistants": [], "last_tools": []}
@@ -602,7 +640,13 @@ def _history_resume_command(root, path):
 
 def _render_history(root, rows, no_content=False):
     if not rows:
-        return "# Session history\n\n조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+        # "없음" 일 때야말로 어느 프로젝트를 봤는지 밝혀야 한다 — 대상을 잘못 지목한 것과
+        # 정말 로그가 없는 것이 여기서는 똑같이 보인다.
+        return (
+            "# Session history\n\n"
+            f"- Project: `{root}`\n\n"
+            "조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+        )
     lines = [
         "# Session history (read-only)",
         "",
@@ -644,6 +688,23 @@ def cmd_history(args):
     else:
         print(_render_history(root, rows, no_content=args.no_content))
     return 0
+
+
+def _target_lines(root, explicit):
+    """이 실행이 **어느 프로젝트를 봤는지**, 그리고 **왜 거기로 정했는지** 를 맨 앞에 밝힌다.
+
+    이어받기는 대상을 잘못 지목해도 출력이 멀쩡해 보인다 — 그 저장소의 브랜치와 세션이
+    정상적으로 나오기 때문이다. 툴은 시킨 대로 한 것이라 그 자체는 결함이 아니지만,
+    **틀렸다는 걸 알아챌 방법이 없는 것**은 결함이다. 읽는 사람이 의도한 프로젝트와
+    대조할 수 있게 한 줄 남긴다(이슈 #95 의 "감지한 cwd/git root, 선택 이유를 표시").
+    """
+    if explicit:
+        why = "`--project-dir` 인자"
+    elif os.environ.get("CLAUDE_PROJECT_DIR"):
+        why = "`CLAUDE_PROJECT_DIR` 환경변수"
+    else:
+        why = "현재 디렉터리"
+    return [f"- 대상 프로젝트: `{root}` (지목: {why})", ""]
 
 
 def _facts_lines(facts, header):
@@ -826,6 +887,7 @@ def cmd_load(args):
     out = []
     out.append(f"# 작업 이어받기 — 브랜치 `{branch}`")
     out.append("")
+    out.extend(_target_lines(root, getattr(args, "project_dir", None)))
     if os.path.isfile(target):
         out.append(f"## 📄 커밋된 핸드오프 ({os.path.relpath(target, root)})")
         out.append("")
@@ -848,6 +910,14 @@ def cmd_load(args):
     if args.deep or args.transcript:
         out.append("")
         out.extend(_format_claude_deep_recovery(root, transcript=args.transcript))
+        # ⚠️ Codex 쪽도 반드시 함께 낸다. 예전엔 Claude 만 요약하고 Codex 는 힌트 한 줄로
+        # 끝냈는데, 그러면 Codex 로 하던 작업을 이어받을 때 deep 이 답을 못 주고 사람·모델이
+        # 로그를 직접 뒤지게 된다 — 손 탐색에는 프로젝트 스코핑이 없어서 남의 프로젝트
+        # 세션을 직전 작업으로 오인했다(이슈 #95). --transcript 로 특정 파일을 지목한
+        # 경우는 그 파일만 보겠다는 뜻이므로 건너뛴다.
+        if not args.transcript:
+            out.append("")
+            out.extend(_format_codex_deep_recovery(root))
     print("\n".join(out))
     return 0
 
@@ -906,6 +976,7 @@ def cmd_fw(args):
     out = [
         f"# 툴 전환 이어받기 (fw) — source: {src}",
         "",
+        *_target_lines(root, getattr(args, "project_dir", None)),
         "> ⚠️ fw 는 **저장 안 한 세션 로그**에서 자동 복원하는 보조 경로다. 커밋된 핸드오프"
         "(`load`)가 있으면 그게 정본이고, **현재 git 상태가 로그보다 항상 우선**이다.",
         "",
