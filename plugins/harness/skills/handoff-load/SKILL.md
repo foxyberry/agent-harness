@@ -29,7 +29,7 @@ agent-handoff load --deep
   방금 끊긴 작업이나 백그라운드 리뷰 결과를 이어받음
 
 ### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
-`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 `/fw-claude` 또는 `/continue-claude`
+`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 `/fw --from claude` 또는 `/fw-both`
 로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
 `agent-handoff load --deep --transcript <path/to/session.jsonl>` 를 사용한다.
 (다른 머신이면 생략 — 파일이 없음)
