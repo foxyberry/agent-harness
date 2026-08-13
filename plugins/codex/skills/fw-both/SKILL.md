@@ -31,6 +31,8 @@ python3 scripts/handoff.py fw --from both --current codex --project-dir "<지금
 - `--from both` = Claude·Codex 양쪽 로그를 함께 출력. `--current codex` 로 현재 세션 배제.
 - `--limit N` 으로 각 툴에서 요약할 최근 세션 수를 늘릴 수 있다(기본 1).
 - 출력에서 확인할 것:
+  - **시간순 타임라인**: 각 툴 요약 안에 있다. 어떤 지시 다음에 무슨 도구를 돌렸는지 —
+    "마지막에 뭐 했나"는 여기서 읽는다
   - **Codex rollout 요약** + **Claude JSONL 요약**: 각 툴의 최근 세션에서 마지막 입력·응답·도구
   - **현재 git 사실**: 브랜치·origin/main 대비 커밋·변경 파일·열린 PR — 로그와 **대조**(git 우선)
 

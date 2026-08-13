@@ -189,6 +189,47 @@ def _recent_claude_transcripts(root, limit=2, exclude_stem=None):
     return rows[:limit]
 
 
+TIMELINE_CAP = 20
+
+
+def _ts_label(ts):
+    """ISO 타임스탬프 → `MM-DD HH:MM` (로컬). 파싱 실패하면 앞부분을 그대로 쓴다.
+
+    날짜를 붙이는 이유: 세션 하나가 며칠에 걸치는 일이 흔하다(재부팅 전후, resume).
+    시:분만 있으면 순서가 뒤집힌 것처럼 보인다.
+    """
+    if not isinstance(ts, str) or not ts:
+        return "--:--"
+    try:
+        return (datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                .astimezone().strftime("%m-%d %H:%M"))
+    except ValueError:
+        return ts[:16]
+
+
+def _push_timeline(summary, ts, kind, text):
+    """시간순 타임라인에 한 줄 쌓는다(최근 TIMELINE_CAP 개만 유지).
+
+    `last_users`/`last_assistants`/`last_tools` 는 종류별로 잘려 있어서 **서로 섞이지
+    않는다.** "마지막에 뭐 했나" 는 순서가 핵심인데 — 어떤 지시 다음에 무슨 도구를
+    돌렸는지 — 그 형태로는 안 보인다(이슈 #96).
+    """
+    if not text:
+        return
+    summary.setdefault("timeline", []).append((_ts_label(ts), kind, text))
+    summary["timeline"] = summary["timeline"][-TIMELINE_CAP:]
+
+
+def _timeline_lines(summary, header="- 시간순 (최근 순서대로):"):
+    rows = summary.get("timeline") or []
+    if not rows:
+        return []
+    out = [header, "```"]
+    out.extend(f"[{ts}] {kind:<6} {text}" for ts, kind, text in rows)
+    out.append("```")
+    return out
+
+
 def _clip(text, n=SNIP):
     text = re.sub(r"\s+", " ", (text or "").strip())
     return text if len(text) <= n else text[: n - 1] + "…"
@@ -213,6 +254,36 @@ def _content_text(content):
         elif block.get("type") == "tool_result":
             parts.append(_content_text(block.get("content", "")))
     return "\n".join(str(p) for p in parts if p)
+
+
+def _user_speech_text(content):
+    """user 메시지에서 **사람이 친 말만** 뽑는다.
+
+    Claude JSONL 의 `role: "user"` 에는 사람 발화 말고도 두 가지가 섞여 들어온다:
+    도구 결과(`tool_result`)와 하네스가 끼워 넣는 `<system-reminder>` 블록. 이걸 걸러내지
+    않으면 "최근 사용자 입력"과 시간순 타임라인이 도구 출력으로 뒤덮여 **누가 무엇을
+    지시했는지가 묻힌다**(이슈 #96).
+
+    ⚠️ 한 메시지에 tool_result 와 text 가 **함께** 오는 경우가 흔하다(도구 결과 뒤에
+    system-reminder 가 붙는다). "전부 tool_result 인가"로 판정하면 그 경우를 놓친다 —
+    그래서 블록 종류로 거르지 않고 **사람 발화만 골라 담는다.**
+
+    `_content_text` 는 tool_result 본문까지 읽는데 그건 task 알림 추출에 필요해서다.
+    그 용도는 그대로 두고, 발화 판정만 여기서 한다.
+    """
+    if isinstance(content, str):
+        return _strip_reminders(content)
+    if not isinstance(content, list):
+        return ""
+    parts = [
+        b.get("text", "") for b in content
+        if isinstance(b, dict) and b.get("type") == "text"
+    ]
+    return _strip_reminders("\n".join(p for p in parts if p))
+
+
+def _strip_reminders(text):
+    return re.sub(r"<system-reminder>.*?</system-reminder>", "", text or "", flags=re.S).strip()
 
 
 def _task_notes(text):
@@ -274,9 +345,13 @@ def _summarize_claude_transcript(path):
                         continue
                     for note in _task_notes(text):
                         summary["task_notes"].append(note)
-                    if text and "<task-notification>" not in text:
-                        summary["last_users"].append(_clip(text))
+                    # 발화 판정은 사람이 친 말만 본다(도구 결과·system-reminder 제외).
+                    # task 알림 추출은 위에서 `text`(전체 내용) 로 이미 끝냈다.
+                    speech = _user_speech_text(blocks)
+                    if speech and "<task-notification>" not in speech:
+                        summary["last_users"].append(_clip(speech))
                         summary["last_users"] = summary["last_users"][-3:]
+                        _push_timeline(summary, data.get("timestamp"), "USER", _clip(speech, 160))
 
                 elif role == "assistant":
                     if isinstance(blocks, list):
@@ -288,12 +363,16 @@ def _summarize_claude_transcript(path):
                                 if txt:
                                     summary["last_assistants"].append(txt)
                                     summary["last_assistants"] = summary["last_assistants"][-3:]
+                                    _push_timeline(summary, data.get("timestamp"),
+                                                   "AGENT", _clip(txt, 160))
                             elif block.get("type") == "tool_use":
                                 name = block.get("name", "")
                                 inp = block.get("input", {}) or {}
                                 cmd = inp.get("command") or inp.get("file_path") or ""
                                 summary["last_tools"].append(_clip(f"{name}: {cmd}", 240))
                                 summary["last_tools"] = summary["last_tools"][-5:]
+                                _push_timeline(summary, data.get("timestamp"),
+                                               "TOOL", _clip(f"{name}: {cmd}", 160))
 
                 local = data.get("content") if data.get("subtype") == "local_command" else ""
                 if isinstance(local, str) and "session limit" in local:
@@ -325,6 +404,7 @@ def _format_claude_deep_recovery(root, limit=2, transcript=None, exclude_stem=No
         s = _summarize_claude_transcript(path)
         if s["last_prompt"]:
             out.append(f"- 마지막 프롬프트: {_clip(s['last_prompt'], 300)}")
+        out.extend(_timeline_lines(s))
         if s["last_users"]:
             out.append("- 최근 사용자 입력:")
             for item in s["last_users"]:
@@ -504,14 +584,17 @@ def _summarize_codex_rollout(path):
                     if role == "user":
                         summary["last_users"].append(joined)
                         summary["last_users"] = summary["last_users"][-3:]
+                        _push_timeline(summary, d.get("timestamp"), "USER", _clip(joined, 160))
                     elif role == "assistant":
                         summary["last_assistants"].append(joined)
                         summary["last_assistants"] = summary["last_assistants"][-3:]
+                        _push_timeline(summary, d.get("timestamp"), "AGENT", _clip(joined, 160))
                 elif pt == "function_call":
                     name = p.get("name", "")
                     if name:
                         summary["last_tools"].append(_clip(name, 120))
                         summary["last_tools"] = summary["last_tools"][-5:]
+                        _push_timeline(summary, d.get("timestamp"), "TOOL", _clip(name, 160))
     except OSError:
         pass
     return summary
@@ -534,6 +617,7 @@ def _format_codex_deep_recovery(root, limit=1, session=None, exclude_sid=None):
         out.append(f"- 경로: `{path}`")
         out.append(f"- 갱신: {when} · 크기: {os.path.getsize(path)} bytes")
         s = _summarize_codex_rollout(path)
+        out.extend(_timeline_lines(s))
         if s["last_users"]:
             out.append("- 최근 사용자 입력:")
             for item in s["last_users"]:
@@ -982,6 +1066,12 @@ def cmd_fw(args):
         "",
     ]
 
+    # live 세션 배제는 **모든 소스에 적용한다.** 예전엔 `both` 분기에서만 계산해 써서,
+    # `--from claude` 로 같은 툴 직전 세션을 찾으면 최신 = 지금 이 세션이라 자기 자신을
+    # 요약했다(이슈 #96). `--session` 으로 파일을 직접 지목한 경우만 예외 — 그건
+    # "이걸 보라"는 명시적 지시라 배제하지 않는다.
+    claude_stem, codex_sid = _live_session_excludes(root, getattr(args, "current", None))
+
     if args.session:
         # 포맷 자동 판별: 첫 줄이 session_meta 면 Codex rollout, 아니면 Claude .jsonl.
         sid, _cwd = _codex_rollout_meta(args.session)
@@ -990,17 +1080,21 @@ def cmd_fw(args):
         else:
             out.extend(_format_claude_deep_recovery(root, transcript=args.session))
     elif src == "codex":
-        out.extend(_format_codex_deep_recovery(root, limit=limit))
+        out.extend(_format_codex_deep_recovery(root, limit=limit, exclude_sid=codex_sid))
     elif src == "claude":
-        out.extend(_format_claude_deep_recovery(root, limit=limit))
+        out.extend(_format_claude_deep_recovery(root, limit=limit, exclude_stem=claude_stem))
     elif src == "both":  # 양쪽 로그를 한 번에 — 현재 툴의 live 세션만 배제
-        claude_stem, codex_sid = _live_session_excludes(root, getattr(args, "current", None))
         out.extend(_format_codex_deep_recovery(root, limit=limit, exclude_sid=codex_sid))
         out.append("")
         out.extend(_format_claude_deep_recovery(root, limit=limit, exclude_stem=claude_stem))
     else:  # auto — 양쪽 통틀어 최신 세션 하나
-        cand = [("claude",) + r for r in _recent_claude_transcripts(root, limit=1)]
-        cand += [("codex",) + r for r in _recent_codex_rollouts(root, limit=1)]
+        # 툴당 2개씩 뽑는다. 배제를 **정렬 전에** 걸어야 하고, 1개만 뽑으면 그 하나가
+        # live 세션일 때 후보가 비어 "로그 없음"으로 떨어진다 — 멀쩡한 반대 툴 로그를
+        # 두고도 못 찾는다.
+        cand = [("claude",) + r for r in
+                _recent_claude_transcripts(root, limit=2, exclude_stem=claude_stem)]
+        cand += [("codex",) + r for r in
+                 _recent_codex_rollouts(root, limit=2, exclude_sid=codex_sid)]
         cand.sort(key=lambda t: t[1], reverse=True)  # t[1]=mtime
         if not cand:
             out.append("## 🧩 이 프로젝트의 최근 세션 로그 없음 (Claude·Codex 양쪽, 이 머신 한정)")
@@ -1045,12 +1139,14 @@ def main():
     fw = sub.add_parser("fw", help="세션 로그에서 작업 자동 복원 — 툴 전환 이어받기(저장 안 했어도)")
     fw.add_argument("--from", dest="from_tool", default="auto",
                     choices=["claude", "codex", "auto", "both"],
-                    help="복원 소스 툴. 렌더된 스킬은 반대 툴을 기본 지정(Claude→codex, Codex→claude) "
-                         "— 현재 세션 자기선택 방지. auto=양쪽 최신 하나. "
-                         "both=Claude·Codex 양쪽 로그를 함께(현재 툴의 live 세션만 배제, --current 로 지정).")
+                    help="복원 소스 툴. 렌더된 스킬은 반대 툴을 기본 지정(Claude→codex, Codex→claude). "
+                         "같은 툴에서 세션이 끊겼으면(재부팅·컨텍스트 소진) 그 툴을 직접 지정한다 "
+                         "— live 세션은 --current 로 배제되므로 자기 자신을 고르지 않는다. "
+                         "auto=양쪽 최신 하나. both=양쪽 로그를 함께.")
     fw.add_argument("--current", choices=["claude", "codex"],
-                    help="지금 fw 를 실행 중인 툴. --from both 에서 이 툴의 live 세션(방금 켠 현재 "
-                         "세션)을 직전 작업으로 오인하지 않게 배제한다. 렌더된 스킬이 자동으로 넘긴다.")
+                    help="지금 fw 를 실행 중인 툴. 이 툴의 live 세션(방금 켠 현재 세션)을 직전 "
+                         "작업으로 오인하지 않게 **모든 --from 값에서** 배제한다. 렌더된 스킬이 "
+                         "자동으로 넘긴다.")
     fw.add_argument("--session",
                     help="특정 세션 로그 경로 직접 지정 (Claude .jsonl 또는 Codex rollout). "
                          "포맷은 자동 판별.")
