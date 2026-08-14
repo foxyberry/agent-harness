@@ -9,8 +9,9 @@ project-memory-index  ──▶  memory-search  ──▶  reflection  ──▶
 (세션 시작 인덱스)        (편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
 ```
 
-훅은 **Claude 어댑터에만** 배포된다(`plugins/harness/hooks/`). Codex 훅은 버전 취약
-(openai/codex#19385·#21639)으로 defer — 스킬(`/feedback-review`, `/memory-update`)은 양쪽 배포된다.
+훅은 **양쪽에 배포된다** — Claude 는 4개 전부(`plugins/harness/hooks/`), Codex 는 3개
+(`plugins/codex/hooks/`). `pr-merge-reflect` 만 아직 이식 전이다(#85). Codex 는 **훅을
+신뢰해야** 실행된다 — 신뢰 전에는 에러도 경고도 없이 조용히 건너뛴다(`docs/codex-hooks.md`).
 
 ---
 
@@ -22,7 +23,7 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
 | | 엔진 (core) | 데이터 (프로젝트) |
 |---|---|---|
 | project-memory-index | INDEX.md 읽기 → 공유 메모리 목록 주입 | `INDEX.md`, 선택: `index-load.json` |
-| memory-search | glob/substring 매칭 → 메모리 주입 | `routes.json` (파일→메모리 매핑) |
+| memory-search | 파일 경로·셸 명령 매칭 → 메모리 주입 | `routes.json` (파일·명령→메모리 매핑) |
 | reflection | 정규식 규칙 적용 → 경고 | `reflection-rules.json` (패턴→경고문) |
 
 데이터 파일이 없으면 훅은 **조용히 no-op** 한다(reflection 은 내장 TODO/FIXME 규칙만).
@@ -58,10 +59,10 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
 - `enabled: false` 면 INDEX 자동 주입을 끈다.
 - `max_chars` 는 1,000~50,000 사이로 clamp 된다.
 
-### memory-search — 편집 전 관련 메모리 주입
-- **이벤트**: PreToolUse `Edit|Write|MultiEdit`
-- **동작**: 편집하려는 파일 경로를 `routes.json` 규칙과 매칭 → 매칭된 메모리 파일을 읽어
-  `additionalContext` 로 컨텍스트에 주입. "이 파일 고칠 땐 이 규칙·결정을 기억하라."
+### memory-search — 행동 직전 관련 메모리 주입
+- **이벤트**: PreToolUse `Edit|Write|MultiEdit|Bash` (Codex: `apply_patch|Bash`)
+- **동작**: 편집하려는 **파일 경로** 또는 실행하려는 **셸 명령**을 `routes.json` 규칙과 매칭 →
+  매칭된 메모리 파일을 읽어 `additionalContext` 로 주입. "이걸 하기 전에 이 규칙을 기억하라."
 - **보안**: routes.json 은 프로젝트 제어 데이터라, 경로 탈출(절대경로·`..`·symlink)로 `.claude/memory`
   밖 파일을 주입하려는 시도를 차단한다(untrusted repo 유출 방지).
 
@@ -71,12 +72,23 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
   "rules": [
     { "glob": "*.kt", "memory": ["patterns/code-quality.md"] },
     { "contains": ["batch", "etl"], "memory": ["decisions/issue-workflow.md"] },
-    { "contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"] }
+    { "contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"] },
+    { "command_contains": ["gh pr create"], "memory": ["decisions/review-rule.md"] }
   ]
 }
 ```
 - `glob`: 파일 경로에 fnmatch. `contains`: 부분문자열(대소문자 무시) 중 하나라도 포함.
 - `match_empty`: 경로 없는 편집도 매칭. `memory`: `.claude/memory/` 기준 상대경로.
+- `command_contains`: **셸 명령 원문**에 부분문자열 포함.
+
+⚠️ **경로 키와 명령 키는 넘나들지 않는다.** `glob`·`contains`·`match_empty` 는 파일 편집일 때만,
+`command_contains` 는 셸 명령일 때만 본다. 섞으면 `{"contains": ["hook"]}` 같은 규칙이
+`grep -rn hook ...` 에도 걸려서 읽기 전용 명령마다 메모리가 쏟아진다.
+
+**왜 셸 명령에도 거나 (이슈 #90):** 파일 편집과 무관한 규칙이 있다 — 예를 들어 "PR 을 만들기
+전에 리뷰 결과를 댓글로 남겨라". 이런 규칙을 편집 시점에만 띄우면 **정작 필요한 순간에
+닿지 않는다.** 실제로 이 저장소에서 같은 규칙이 세 번 빠졌다. 규칙을 아는 것과 그 순간에
+떠올리는 것은 다르다.
 
 ### reflection — 편집 후 품질 경고
 - **이벤트**: PostToolUse `Edit|Write|MultiEdit` (MultiEdit 은 `edits[*].new_string` 을 합쳐 검사)
@@ -197,7 +209,7 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 |------|------|--------|
 | 공유 메모리 인덱스 | `$CLAUDE_PROJECT_DIR/.claude/memory/INDEX.md` | project-memory-index no-op |
 | INDEX 자동 주입 옵션 | `$CLAUDE_PROJECT_DIR/.claude/memory/index-load.json` | enabled=true, max_chars=12000 |
-| 파일→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
+| 파일·명령→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
 | 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
 | 회고 skip rule | `$CLAUDE_PROJECT_DIR/.claude/memory/reflect-skip.json` | 기본 회고 산출물 경로·라벨·커밋 메시지 skip |
 | 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |

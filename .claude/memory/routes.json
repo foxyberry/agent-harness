@@ -1,6 +1,9 @@
 {
-  "//": "memory-search 훅 데이터 (agent-harness 자기 dogfooding). 편집 파일 → 주입할 메모리.",
+  "//": "memory-search 훅 데이터 (agent-harness 자기 dogfooding). 편집 파일·셸 명령 → 주입할 메모리.",
+  "//command": "command_contains 는 셸 명령 원문만 본다. 파일 편집이 아니라 '이 명령을 칠 때' 상기시켜야 하는 규칙용.",
   "rules": [
+    { "command_contains": ["gh pr create", "gh pr merge", "gh issue create"],
+      "memory": ["review-evidence-on-target-thread.md"] },
     { "glob": "*/core/hooks/*", "memory": ["engine-data-separation.md", "hooks-live-dir-gotcha.md"] },
     { "contains": ["hook"], "memory": ["engine-data-separation.md", "hooks-live-dir-gotcha.md"] },
     { "contains": ["build.sh"], "memory": ["build-drift.md"] },

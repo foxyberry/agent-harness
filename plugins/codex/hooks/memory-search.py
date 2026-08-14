@@ -14,13 +14,23 @@ routes.json 형식:
     "rules": [
       {"glob": "*.kt",                    "memory": ["patterns/code-quality.md"]},
       {"contains": ["batch","etl"],       "memory": ["decisions/issue-workflow.md"]},
-      {"contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"]}
+      {"contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"]},
+      {"command_contains": ["gh pr create"], "memory": ["decisions/review-rule.md"]}
     ]
   }
 - glob:  편집 파일 경로에 fnmatch (예: "*.kt", "*/service/*").
 - contains: 경로에 하나라도 포함되면 매칭 (대소문자 무시).
-- match_empty: file_path 가 비어있을 때도 매칭 (예: 경로 없는 편집).
+- match_empty: 편집인데 경로를 못 얻었을 때도 매칭.
+- command_contains: **셸 명령 원문**에 포함되면 매칭 (대소문자 무시).
 - memory: `.claude/memory/` 기준 상대경로. 매칭 시 이 파일들을 읽어 주입.
+
+⚠️ **경로 키와 명령 키는 넘나들지 않는다.** `glob`·`contains`·`match_empty` 는 편집일 때만,
+`command_contains` 는 셸 명령일 때만 본다. 섞으면 `{"contains": ["hook"]}` 이 `grep hook ...`
+같은 읽기 전용 명령에도 걸려서 메모리가 쏟아진다.
+
+**왜 명령에도 거나:** "파일을 고칠 때"가 아니라 "이 명령을 실행할 때" 상기시켜야 하는 규칙이
+있다 — 예를 들어 "PR 을 만들기 전에 리뷰 결과를 댓글로 남겨라". 그런 규칙을 편집 시점에만
+띄우면 정작 필요한 순간에 닿지 않는다(이슈 #90).
 
 주의: TOML 대신 JSON — tomllib 는 Python 3.11+ 필요, JSON 은 무의존.
 어떤 예외에도 조용히 통과(fail-open) — 편집을 막지 않는다.
@@ -35,7 +45,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
-from hook_io import edited_files, emit_context  # noqa: E402
+from hook_io import edited_files, emit_context, shell_command  # noqa: E402
 
 
 def _project_dir():
@@ -71,16 +81,36 @@ def _safe_memory_path(memory_dir, rel):
     return None
 
 
-def _matches(rule, file_path):
-    low = file_path.lower()
-    if not file_path and rule.get("match_empty"):
+def _matches(rule, paths, command):
+    """규칙이 이번 도구 호출에 걸리나.
+
+    **경로 키와 명령 키는 서로 넘나들지 않는다.**
+    - `glob`·`contains`·`match_empty` → 편집된 **파일 경로**만 본다
+    - `command_contains` → **셸 명령 원문**만 본다
+
+    섞으면 `{"contains": ["hook"]}` 같은 기존 규칙이 `grep -rn hook ...` 에도 걸린다 —
+    읽기만 하는 명령에 메모리가 쏟아진다. 경로 규칙은 파일을 고칠 때만 뜨는 게 계약이다.
+
+    `match_empty` 도 마찬가지로 **편집일 때만** 본다. 셸 명령에도 적용하면
+    project-template 이 기본 제공하는 `{"contains":["git"], "match_empty": true}` 규칙이
+    모든 셸 명령마다 발화한다.
+    """
+    if command is not None:
+        for sub in rule.get("command_contains", []) or []:
+            if isinstance(sub, str) and sub.lower() in command.lower():
+                return True
+        return False
+
+    if not any(paths) and rule.get("match_empty"):
         return True
-    g = rule.get("glob")
-    if g and fnmatch.fnmatch(file_path, g):
-        return True
-    for sub in rule.get("contains", []) or []:
-        if isinstance(sub, str) and sub.lower() in low:
+    glob = rule.get("glob")
+    for path in paths:
+        if glob and fnmatch.fnmatch(path, glob):
             return True
+        low = path.lower()
+        for sub in rule.get("contains", []) or []:
+            if isinstance(sub, str) and sub.lower() in low:
+                return True
     return False
 
 
@@ -93,6 +123,8 @@ def main():
     # 한 번의 편집이 여러 파일을 건드릴 수 있다(Codex 패치 하나에 Add File 여러 개).
     # 경로를 못 얻었으면 빈 문자열 하나로 — `match_empty` 규칙이 그 경우를 위한 것이다.
     paths = [f.path for f in edited_files(data)] or [""]
+    # 셸 명령이면 경로 대신 명령으로 매칭한다(`command_contains`). 편집이면 None.
+    command = shell_command(data)
     memory_dir = os.path.join(_project_dir(), ".claude/memory")
 
     rules = _load_rules(memory_dir)
@@ -105,7 +137,7 @@ def main():
         if not isinstance(rule, dict):
             continue
         try:
-            if any(_matches(rule, path) for path in paths):
+            if _matches(rule, paths, command):
                 for rel in rule.get("memory", []) or []:
                     if isinstance(rel, str) and rel not in rel_paths:
                         rel_paths.append(rel)

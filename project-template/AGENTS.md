@@ -31,7 +31,7 @@ Codex 는 이 파일을 직접 읽고, Claude Code 는 `CLAUDE.md` 가 이 파�
 - 공유 메모리는 `.claude/memory/` 에 **커밋**된다. 목록은 `.claude/memory/INDEX.md`.
 - Claude 플러그인은 세션 시작 시 `INDEX.md` 를 자동으로 주입한다. Codex 는 아직 훅 배포가 없어
   작업 시작 시 이 인덱스를 직접 읽는 것을 기본 규칙으로 둔다.
-- 훅 데이터: `routes.json`(편집 파일→메모리 주입), `reflection-rules.json`(품질 경고 정규식),
+- 훅 데이터: `routes.json`(편집 파일·셸 명령→메모리 주입), `reflection-rules.json`(품질 경고 정규식),
   `reflect-skip.json`(회고 산출물 PR skip rule).
   이 프로젝트 언어·규칙에 맞게 고쳐 쓴다 — 없으면 훅은 조용히 no-op.
 - governance: 자동 회고 초안은 `_pending/` 에만 쌓이고, `/memory-update` 로

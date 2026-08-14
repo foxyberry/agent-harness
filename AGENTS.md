@@ -17,7 +17,7 @@
 → memory-search(편집 전 관련 메모리 주입) → reflection(편집 후 품질 경고) → pr-merge-reflect(머지 시 회고) → `/memory-update` 승격.
 
 - **엔진**(`core/hooks/`)은 툴 무관·generic. "무엇을" 주입·경고할지는 하드코딩하지 않는다.
-- **데이터**는 프로젝트의 `.claude/memory/` 에 산다: `routes.json`(파일→메모리 매핑),
+- **데이터**는 프로젝트의 `.claude/memory/` 에 산다: `routes.json`(파일·셸 명령→메모리 매핑),
   `reflection-rules.json`(정규식 품질 규칙), `reflect-skip.json`(회고 PR 예외 규칙).
   없으면 훅은 조용히 no-op(내장 TODO/FIXME·기본 회고 skip rule 만).
   예시 데이터는 `project-template/.claude/memory/` 에.
