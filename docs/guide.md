@@ -203,7 +203,7 @@ agent-stale --repo foxyberry/agent-harness --min-age-days 30
 
 ```
 세션 시작  → INDEX.md 목록이 통째로 주입 (project-memory-index)   ← Claude·Codex 둘 다
-파일 편집 전 → routes.json 이 가리키는 메모리 본문이 주입 (memory-search)  ← Claude·Codex 둘 다
+편집·명령 전 → routes.json 이 가리키는 메모리 본문이 주입 (memory-search)  ← Claude·Codex 둘 다
 파일 편집 후 → reflection-rules.json 정규식으로 품질 경고 (reflection)     ← Claude·Codex 둘 다
 PR 머지 후  → 회고 재촉 (pr-merge-reflect)                              ← Claude 만
 ```

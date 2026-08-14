@@ -69,6 +69,12 @@ def edited_files(data):
         if isinstance(file_path, str) and file_path:
             return [EditedFile(file_path, _claude_added(ti))]
 
+        # 셸이라고 이름이 말해주면 패치처럼 생겼어도 편집이 아니다 — 패치를 인용한
+        # `gh pr create --body "...*** Begin Patch..."` 를 편집으로 파싱하면 있지도 않은
+        # 파일로 라우팅한다. 반대 방향은 shell_command() 에 같은 설명이 있다.
+        if _is_named(data, "Bash"):
+            return []
+
         command = ti.get("command")
         if isinstance(command, str) and "*** Begin Patch" in command:
             return parse_apply_patch(command)
@@ -138,6 +144,47 @@ def parse_apply_patch(command):
 
     flush()
     return files
+
+
+def _is_named(data, name):
+    """`tool_name` 이 정확히 이것인가. 이름이 없거나 다르면 False."""
+    return ((data or {}).get("tool_name") or "") == name
+
+
+def shell_command(data):
+    """셸 명령이면 그 원문, 아니면 None.
+
+    memory-search 가 `Bash` 에도 걸리게 되면서 필요해졌다 — "파일을 고칠 때"가 아니라
+    "이 명령을 실행할 때" 상기시켜야 하는 규칙이 있다(예: PR 만들기 전에 리뷰 결과를
+    댓글로 남겨라). 그런 규칙은 편집 시점에 띄우면 필요한 순간에 닿지 않는다(이슈 #90).
+
+    ⚠️ 편집(`apply_patch`)도 `tool_input.command` 에 담겨서 모양만으로는 안 갈린다.
+    그래서 **이름이 결정적일 때는 이름을 믿고, 아니면 모양으로 떨어진다**:
+
+    1. `tool_name == "apply_patch"` → 편집이다
+    2. `tool_name == "Bash"` → 셸이다. **명령 안에 패치 문자열이 들어 있어도 셸이다** —
+       `gh pr create --body "...*** Begin Patch..."` 처럼 패치를 인용하는 명령이 실제로
+       있고, 이걸 편집으로 오인하면 **바로 그 순간**에 규칙 주입이 조용히 빠진다(Codex 리뷰)
+    3. 이름이 없거나 모르는 이름 → 패치 마커로 판정
+
+    `edited_files` 가 이름으로 분기하지 않는 것과 다른 이유: 편집 도구는 이름이 여럿이고
+    (`Edit`/`Write`/`MultiEdit`/`apply_patch`) 새로 생기지만, 셸은 양쪽 다 `Bash` 하나로
+    관측됐다. 이름이 실제로 결정적인 자리에서만 이름을 쓴다.
+    """
+    try:
+        ti = (data or {}).get("tool_input") or {}
+        if not isinstance(ti, dict):
+            return None
+        command = ti.get("command")
+        if not isinstance(command, str) or not command:
+            return None
+        if _is_named(data, "Bash"):
+            return command
+        if _is_named(data, "apply_patch") or ti.get("file_path"):
+            return None
+        return command if "*** Begin Patch" not in command else None
+    except Exception:
+        return None
 
 
 def added_content(data):

@@ -8,7 +8,7 @@ memory-search 훅으로 관련 메모리 본문을 읽는다. **Codex 는 이 �
 - [git-workflow](decisions/git-workflow.md) — git 작업 규칙 (예시 — 교체하라)
 
 설정 파일:
-- `routes.json` — 편집 파일→메모리 주입 매핑
+- `routes.json` — 편집 파일·셸 명령→메모리 주입 매핑
 - `reflection-rules.json` — 편집 후 품질 경고 정규식
 - `reflect-skip.json` — 회고 산출물 PR skip rule
 
