@@ -45,7 +45,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
-from hook_io import edited_files, emit_context, shell_command  # noqa: E402
+from hook_io import edited_files, emit_context, shell_command, trace_entry  # noqa: E402
 
 
 def _project_dir():
@@ -119,6 +119,10 @@ def main():
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+
+    # 이 훅이 떴다는 사실 자체를 남긴다(HARNESS_HOOK_TRACE 있을 때만). 왜 진입 시점인지는
+    # hook_io.trace_entry 에.
+    trace_entry(__file__, data.get("hook_event_name"))
 
     # 한 번의 편집이 여러 파일을 건드릴 수 있다(Codex 패치 하나에 Add File 여러 개).
     # 경로를 못 얻었으면 빈 문자열 하나로 — `match_empty` 규칙이 그 경우를 위한 것이다.

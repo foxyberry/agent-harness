@@ -45,7 +45,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
-from hook_io import edited_files, emit_context  # noqa: E402
+from hook_io import edited_files, emit_context, trace_entry  # noqa: E402
 
 TODO_MESSAGE = "⚠️  TODO/FIXME 남아있음 — 작업 완료 후 제거 필요"
 
@@ -124,6 +124,8 @@ def main():
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+
+    trace_entry(__file__, data.get("hook_event_name"))
 
     # 내용이 실제로 추가된 파일만 본다. 한 번의 편집이 여러 파일을 건드릴 수 있고
     # (Codex 패치), 삭제는 검사할 새 코드가 없다.

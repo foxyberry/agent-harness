@@ -212,6 +212,59 @@ codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → C
 
 검증은 harness repo **밖** 별도 프로젝트에서 한다([[adapter-cross-project-testing]]).
 
+## 무음 실패 잡기 (이슈 #85 4단계)
+
+훅이 안 돌아도 화면에는 아무 일도 안 일어난다. "안 돌았다"와 "돌았는데 할 말이 없었다"가
+바깥에서 똑같이 생겼기 때문이다. 그래서 두 겹으로 나눠 본다.
+
+### 1. 저장소 안 — 배선 테스트
+
+`tests/test_hook_wiring.py` 가 `plugins/*/hooks/hooks.json` 을 읽어 확인한다.
+
+| 실패 모드 | 어떻게 잡나 |
+|---|---|
+| hooks.json 경로 오타 | 등록된 스크립트가 그 번들에 실제로 있나 |
+| helper cp 누락(`hook_io`·`repo_identity`) | 등록된 훅을 **번들 디렉토리에서** 실행해 exit 0 확인 |
+| matcher 불일치 | matcher 가 실측 도구 이름(`Edit`/`Write`/`MultiEdit`/`Bash`, `apply_patch`/`Bash`)을 덮나 |
+| 정규화는 되는데 훅이 안 뜸 | 편집 픽스처의 `tool_name` 을 편집 훅 matcher 가 받나 |
+
+도구 이름 목록은 matcher 에서 뽑지 않는다 — 그러면 자기가 자기를 검사하는 순환이라 아무것도
+못 잡는다. 출처는 이 문서의 실측표다.
+
+이 테스트는 생성물(`plugins/*/hooks/hooks.json`)을 읽으므로 `./build.sh` 를 안 돌리면 실패한다.
+그건 고장이 아니라 빌드 드리프트 감지다.
+
+### 2. 저장소 밖 — 진입 추적 (`HARNESS_HOOK_TRACE`)
+
+설치본이 미신뢰라 skip 되는 것, 실제 툴이 훅을 정말 띄우는지는 **설치 상태·런타임**이라
+이 저장소의 테스트가 볼 수 없다. 대상 프로젝트에서 관측한다.
+
+`HARNESS_HOOK_TRACE` 에 경로를 주면 등록된 훅이 **진입 시점에** 한 줄씩 JSONL 로 남긴다.
+`emit_context` 가 아니라 진입에 남기는 게 핵심이다 — 주입 시점에 남기면 "돌았는데 라우트에
+안 걸린" 경우와 "아예 안 돈" 경우가 또 같아져서 아무것도 못 가린다. 환경변수가 없으면
+아무 일도 안 한다(평소 비용 0).
+
+```bash
+export HARNESS_HOOK_TRACE=/tmp/hook-trace.jsonl
+rm -f "$HARNESS_HOOK_TRACE"
+codex          # 또는 claude — harness repo 밖 별도 프로젝트에서
+# 세션 안에서: 셸 명령 하나(`echo hi`) + 파일 편집 하나
+cat /tmp/hook-trace.jsonl
+```
+
+기대 결과 — 등록된 (이벤트, 훅) 조합마다 최소 한 줄:
+
+| 툴 | 있어야 할 줄 |
+|---|---|
+| Codex | `project-memory-index`(SessionStart), `memory-search`(PreToolUse ×2), `reflection`(PostToolUse) |
+| Claude | 위 셋 + `pr-merge-reflect`(SessionStart·UserPromptSubmit·PostToolUse) |
+
+줄이 **없는** 훅이 무음 실패다. 원인은 셋 중 하나다 — 플러그인 미신뢰(→ [신뢰](#신뢰trust--안-하면-무음으로-건너뛴다)),
+matcher 불일치(→ 위 배선 테스트), 설치본이 구버전(→ 설치 경로·버전 확인).
+
+**아직 관측 안 함.** 장치와 절차만 있고, 별도 프로젝트에서의 실제 관측 기록은 없다.
+관측하면 결과를 여기에 적는다.
+
 ## 현재 이식 상태
 
 | 훅 | Claude | Codex | 비고 |

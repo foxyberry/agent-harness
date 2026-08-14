@@ -1,0 +1,208 @@
+"""훅 배선의 **무음 실패**를 잡는다 (이슈 #85 4단계, in-repo 부분).
+
+무음 실패란 훅이 안 돌았는데 아무 일도 일어나지 않아 사람이 못 알아채는 상태다.
+경로 오타·helper 미복사·matcher 불일치가 다 여기로 떨어진다 — 셋 다 화면에는
+"조용히 성공"으로 보인다.
+
+여기서 잡는 것 (전부 이 저장소 안에서 결정론적으로 확인 가능한 것):
+
+1. hooks.json 이 가리키는 스크립트가 그 번들에 실제로 있나 (경로 오타)
+2. 등록된 훅을 **번들 디렉토리에서 실행**해서 exit 0 인가 (helper cp 누락 → import 죽음)
+3. matcher 가 그 툴이 실제로 내보내는 도구 이름을 덮나 (matcher 불일치)
+4. 편집 픽스처가 편집 훅 matcher 와 어긋나지 않나 (hook_io ↔ hooks.json 커플링)
+
+**여기서 못 잡는 것**: 설치본이 미신뢰라 skip 되는 것, 실제 툴이 훅을 정말 띄우는지.
+둘 다 설치 상태·런타임이라 이 저장소의 pytest 가 볼 수 없다. 그건 `HARNESS_HOOK_TRACE`
+로 별도 프로젝트에서 관측한다 — 절차는 docs/codex-hooks.md.
+"""
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "core" / "scripts"))
+from hook_io import edited_files  # noqa: E402
+
+# 어댑터별 **도구 이름 인벤토리**.
+#
+# ⚠️ 이 목록을 matcher 에서 뽑아내면 안 된다 — 그러면 자기가 자기를 검사하는 순환이라
+# 아무것도 못 잡는다. 출처는 실측이다:
+#   - Claude: Edit/Write/MultiEdit/Bash (하네스가 쓰는 편집·셸 도구)
+#   - Codex: apply_patch/Bash — 이슈 #85 본문의 codex-cli 0.145.0 실측.
+#     rollout 로그의 `exec` 는 도구 이름이 아니라 tool_use_id 접두사였다.
+ADAPTERS = {
+    "harness": {"edit": ["Edit", "Write", "MultiEdit"], "shell": ["Bash"]},
+    "codex": {"edit": ["apply_patch"], "shell": ["Bash"]},
+}
+
+# 편집 훅. memory-search 는 셸에도 걸려야 하고(이슈 #90), reflection 은 편집만 본다.
+MEMORY_SEARCH = "memory-search.py"
+REFLECTION = "reflection.py"
+
+BUILD_HINT = "hooks.json 이 소스와 어긋났다 — `./build.sh` 를 돌리고 생성물까지 커밋할 것."
+
+_COMMAND_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([^\"']+)")
+
+
+def _hooks_json(adapter):
+    path = ROOT / "plugins" / adapter / "hooks" / "hooks.json"
+    if not path.exists():
+        raise unittest.SkipTest(f"{path} 없음 — {BUILD_HINT}")
+    return json.loads(path.read_text(encoding="utf-8"))["hooks"]
+
+
+def _registrations(adapter):
+    """[(event, matcher, script_rel_path)] — 등록된 훅을 평평하게 편다."""
+    out = []
+    for event, entries in _hooks_json(adapter).items():
+        for entry in entries:
+            matcher = entry.get("matcher") or ""
+            for hook in entry.get("hooks", []):
+                found = _COMMAND_RE.search(hook.get("command", ""))
+                assert found, f"{adapter}/{event}: ${{CLAUDE_PLUGIN_ROOT}} 상대경로가 아니다"
+                out.append((event, matcher, found.group(1)))
+    return out
+
+
+def _matches(matcher, tool_name):
+    """Codex·Claude 공통: matcher 는 도구 이름에 대한 정규식, 빈 값이면 전부 매칭."""
+    if matcher in ("", "*"):
+        return True
+    return re.search(matcher, tool_name) is not None
+
+
+class RegisteredPathsTest(unittest.TestCase):
+    """1. 경로 오타 — hooks.json 이 없는 파일을 가리키면 훅은 영원히 안 돈다."""
+
+    def test_every_registered_script_exists_in_its_bundle(self):
+        for adapter in ADAPTERS:
+            bundle = ROOT / "plugins" / adapter
+            for event, _matcher, rel in _registrations(adapter):
+                with self.subTest(adapter=adapter, event=event, script=rel):
+                    self.assertTrue((bundle / rel).is_file(),
+                                    f"{adapter}: {rel} 이 번들에 없다. {BUILD_HINT}")
+
+
+class RegisteredHooksRunTest(unittest.TestCase):
+    """2. helper 미복사 — 번들 안에서 실제로 돌려본다.
+
+    build.sh 는 helper(`hook_io.py`·`repo_identity.py`)를 손으로 cp 한다. 하나 빠뜨리면
+    훅은 import 에서 죽는데, 툴은 그걸 삼키고 넘어간다. 함수 단위 테스트로는 절대 안 잡힌다
+    — 반드시 **번들 디렉토리의 그 파일**을 subprocess 로 실행해야 한다.
+    """
+
+    def _payload(self, event, matcher, adapter):
+        """그 (event, matcher) 에 실제로 올 법한 최소 입력."""
+        tools = ADAPTERS[adapter]
+        candidates = tools["edit"] + tools["shell"]
+        tool_name = next((t for t in candidates if _matches(matcher, t)), "Bash")
+        data = {"hook_event_name": event, "tool_name": tool_name}
+        if tool_name in tools["edit"] and tool_name != "apply_patch":
+            data["tool_input"] = {"file_path": "note.txt", "new_string": "hello"}
+        elif tool_name == "apply_patch":
+            data["tool_input"] = {"command": "*** Begin Patch\n*** Add File: note.txt\n"
+                                             "+hello\n*** End Patch"}
+        else:
+            data["tool_input"] = {"command": "echo hello"}
+        if event == "PostToolUse":
+            data["tool_response"] = {}
+        if event == "UserPromptSubmit":
+            data["prompt"] = "hello"
+        return data
+
+    def test_every_registered_hook_exits_zero(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("HARNESS_AUTO_REFLECT", "HARNESS_HOOK_TRACE")}
+        for adapter in ADAPTERS:
+            bundle = ROOT / "plugins" / adapter
+            for event, matcher, rel in _registrations(adapter):
+                script = bundle / rel
+                if not script.is_file():
+                    continue  # 경로 테스트가 따로 잡는다
+                with tempfile.TemporaryDirectory() as tmp:
+                    (pathlib.Path(tmp) / ".claude" / "memory").mkdir(parents=True)
+                    run_env = dict(env, CLAUDE_PROJECT_DIR=tmp)
+                    data = self._payload(event, matcher, adapter)
+                    proc = subprocess.run(
+                        [sys.executable, str(script)], input=json.dumps(data),
+                        capture_output=True, text=True, env=run_env, cwd=tmp, timeout=60,
+                    )
+                with self.subTest(adapter=adapter, event=event, script=rel):
+                    self.assertEqual(
+                        0, proc.returncode,
+                        f"{adapter}/{rel} 이 번들에서 실행하다 죽었다 — helper cp 누락일 수 있다.\n"
+                        f"stderr:\n{proc.stderr}")
+
+
+class MatcherCoverageTest(unittest.TestCase):
+    """3. matcher 불일치 — 오늘은 통과한다. 값어치는 **회귀 감지**에 있다."""
+
+    def _matchers_for(self, adapter, script, event):
+        return [m for ev, m, rel in _registrations(adapter)
+                if rel.endswith(script) and ev == event]
+
+    def test_memory_search_covers_edit_and_shell(self):
+        for adapter, tools in ADAPTERS.items():
+            matchers = self._matchers_for(adapter, MEMORY_SEARCH, "PreToolUse")
+            self.assertTrue(matchers, f"{adapter}: memory-search 가 PreToolUse 에 없다")
+            for tool in tools["edit"] + tools["shell"]:
+                with self.subTest(adapter=adapter, tool=tool):
+                    self.assertTrue(any(_matches(m, tool) for m in matchers),
+                                    f"{adapter}: memory-search matcher 가 {tool} 을 놓친다")
+
+    def test_reflection_covers_edit_tools(self):
+        for adapter, tools in ADAPTERS.items():
+            matchers = self._matchers_for(adapter, REFLECTION, "PostToolUse")
+            self.assertTrue(matchers, f"{adapter}: reflection 이 PostToolUse 에 없다")
+            for tool in tools["edit"]:
+                with self.subTest(adapter=adapter, tool=tool):
+                    self.assertTrue(any(_matches(m, tool) for m in matchers),
+                                    f"{adapter}: reflection matcher 가 {tool} 을 놓친다")
+
+
+class FixtureMatcherCouplingTest(unittest.TestCase):
+    """4. hook_io ↔ hooks.json 커플링.
+
+    hook_io 가 편집으로 인식하는 입력인데 matcher 가 그 도구 이름을 안 받으면, 정규화는
+    완벽한데 훅이 애초에 안 뜬다. 두 파일이 따로 놀 수 있는 자리라 묶어 둔다.
+    """
+
+    FIXTURES = [
+        ("harness", {"tool_name": "Edit",
+                     "tool_input": {"file_path": "a.py", "new_string": "x"}}),
+        ("harness", {"tool_name": "Write",
+                     "tool_input": {"file_path": "a.py", "content": "x"}}),
+        ("harness", {"tool_name": "MultiEdit",
+                     "tool_input": {"file_path": "a.py",
+                                    "edits": [{"new_string": "x"}]}}),
+        # 이슈 #85 본문의 codex-cli 0.145.0 실측 입력.
+        ("codex", {"tool_name": "apply_patch",
+                   "tool_input": {"command": "*** Begin Patch\n"
+                                             "*** Add File: /tmp/x/test.txt\n"
+                                             "+world\n*** End Patch"},
+                   "tool_use_id": "exec-9fa03e9a-13d8-438e-bb96-796a2717a0fe"}),
+    ]
+
+    def test_edit_fixtures_reach_the_edit_hooks(self):
+        for adapter, payload in self.FIXTURES:
+            tool_name = payload["tool_name"]
+            with self.subTest(adapter=adapter, tool=tool_name):
+                self.assertTrue(edited_files(payload),
+                                f"{tool_name}: hook_io 가 편집으로 못 읽는다")
+                for script, event in ((MEMORY_SEARCH, "PreToolUse"),
+                                      (REFLECTION, "PostToolUse")):
+                    matchers = [m for ev, m, rel in _registrations(adapter)
+                                if rel.endswith(script) and ev == event]
+                    self.assertTrue(
+                        any(_matches(m, tool_name) for m in matchers),
+                        f"{adapter}: {script} matcher 가 {tool_name} 을 안 받는다 — "
+                        f"정규화는 되는데 훅이 안 뜬다")
+
+
+if __name__ == "__main__":
+    unittest.main()

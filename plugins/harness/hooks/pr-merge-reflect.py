@@ -38,6 +38,11 @@ try:
     from repo_identity import ProjectMatcher
 except ImportError:  # 단독 복사본 등 helper 부재 — 스윕만 비활성, 나머지 훅 기능은 유지
     ProjectMatcher = None
+try:
+    from hook_io import trace_entry   # 진입 추적(HARNESS_HOOK_TRACE). 없으면 그냥 없는 대로.
+except ImportError:
+    def trace_entry(*_a, **_kw):
+        pass
 
 # "머지를 끝냈다"는 완료형만 매칭. 제안/질문/부정("머지하자/머지 언제해?/머지하지마",
 # "is this merged?", "not merged yet")은 제외.
@@ -631,6 +636,7 @@ def main():
         sys.exit(0)
 
     event = data.get("hook_event_name", "")
+    trace_entry(__file__, event)
     # normpath: 끝 슬래시 제거 등 정규화 (Codex in-project 매칭이 trailing sep 로 깨지지 않게).
     project_dir = os.path.normpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     cache = _cache_path(project_dir)

@@ -29,6 +29,7 @@ Codex 의 `command` 는 JS 래퍼가 아니라 apply_patch 텍스트 자체다(0
 어떤 예외에도 빈 목록으로 떨어진다(fail-open) — 정규화 실패가 편집을 막으면 안 된다.
 """
 import json
+import os
 import re
 import sys
 
@@ -219,3 +220,37 @@ def emit_context(event, text):
         "additionalContext": text,
     }, ensure_ascii=False))
     sys.stdout.flush()
+
+
+def trace_entry(script_path, event=None):
+    """훅이 **실행됐다는 사실**을 파일에 한 줄 남긴다. `HARNESS_HOOK_TRACE` 가 있을 때만.
+
+    무음 실패를 사람이 못 알아채는 이유는 "안 돌았다"와 "돌았는데 할 말이 없었다"가
+    바깥에서 똑같이 생겼기 때문이다. matcher 가 어긋나서 훅이 아예 안 떠도, 라우트에
+    안 걸려서 아무것도 주입 안 해도, 화면에는 똑같이 아무것도 안 나온다.
+
+    그래서 **주입 시점이 아니라 진입 시점**에 남긴다. `emit_context` 에 넣으면 위 두 경우가
+    또 같아져서 아무것도 못 가린다.
+
+    평소에는 환경변수가 없어 아무 일도 안 한다. 크로스 프로젝트 검증(이슈 #85 4단계)에서만
+    켠다:
+
+        HARNESS_HOOK_TRACE=/tmp/hook-trace.jsonl codex   # 또는 claude
+
+    어떤 예외에도 조용히 넘어간다 — 진단 장치가 훅을 죽이면 본말전도다.
+    """
+    path = os.environ.get("HARNESS_HOOK_TRACE")
+    if not path:
+        return
+    try:
+        import time
+        record = {
+            "hook": os.path.basename(script_path or ""),
+            "event": event or "",
+            "pid": os.getpid(),
+            "ts": time.time(),
+        }
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
