@@ -20,6 +20,15 @@ import json
 import os
 import sys
 
+# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다. 여기서 쓰는 건 진입 추적
+# 하나뿐이라 없어도 훅은 그대로 돈다 — 진단 장치가 훅을 죽이면 안 된다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from hook_io import trace_entry
+except ImportError:
+    def trace_entry(*_a, **_kw):
+        pass
+
 DEFAULT_MAX_CHARS = 12000
 MAX_CAP = 50000
 
@@ -114,6 +123,7 @@ def main():
         sys.exit(0)
 
     event = data.get("hook_event_name") or data.get("hookEventName")
+    trace_entry(__file__, event)
     if event != "SessionStart":
         sys.exit(0)
 
