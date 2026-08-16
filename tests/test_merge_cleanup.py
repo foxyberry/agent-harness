@@ -379,3 +379,128 @@ class WorktreeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnexplainedBranchTest(unittest.TestCase):
+    """어느 후보에도 안 걸린 브랜치가 리포트에서 통째로 사라지던 문제 (이슈 #78).
+
+    후보는 "main 의 조상" 또는 "조회해 온 PR 의 head 와 이름이 맞음" 두 경로로만 생긴다.
+    둘 다 아닌 브랜치는 아무 섹션에도 안 나왔고, 그러면 "정리할 게 없다"로 읽힌다.
+    """
+
+    def test_local_and_remote_branches_without_a_candidate_are_surfaced(self):
+        with (
+            patch.object(merge_cleanup, "_current_branch", return_value="main"),
+            patch.object(
+                merge_cleanup,
+                "_local_branches",
+                return_value={"main", "feature/has-pr", "review/local-only"},
+            ),
+            patch.object(
+                merge_cleanup,
+                "_remote_branches",
+                return_value={"main": "a", "feature/has-pr": "b", "old/forgotten": "c"},
+            ),
+        ):
+            out = merge_cleanup._unexplained_branches(
+                "/repo", [{"branch": "feature/has-pr"}], [{"branch": "feature/has-pr"}], "main"
+            )
+
+        self.assertEqual(["review/local-only"], out["local"])
+        self.assertEqual(["old/forgotten"], out["remote"])
+
+    def test_protected_and_current_branches_are_never_listed(self):
+        with (
+            patch.object(merge_cleanup, "_current_branch", return_value="work/now"),
+            patch.object(
+                merge_cleanup,
+                "_local_branches",
+                return_value={"main", "master", "develop", "work/now", "stray"},
+            ),
+            patch.object(merge_cleanup, "_remote_branches", return_value={"main": "a"}),
+        ):
+            out = merge_cleanup._unexplained_branches("/repo", [], [], "main")
+
+        self.assertEqual(["stray"], out["local"])
+        self.assertEqual([], out["remote"])
+
+    def _render(self, **over):
+        result = {
+            "repo": "owner/repo",
+            "project_dir": "/repo",
+            "default_branch": "main",
+            "fetch": {"ran": False, "ok": None},
+            "pr_query_ok": True,
+            "pr_query_limit": 20,
+            "pr_query_truncated": False,
+            "sync": {"branch": "main", "ahead": 0, "behind": 0, "fast_forward": True},
+            "local_merged_branches": [],
+            "local_branch_candidates": [],
+            "unexplained_branches": {"local": [], "remote": []},
+            "remote_branch_candidates": [],
+            "closing_issue_candidates": [],
+            "worktree_candidates": [],
+            "untracked": [],
+        }
+        result.update(over)
+        return merge_cleanup.render(result)
+
+    def test_render_never_offers_a_delete_command_for_them(self):
+        text = self._render(
+            unexplained_branches={"local": ["review/local-only"], "remote": []}
+        )
+
+        self.assertIn("판단 필요", text)
+        self.assertIn("review/local-only", text)
+        # 이 부류는 되살릴 방법이 없다 — 삭제 명령을 제안하면 안 된다.
+        self.assertNotIn("git branch -d review/local-only", text)
+        self.assertNotIn("git branch -D review/local-only", text)
+        self.assertNotIn("git push origin --delete", text)
+
+    def test_render_blames_the_query_limit_only_when_it_was_actually_capped(self):
+        capped = self._render(
+            unexplained_branches={"local": [], "remote": ["old/forgotten"]},
+            pr_query_truncated=True,
+        )
+        self.assertIn("--recent-limit", capped)
+
+        full = self._render(
+            unexplained_branches={"local": [], "remote": ["old/forgotten"]},
+            pr_query_truncated=False,
+        )
+        # 전부 조회했으면 상한 탓을 하면 안 된다. PR 이 정말 없는 것이다.
+        self.assertNotIn("--recent-limit", full)
+        self.assertIn("PR 기록이 없다", full)
+
+    def test_no_section_when_every_branch_is_accounted_for(self):
+        """설명 안 되는 브랜치가 없으면 조회가 잘렸어도 조용해야 한다.
+
+        PR 이 20건 넘는 저장소는 거의 항상 잘린다. 그때마다 경고를 띄우면 소음이라
+        사람이 읽지 않게 된다. 잘림이 실제로 뭔가를 가렸을 때만 말한다.
+        """
+        text = self._render(pr_query_truncated=True)
+
+        self.assertNotIn("판단 필요", text)
+        self.assertNotIn("--recent-limit", text)
+
+    def test_remote_branch_is_not_hidden_by_the_checked_out_branch_name(self):
+        """체크아웃 중인 브랜치와 같은 이름의 원격 브랜치가 사라지면 안 된다.
+
+        로컬에서 현재 브랜치를 빼는 이유는 git 이 삭제를 거부하기 때문인데, 원격에는
+        그 사정이 없다. 같이 빼면 이 함수가 고치려는 것과 똑같이 조용히 사라진다.
+        """
+        with (
+            patch.object(merge_cleanup, "_current_branch", return_value="feature/wip"),
+            patch.object(
+                merge_cleanup, "_local_branches", return_value={"main", "feature/wip"}
+            ),
+            patch.object(
+                merge_cleanup,
+                "_remote_branches",
+                return_value={"main": "a", "feature/wip": "b"},
+            ),
+        ):
+            out = merge_cleanup._unexplained_branches("/repo", [], [], "main")
+
+        self.assertEqual([], out["local"], "현재 브랜치는 로컬에서 빠져야 한다")
+        self.assertEqual(["feature/wip"], out["remote"], "원격에서는 빠지면 안 된다")

@@ -36,6 +36,7 @@ agent-merge-cleanup
 - 로컬 정리 브랜치 삭제 후보: git ancestry 로 병합됐거나, 같은 저장소의 merged/closed PR head 와 일치하는 로컬 브랜치. PR 이후 tip 이 바뀌었으면 강제 삭제를 제안하지 않음
 - 원격 브랜치 삭제 후보: 최근 merged/closed PR 의 head branch 가 아직 `origin/` 에 남아 있는 경우
 - 관련 이슈 close 확인 후보: 최근 merged PR 의 `closingIssuesReferences`
+- 판단 필요 (어느 후보에도 안 걸린 브랜치): 위 어디에도 안 걸린 로컬·원격 브랜치. **삭제 명령을 제안하지 않는다** — PR 이 없으면 GitHub 백업(`refs/pull/N/head`)도 없어 지우면 되살릴 수 없다. 조회가 상한에서 잘렸으면 "오래된 PR 이라 안 가져온 것일 수 있다"고 함께 알린다
 - worktree 정리 후보: 위 로컬 정리 브랜치를 물고 있는 worktree
 - untracked 잔여물: `git status --short` 의 `??` 파일
 - memory-update 리마인드: 남길 교훈이 있으면 `/feedback-review`·`/memory-update`

@@ -171,6 +171,36 @@ def _local_branch_candidates(project_dir, prs, base_ref, protected_base):
     return sorted(candidates.values(), key=lambda c: c["branch"])
 
 
+def _unexplained_branches(project_dir, local_candidates, remote_candidates, protected_base):
+    """어느 후보에도 안 걸린 브랜치. **정리 후보가 아니라 "판단 필요"다.**
+
+    후보는 두 경로로만 만들어진다 — main 의 조상이거나, 조회해 온 PR 의 head 와 이름이
+    맞거나. 둘 다 아닌 브랜치는 지금까지 리포트에서 **통째로 빠졌다.** 목록에 없는 것과
+    존재하지 않는 것이 구별이 안 되니 "정리할 게 없네" 로 읽힌다(이슈 #78).
+
+    두 가지가 여기로 떨어지고, 둘 다 사람이 봐야 한다.
+
+    1. **PR 이 아예 없는 브랜치** — 로컬 전용 리뷰 브랜치 같은 것. GitHub 의
+       `refs/pull/N/head` 백업이 없어서 지우면 **되살릴 방법이 없는 유일한 부류**다.
+    2. **PR 은 있는데 조회 상한 밖으로 밀린 브랜치** — 오래된 PR 이라 안 가져왔을 뿐이다.
+       `--recent-limit` 를 올리면 후보로 내려온다.
+
+    바깥에서는 둘이 똑같이 생겼다. 그래서 **분류하지 않고 둘 다 보여준 뒤**,
+    조회가 잘렸으면 상한을 올려 보라고 알린다. 삭제 명령은 어느 쪽에도 제안하지 않는다.
+    """
+    base = {protected_base, "main", "master", "develop"}
+    # 체크아웃 중인 브랜치는 **로컬에서만** 뺀다 — git 이 삭제를 거부하니 후보가 될 수 없다.
+    # 원격에는 그 사정이 없다. 여기서 같이 빼면 `origin/<지금 브랜치와 같은 이름>` 이
+    # 리포트에서 조용히 사라진다 — 이 함수가 고치려는 것과 똑같은 모양의 버그다.
+    local_protected = base | {_current_branch(project_dir)}
+    local_known = {c["branch"] for c in local_candidates}
+    remote_known = {c["branch"] for c in remote_candidates}
+    return {
+        "local": sorted(_local_branches(project_dir) - local_protected - local_known),
+        "remote": sorted(set(_remote_branches(project_dir)) - base - remote_known),
+    }
+
+
 def _remote_branches(project_dir, remote="origin"):
     raw = _out(
         [
@@ -302,11 +332,23 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
     default = _default_branch(root, resolved_repo)
     cleanup_base_ref = f"origin/{default}"
     sync = _sync_status(root, default)
-    merged_prs_result = _recent_prs(root, resolved_repo, "merged", recent_limit)
-    closed_prs_result = _recent_prs(root, resolved_repo, "closed", recent_limit)
+    # 조회는 최근 N건까지만 본다. 그보다 오래된 PR 의 브랜치는 후보에 아예 안 들어가는데,
+    # 리포트는 개수만 내니 완전한 목록처럼 읽힌다. 잘렸다는 걸 **알려줘야** 한다.
+    #
+    # "N건 받아왔으면 잘린 것"으로 보면 오탐이 난다 — 저장소에 딱 N건뿐인 경우도 그렇게
+    # 보인다(실제로 이 저장소에서 그랬다). 그래서 **한 건 더 요청해서** 그게 오는지로
+    # 판정한다. 오면 확실히 더 있는 것이고, 안 오면 확실히 다 본 것이다. 여분 1건은
+    # 판정에만 쓰고 후보 계산에서는 버린다 — `--recent-limit` 의 뜻을 바꾸지 않는다.
+    merged_prs_result = _recent_prs(root, resolved_repo, "merged", recent_limit + 1)
+    closed_prs_result = _recent_prs(root, resolved_repo, "closed", recent_limit + 1)
     pr_query_ok = merged_prs_result is not None and closed_prs_result is not None
-    merged_prs = merged_prs_result or []
-    closed_prs = closed_prs_result or []
+    merged_all = merged_prs_result or []
+    closed_all = closed_prs_result or []
+    pr_query_truncated = pr_query_ok and (
+        len(merged_all) > recent_limit or len(closed_all) > recent_limit
+    )
+    merged_prs = merged_all[:recent_limit]
+    closed_prs = closed_all[:recent_limit]
     prs = merged_prs + closed_prs
     local_candidates = _local_branch_candidates(
         root, prs, cleanup_base_ref, default
@@ -317,6 +359,7 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
         if candidate.get("reason") == "ancestor"
     ]
     remote = _remote_branch_candidates(root, prs)
+    unexplained = _unexplained_branches(root, local_candidates, remote, default)
     issues = _closing_issue_candidates(merged_prs)
     wts = _worktrees(root, _safe_worktree_branches(local_candidates))
     untracked = _untracked(root)
@@ -332,6 +375,9 @@ def collect(project_dir, repo=None, recent_limit=20, fetch=True):
         "sync": sync,
         "local_merged_branches": ancestry_local,
         "local_branch_candidates": local_candidates,
+        "unexplained_branches": unexplained,
+        "pr_query_limit": recent_limit,
+        "pr_query_truncated": pr_query_truncated,
         "remote_branch_candidates": remote,
         "closing_issue_candidates": issues,
         "worktree_candidates": wts,
@@ -419,6 +465,45 @@ def render(result):
     else:
         lines.append("  (없음)")
     lines.append("")
+
+    unexplained = result.get("unexplained_branches") or {}
+    stray_local = unexplained.get("local") or []
+    stray_remote = unexplained.get("remote") or []
+    if stray_local or stray_remote:
+        total = len(stray_local) + len(stray_remote)
+        lines.append(f"■ 판단 필요 — 어느 후보에도 안 걸린 브랜치 ({total})")
+        lines.append("  자동으로 못 정한다. 삭제 명령은 일부러 제안하지 않는다.")
+        for branch in stray_local:
+            lines.append(f"  (로컬)  {branch}")
+            lines.append(
+                f"       확인: git log --oneline {shlex.quote('origin/' + default)}"
+                f"..{shlex.quote(branch)}"
+            )
+        for branch in stray_remote:
+            lines.append(f"  (원격)  origin/{branch}")
+            lines.append(
+                f"       확인: git log --oneline {shlex.quote('origin/' + default)}"
+                f"..{shlex.quote('origin/' + branch)}"
+            )
+        if result.get("pr_query_truncated"):
+            limit = result.get("pr_query_limit")
+            lines.append("")
+            lines.append(
+                f"  ⚠ PR 조회가 최근 {limit}건에서 잘렸다 — 위 브랜치 중 일부는 그냥"
+            )
+            lines.append(
+                f"    오래된 PR 이라 안 가져온 것일 수 있다. 확인: --recent-limit "
+                f"{int(limit) * 5} 로 다시 실행"
+            )
+        else:
+            lines.append("")
+            lines.append(
+                "  PR 은 전부 조회했다. 즉 이 브랜치들에는 PR 기록이 없다 —"
+            )
+            lines.append(
+                "  GitHub 의 refs/pull/N/head 백업도 없어서 지우면 되살릴 방법이 없다."
+            )
+        lines.append("")
 
     lines.append(f"■ 원격 브랜치 삭제 후보 ({len(result['remote_branch_candidates'])})")
     if result["remote_branch_candidates"]:
