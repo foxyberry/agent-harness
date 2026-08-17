@@ -158,6 +158,15 @@ codex plugin remove agent-harness@foxyberry
 codex plugin add agent-harness@foxyberry
 ```
 
+**Close your Codex sessions first.** Codex deletes the old version's cache directory when it
+installs a new one, and a session that is already running keeps pointing at the deleted path. Its
+hooks then fail, and until Codex is restarted **it cannot run shell commands at all** — a real
+`gh` command was refused this way on 2026-08-17. Restarting clears it; nothing is lost. Claude Code
+keeps its old version directories, so its sessions survive an update.
+
+From 0.8.1 onward the hooks absorb this themselves, so the warning applies to sessions started on
+an earlier version. Details in [docs/codex-hooks.md](docs/codex-hooks.md).
+
 You do not need to do this often — only when a new release lands.
 
 ## Development
