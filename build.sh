@@ -18,6 +18,18 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       "$1" > "$2"
 }
 
+# 훅 command 는 **스크립트가 없으면 아무것도 안 하고 exit 0** 이어야 한다.
+# python3 은 파일을 못 열면 exit 2 를 내는데, 훅 계약에서 2 는 "이 도구 호출을 차단" 이다.
+# 그래서 플러그인이 업데이트되어 옛 버전 캐시 디렉터리가 지워지면, 그 경로를 물고 있던
+# 세션의 셸 명령이 전부 막힌다 — 파이썬의 "파일 못 열어"가 그대로 "거부해"로 전달된다(#107).
+#
+# ⚠️ `if` 형태여야 한다. `python3 "$p" || exit 0` 도 파일 없음은 막지만 **훅이 의도적으로 낸
+# exit 2 까지 삼켜서** 앞으로 만들 어떤 차단 훅도 조용히 무력화된다. `if` 는 1·2 를 그대로
+# 통과시키므로 어느 훅이 차단하는지 감사할 필요가 없다.
+hook_command() {  # $1 = 훅 스크립트 파일명 → JSON 문자열용 이스케이프된 셸 명령
+  printf 'p=\\"${CLAUDE_PLUGIN_ROOT}/hooks/%s\\"; if [ -f \\"$p\\" ]; then python3 \\"$p\\"; fi' "$1"
+}
+
 SKILLS=$(cd core/skills && ls -d */ | sed 's#/##')
 
 # ── Claude 어댑터: plugins/harness ──────────────────────────────
@@ -54,18 +66,18 @@ chmod +x plugins/harness/hooks/*.py
   printf '%s\n' '{'
   printf '%s\n' '  "hooks": {'
   printf '%s\n' '    "PreToolUse": ['
-  printf '%s\n' '      { "matcher": "Edit|Write|MultiEdit|Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }'
+  printf '      { "matcher": "Edit|Write|MultiEdit|Bash", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command memory-search.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "PostToolUse": ['
-  printf '%s\n' '      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] },'
-  printf '%s\n' '      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "%s" } ] },\n' "$(hook_command reflection.py)"
+  printf '      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
-  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] },'
-  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] },\n' "$(hook_command project-memory-index.py)"
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "UserPromptSubmit": ['
-  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"" } ] }'
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ]'
   printf '%s\n' '  }'
   printf '%s\n' '}'
@@ -120,13 +132,13 @@ chmod +x plugins/codex/hooks/*.py
   printf '%s\n' '{'
   printf '%s\n' '  "hooks": {'
   printf '%s\n' '    "PreToolUse": ['
-  printf '%s\n' '      { "matcher": "apply_patch|Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }'
+  printf '      { "matcher": "apply_patch|Bash", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command memory-search.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "PostToolUse": ['
-  printf '%s\n' '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] }'
+  printf '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command reflection.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
-  printf '%s\n' '      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] }'
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command project-memory-index.py)"
   printf '%s\n' '    ]'
   printf '%s\n' '  }'
   printf '%s\n' '}'

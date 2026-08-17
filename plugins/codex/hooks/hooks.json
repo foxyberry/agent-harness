@@ -1,13 +1,13 @@
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "apply_patch|Bash", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"" } ] }
+      { "matcher": "apply_patch|Bash", "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/memory-search.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] }
     ],
     "PostToolUse": [
-      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"" } ] }
+      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/reflection.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] }
     ],
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"" } ] }
+      { "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] }
     ]
   }
 }

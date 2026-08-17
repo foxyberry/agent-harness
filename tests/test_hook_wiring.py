@@ -69,6 +69,17 @@ def _registrations(adapter):
     return out
 
 
+def _command_registrations(adapter):
+    """[(event, matcher, command)] — 실행할 command 문자열까지 함께."""
+    out = []
+    for event, entries in _hooks_json(adapter).items():
+        for entry in entries:
+            matcher = entry.get("matcher") or ""
+            for hook in entry.get("hooks", []):
+                out.append((event, matcher, hook["command"]))
+    return out
+
+
 def _matches(matcher, tool_name):
     """Codex·Claude 공통: matcher 는 도구 이름에 대한 정규식, 빈 값이면 전부 매칭."""
     if matcher in ("", "*"):
@@ -88,12 +99,21 @@ class RegisteredPathsTest(unittest.TestCase):
                                     f"{adapter}: {rel} 이 번들에 없다. {BUILD_HINT}")
 
 
-class RegisteredHooksRunTest(unittest.TestCase):
-    """2. helper 미복사 — 번들 안에서 실제로 돌려본다.
+class RegisteredCommandRunTest(unittest.TestCase):
+    """2. **hooks.json 의 `command` 문자열을 그대로 셸에서 돌린다.**
 
-    build.sh 는 helper(`hook_io.py`·`repo_identity.py`)를 손으로 cp 한다. 하나 빠뜨리면
-    훅은 import 에서 죽는데, 툴은 그걸 삼키고 넘어간다. 함수 단위 테스트로는 절대 안 잡힌다
-    — 반드시 **번들 디렉토리의 그 파일**을 subprocess 로 실행해야 한다.
+    예전 판은 스크립트 파일을 `[sys.executable, script]` 로 직접 실행했다. 그러면 `command`
+    문자열은 **한 번도 실행되지 않는다** — 셸 래퍼가 깨졌든, 인용이 틀렸든, 변수가 안
+    풀렸든 통과한다. 검사 대상이 아니라 검사 대상의 재료를 본 셈이다.
+
+    여기서 잡는 것:
+
+    - build.sh 가 helper(`hook_io`·`repo_identity`) 복사를 빠뜨려 훅이 import 에서 죽는 것
+    - `command` 의 JSON 이스케이프·셸 인용·`${CLAUDE_PLUGIN_ROOT}` 확장이 깨진 것
+    - **스크립트가 없을 때 exit 2 가 나와 도구 호출이 차단되는 것** (이슈 #107)
+
+    ⚠️ exit 0 만 보면 안 된다. 가드가 항상 건너뛰어도 exit 0 이다. 그래서 정상 경우에는
+    `HARNESS_HOOK_TRACE` 줄까지 확인해 **실제로 떴다**는 것을 본다.
     """
 
     def _payload(self, event, matcher, adapter):
@@ -115,28 +135,64 @@ class RegisteredHooksRunTest(unittest.TestCase):
             data["prompt"] = "hello"
         return data
 
-    def test_every_registered_hook_exits_zero(self):
+    def _run(self, command, plugin_root, project, payload, trace=None):
         env = {k: v for k, v in os.environ.items()
                if k not in ("HARNESS_AUTO_REFLECT", "HARNESS_HOOK_TRACE")}
+        env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
+        env["CLAUDE_PROJECT_DIR"] = str(project)
+        if trace:
+            env["HARNESS_HOOK_TRACE"] = str(trace)
+        # 훅 러너와 같은 방식으로 — command 문자열을 셸에 통째로 넘긴다.
+        return subprocess.run(["sh", "-c", command], input=json.dumps(payload),
+                              capture_output=True, text=True, env=env,
+                              cwd=project, timeout=60)
+
+    def test_command_runs_and_the_hook_actually_fires(self):
         for adapter in ADAPTERS:
             bundle = ROOT / "plugins" / adapter
-            for event, matcher, rel in _registrations(adapter):
-                script = bundle / rel
-                if not script.is_file():
-                    continue  # 경로 테스트가 따로 잡는다
+            for event, matcher, command in _command_registrations(adapter):
                 with tempfile.TemporaryDirectory() as tmp:
-                    (pathlib.Path(tmp) / ".claude" / "memory").mkdir(parents=True)
-                    run_env = dict(env, CLAUDE_PROJECT_DIR=tmp)
-                    data = self._payload(event, matcher, adapter)
-                    proc = subprocess.run(
-                        [sys.executable, str(script)], input=json.dumps(data),
-                        capture_output=True, text=True, env=run_env, cwd=tmp, timeout=60,
-                    )
-                with self.subTest(adapter=adapter, event=event, script=rel):
+                    project = pathlib.Path(tmp)
+                    (project / ".claude" / "memory").mkdir(parents=True)
+                    trace = project / "trace.jsonl"
+                    proc = self._run(command, bundle, project,
+                                     self._payload(event, matcher, adapter), trace)
+                    fired = trace.exists() and trace.read_text(encoding="utf-8").strip()
+                with self.subTest(adapter=adapter, event=event, command=command[:60]):
+                    self.assertEqual(0, proc.returncode,
+                                     f"{adapter}/{event} 의 command 가 실패했다 — helper cp 누락이나 "
+                                     f"셸 인용 문제일 수 있다.\nstderr:\n{proc.stderr}")
+                    self.assertTrue(fired,
+                                    f"{adapter}/{event}: exit 0 이지만 훅이 뜬 기록이 없다. "
+                                    "가드가 항상 건너뛰고 있을 수 있다 (경로 확장 실패 등).")
+
+    def test_missing_script_does_not_block_the_tool_call(self):
+        """스크립트가 없으면 exit 0 이어야 한다. **2 가 나오면 도구 호출이 차단된다.**
+
+        플러그인이 업데이트되면 옛 버전 캐시 디렉터리가 지워지고, 그 경로를 물고 있던 세션의
+        훅은 없는 파일을 가리키게 된다. `python3 <없는 파일>` 은 exit 2 를 내고, 훅 계약에서
+        2 는 "차단" 이다 — 그래서 셸 명령이 전부 막혔다 (이슈 #107).
+        """
+        for adapter in ADAPTERS:
+            for event, matcher, command in _command_registrations(adapter):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    project = root / "project"
+                    (project / ".claude" / "memory").mkdir(parents=True)
+                    # 스크립트가 하나도 없는 번들 — 업데이트로 캐시가 지워진 상태 그대로.
+                    empty_bundle = root / "gone"
+                    (empty_bundle / "hooks").mkdir(parents=True)
+                    proc = self._run(command, empty_bundle, project,
+                                     self._payload(event, matcher, adapter))
+                with self.subTest(adapter=adapter, event=event, command=command[:60]):
+                    self.assertNotEqual(
+                        2, proc.returncode,
+                        f"{adapter}/{event}: 스크립트가 없을 때 exit 2 다 — 훅 계약에서 2 는 "
+                        "차단이라 사용자의 도구 호출이 막힌다 (#107).")
                     self.assertEqual(
                         0, proc.returncode,
-                        f"{adapter}/{rel} 이 번들에서 실행하다 죽었다 — helper cp 누락일 수 있다.\n"
-                        f"stderr:\n{proc.stderr}")
+                        f"{adapter}/{event}: 스크립트가 없을 때 exit {proc.returncode} 다. "
+                        f"0 이어야 조용히 지나간다.\nstderr:\n{proc.stderr}")
 
 
 class MatcherCoverageTest(unittest.TestCase):
