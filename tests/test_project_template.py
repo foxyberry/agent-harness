@@ -131,13 +131,13 @@ Validate input, persist the draft, and preserve existing data on failure.
             approved = project / ".claude" / "memory" / "approved.md"
             decision = project / ".claude" / "memory" / "decisions" / "approved.md"
             reflect_log = project / ".claude" / ".cache" / "reflect.log"
-            review_ledger = (
-                project / ".claude" / ".cache" / "review-ledger" / "pr-123.json"
+            nested_cache = (
+                project / ".claude" / ".cache" / "agent-tool" / "scratch.json"
             )
             root_cache = project / ".cache" / "keep.txt"
             source_cache = project / "src" / ".cache" / "keep.txt"
             pending_decision.parent.mkdir(parents=True, exist_ok=True)
-            review_ledger.parent.mkdir(parents=True, exist_ok=True)
+            nested_cache.parent.mkdir(parents=True, exist_ok=True)
             root_cache.parent.mkdir(parents=True, exist_ok=True)
             source_cache.parent.mkdir(parents=True, exist_ok=True)
             pending.write_text("unreviewed\n")
@@ -145,7 +145,6 @@ Validate input, persist the draft, and preserve existing data on failure.
             approved.write_text("approved\n")
             decision.write_text("approved decision\n")
             reflect_log.write_text("local reflection output\n")
-            review_ledger.write_text("{}\n")
             root_cache.write_text("project cache\n")
             source_cache.write_text("source cache\n")
 
@@ -185,7 +184,7 @@ Validate input, persist the draft, and preserve existing data on failure.
             self.assertNotIn("_pending/draft.md", status)
             self.assertNotIn("_pending/decisions/draft.md", status)
             self.assertNotIn(".claude/.cache/reflect.log", status)
-            self.assertNotIn(".claude/.cache/review-ledger/pr-123.json", status)
+            self.assertNotIn(".claude/.cache/agent-tool/scratch.json", status)
             self.assertIn(".cache/keep.txt", status_paths)
             self.assertIn("src/.cache/keep.txt", status_paths)
             self.assertIn(".claude/memory/approved.md", status)

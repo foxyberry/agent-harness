@@ -12,7 +12,6 @@
     { "contains": ["codex/"], "memory": ["plugin-release-updates.md"] },
     { "contains": ["handoff.py", "scripts/"], "memory": ["adapter-cross-project-testing.md"] },
     { "contains": ["handoff.py", "reflect.py"], "memory": ["committed-artifact-env-leak.md"] },
-    { "contains": ["merge_cleanup.py", "stale"], "memory": ["squash-merge-consequences.md"] },
     { "contains": ["repo_identity.py", ".cache", "cache_", "alias"], "memory": ["cache-must-outlive-target.md"] }
   ]
 }

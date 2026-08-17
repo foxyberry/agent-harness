@@ -68,7 +68,7 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 
 | | Claude Code | Codex |
 |---|---|---|
-| 스킬 | 12 | 12 |
+| 스킬 | 7 | 7 |
 | 훅 | 4 | **3** (`pr-merge-reflect` 만 이식 전) |
 
 편집 훅은 이제 Codex 에서도 돕니다. Codex 는 편집을 파일 경로와 새 내용이 아니라 `apply_patch`
@@ -95,11 +95,6 @@ LLM 잡을 띄우는 훅이라 별도 판단이 먼저입니다
 | `history` | 로컬 세션을 시간순으로 조회·검색 |
 | `feedback-review` | 리뷰 피드백을 프로젝트 규칙이나 스킬로 승격할지 검토 |
 | `memory-update` | `_pending` 초안을 사람이 검토한 뒤 공유 메모리로 승격 |
-| `merge-cleanup` | 머지 후 정리 후보 리포트 — 브랜치, 이슈, worktree, 잔여물 |
-| `prettier-guard` | 원래부터 지저분하던 파일까지 `prettier --write` 가 재정렬하는 것 방지 |
-| `review-ledger` | 여러 라운드 리뷰의 finding 과 반영 상태 추적 |
-| `stale-scan` | 연결된 merged PR 을 근거로 오래된 이슈 분류 |
-| `verify-regression` | 새 테스트를 수정 전 source 에서 돌려 실제 회귀를 잡는지 확인 |
 
 ## 자기개선 루프
 
@@ -183,10 +178,6 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ### 알려진 문제
 
-- [#78](https://github.com/foxyberry/agent-harness/issues/78) — squash merge 저장소에서
-  `merge-cleanup` 이 로컬 브랜치를 0개로 보고
-- [#79](https://github.com/foxyberry/agent-harness/issues/79) — `stale-scan` 이 단순 언급을
-  해결로 오판
 - [#81](https://github.com/foxyberry/agent-harness/issues/81) — `feedback-review` 가 `_pending`
   과 과거 세션을 보지 않음
 
