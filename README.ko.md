@@ -152,6 +152,15 @@ codex plugin remove agent-harness@foxyberry
 codex plugin add agent-harness@foxyberry
 ```
 
+**Codex 세션을 먼저 닫으세요.** Codex 는 새 버전을 설치할 때 옛 버전 캐시 폴더를 지우는데,
+이미 돌고 있던 세션은 지워진 경로를 계속 가리킵니다. 그러면 훅이 실패하고, Codex 를 재시작하기
+전까지 **셸 명령을 아예 못 씁니다** — 2026-08-17 에 실제 `gh` 명령이 이렇게 거부됐습니다.
+재시작하면 해소되고 잃는 건 없습니다. Claude Code 는 옛 버전 폴더를 남겨두므로 세션이
+업데이트를 넘어 살아남습니다.
+
+0.8.1 부터는 훅이 스스로 흡수하므로, 이 경고는 그 이전 버전에서 시작한 세션에 해당합니다.
+자세한 내용은 [docs/codex-hooks.md](docs/codex-hooks.md) 에 있습니다.
+
 자주 할 필요는 없습니다. 새 릴리스가 나왔을 때만 하면 됩니다.
 
 ## 개발

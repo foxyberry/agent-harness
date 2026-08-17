@@ -60,6 +60,10 @@
   버전 그대로 캐시 갱신 요구 금지).
 - Codex 는 현재 `plugin update` 가 없으므로 업데이트 안내는 `marketplace upgrade` 후 `remove`/`add` 로 캐시를 새로 받는 방식이다.
 - 로컬 개발 검증은 `./build.sh` → `codex plugin marketplace add ./` → `codex plugin remove/add agent-harness@foxyberry` 로 한다.
+- **업데이트 안내에는 "Codex 세션을 먼저 닫아라"를 함께 적는다.** Codex 는 새 버전을 깔 때
+  옛 버전 캐시 폴더를 지우고, 돌고 있던 세션은 지워진 경로를 계속 가리켜 셸 명령을 못 쓰게
+  된다(재시작하면 해소, 무손실). Claude 는 옛 버전을 보관해 해당 없다. 0.8.1 부터 훅이
+  스스로 흡수하지만, 그 이전 버전에서 시작한 세션에는 여전히 해당한다 → `docs/codex-hooks.md`.
 - README 에는 사용자 설치/업데이트 명령만 짧게 유지하고, 절차가 길어지면 `docs/release.md` 로 분리한다.
 
 ## 무엇이 이 하네스에 속하나 (2026-08-17)
