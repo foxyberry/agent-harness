@@ -236,7 +236,7 @@
     </div>
   </div>
 
-  <h2>자동 훅 4개 <span class="muted">(Claude 전부 · Codex는 첫 줄 하나)</span></h2>
+  <h2>자동 훅 4개 <span class="muted">(Claude 전부 · Codex는 위 세 개)</span></h2>
   <table>
     <thead><tr><th>언제</th><th>훅</th><th>하는 일</th><th>프로젝트 설정</th></tr></thead>
     <tbody>
@@ -329,6 +329,20 @@
   <div class="note tip">
     <b>초안이 실제 파일로 쌓이는 걸 보고 싶다면</b> 자동 회고를 켠다 — <code>export HARNESS_AUTO_REFLECT=1</code>.
     그러면 PR이 머지될 때마다 <code>_pending/</code>에 회고 초안이 생긴다. <span class="muted">(끄면 알림만 뜨고, 회고는 <code>/memory-update</code>로 직접 한다.)</span>
+  </div>
+
+  <h3>훅이 <span class="em">떴는지</span>만 보고 싶을 때</h3>
+  <p>위 방법들은 훅이 <b>무엇을 알려줬는지</b>를 본다. 그런데 정작 알고 싶은 게 <b>떴느냐</b>일 때가 있다 —
+    아무 일도 안 일어났을 때, 훅이 안 뜬 건지 뜨긴 했는데 알려줄 게 없었던 건지 겉모습이 같기 때문이다.
+    <b>둘을 가려주는 게 없으면</b> 고친 훅이 실제로 실행되는지 확인할 방법이 없다.</p>
+  <pre><code>export HARNESS_HOOK_TRACE=/tmp/hook-trace.jsonl   # claude · codex 띄우기 전에
+# 세션에서 셸 명령 하나 + 파일 편집 하나
+cat /tmp/hook-trace.jsonl</code></pre>
+  <p>훅이 <b>시작될 때</b> 한 줄씩 남는다 — 어떤 훅이, 어떤 순간에, 언제. 명령어나 파일 내용은 들어가지 않는다.
+    줄이 <b>없는</b> 훅이 안 뜬 훅이다. 환경변수를 안 주면 아무 일도 하지 않는다.</p>
+  <div class="note tip">
+    <b>알려줄 게 있을 때만 남기면 안 되는 이유:</b> 훅이 주입하는 순간에 기록하면 "규칙에 안 걸려서 조용히 끝난"
+    경우가 다시 "아예 안 뜬" 경우와 같아진다. 그래서 <b>판단하기 전</b>, 시작하자마자 남긴다.
   </div>
 
   <h2>자가개선 관련 명령</h2>
@@ -504,7 +518,7 @@ type: feedback | project | reference
   <p><b>Claude Code</b> (플러그인으로 바로 설치):</p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(스킬 12개 + 훅 1개)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(스킬 7개 + 훅 3개)</span>:</p>
   <pre><code>codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # 또는 로컬: codex plugin marketplace add ./</code></pre>
@@ -521,6 +535,13 @@ codex plugin add agent-harness@foxyberry
   <p class="muted"><b>업데이트</b> — Codex에는 아직 <code>plugin update</code>가 없어서, 새 버전은
     <code>marketplace upgrade</code> 뒤 <code>remove</code>·<code>add</code>로 캐시를 다시 받는다.
     자주 할 필요는 없고, 새 릴리스가 나왔을 때만 하면 된다.</p>
+  <div class="note warn">
+    <b>⚠️ 업데이트 전에 Codex 세션을 닫아라.</b> Codex는 새 버전을 깔 때 <b>옛 버전 캐시 폴더를 지운다</b>.
+    이미 켜져 있던 세션은 지워진 경로를 계속 가리켜서, 재시작하기 전까지 <b>셸 명령을 아예 못 쓴다</b>
+    <span class="muted">(실제로 작업 중이던 <code>gh</code> 명령이 이렇게 거부됐다)</span>.
+    껐다 켜면 해소되고 <b>잃는 건 없다</b> — 파일·커밋·대화 기록은 그대로다.
+    Claude는 옛 버전 폴더를 남겨두므로 해당 없다. 0.8.1부터는 훅이 이 상황을 스스로 흡수한다.
+  </div>
 
   <h2>구조 <span class="muted">(3층)</span></h2>
   <table>
@@ -537,8 +558,8 @@ codex plugin add agent-harness@foxyberry
     <div class="node core"><b>core/</b><span>마스터 원고 — 훅 · 스킬 · 스크립트 · 메모리 형식 (여기서만 고친다)</span></div>
     <div class="flow">▼ &nbsp;<code>./build.sh</code> 가 복사·렌더 (심링크 X — 크로스플랫폼 안전)</div>
     <div class="split">
-      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 12개 + 훅 <code>hooks.json</code> 자동발견</span></div>
-      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 12개 + 훅 1개 (<code>project-memory-index</code>, 나머지 3개는 이식 중)</span></div>
+      <div class="node"><b>plugins/harness/</b><span>Claude용 사본 · 스킬 7개 + 훅 4개 (<code>hooks.json</code> 자동발견)</span></div>
+      <div class="node"><b>plugins/codex/</b><span>Codex용 사본 · 스킬 7개 + 훅 3개 (<code>pr-merge-reflect</code>만 이식 전)</span></div>
     </div>
     <div class="flow">▼ &nbsp;<code>/plugin install</code> · marketplace</div>
     <div class="node use"><b>사용자 프로젝트</b><span><code>project-template/</code> 복사 → <code>.claude/memory/</code> 데이터(엔진의 재료)</span></div>
@@ -594,12 +615,16 @@ codex plugin add agent-harness@foxyberry
     <li><span class="badge done">POC</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + Claude용 수동 <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
     <li><span class="badge done">DONE</span> 훅이 실제로 <b>발화</b>하는지 확인 — Codex에 <code>project-memory-index</code>를 올려 실제 사용자 환경에서 <b>메모리 인덱스가 컨텍스트에 주입되는 것</b>까지 확인했다. 훅을 끈 세션과 켠 세션을 같은 질문으로 비교해, 모델이 파일을 직접 읽은 게 아님을 가렸다</li>
     <li><span class="badge done">DONE</span> Codex 훅 조사 — 예전엔 "버전 변화에 약해 나중에"로 미뤄뒀지만, 지금은 Codex도 훅을 정식 지원한다. 이벤트 이름·입출력 형식이 Claude와 거의 같고, <code>Bash</code>·<code>apply_patch</code> 편집 훅이 실제로 뜨는 것까지 측정했다 (<code>docs/codex-hooks.md</code>)</li>
-    <li><span class="badge soon">NEXT</span> Codex용 나머지 훅 3개 — <code>memory-search</code>·<code>reflection</code>·<code>pr-merge-reflect</code>. 이식 가능한 건 확인됐고, 두 도구의 입력 형식을 하나로 맞추는 작업이 남았다</li>
-    <li><span class="badge soon">NEXT</span> 설치 도구 · 사람 확인 절차 자동화</li>
+    <li><span class="badge done">DONE</span> Codex 편집 훅 이식 — <code>memory-search</code>·<code>reflection</code>이 Codex에서도 돈다. 두 도구의 입력 형식(Claude <code>file_path</code> / Codex <code>apply_patch</code> 패치 원문)을 <b>하나의 모델로 정규화</b>해서 훅이 도구 이름으로 분기하지 않게 만들었다</li>
+    <li><span class="badge done">DONE</span> 양쪽에서 훅이 실제로 뜨는 것 관측 — 훅이 <b>시작될 때</b> 기록을 남기는 장치(<code>HARNESS_HOOK_TRACE</code>)를 넣고, 이 저장소 <b>밖의 실제 프로젝트</b>에서 Claude·Codex 각각 확인했다. "돌았는데 할 말이 없었다"와 "아예 안 돌았다"를 가리려면 이 장치가 필요했다 — 툴이 남기는 로그로는 구별되지 않는다</li>
+    <li><span class="badge done">DONE</span> 업데이트 중 세션이 멈추던 문제 — 훅 스크립트가 사라졌을 때 훅이 사용자의 명령을 <b>차단</b>하고 있었다. <code>python3</code>이 파일을 못 열면 내는 종료 코드가 훅 계약의 "차단"과 같은 숫자였던 것이다. 셸 가드로 흡수한다</li>
+    <li><span class="badge done">DONE</span> 무엇을 이 하네스에 둘지 기준을 정함 — <b>에이전트가 만들어낸 상태</b>(세션 기록·메모리·훅)를 다루면 남기고, git·GitHub만 다루면 개인 스킬로 보낸다. 이 기준으로 정리·점검 도구 5개를 밖으로 옮겼다</li>
+    <li><span class="badge soon">NEXT</span> Codex용 <code>pr-merge-reflect</code> — 마지막 훅 하나. 뒷단 회고 작업과 처리 기록이 붙어 있어, Codex 세션에서 회고가 중복되는 것부터 정리해야 한다</li>
+    <li><span class="badge soon">NEXT</span> 사람 확인 절차 자동화 <span class="muted">(설치 도구는 양쪽 공식 marketplace CLI로 해결됐다)</span></li>
   </ul>
 
   <footer>
-    상세 문서: <code>docs/self-improvement-hooks.md</code> · <code>docs/decision-mining.md</code> · <code>docs/stale-issue-detector.md</code><br>
+    상세 문서: <code>docs/self-improvement-hooks.md</code> · <code>docs/decision-mining.md</code> · <code>docs/codex-hooks.md</code> · <code>docs/guide.md</code><br>
     기준 지침: <code>AGENTS.md</code> — 이 페이지는 문서가 바뀔 때 함께 갱신된다. · foxyberry/agent-harness
   </footer>
 
