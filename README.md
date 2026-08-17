@@ -71,7 +71,7 @@ say **when to use the skill**, not just what it does.
 
 | | Claude Code | Codex |
 |---|---|---|
-| Skills | 12 | 12 |
+| Skills | 7 | 7 |
 | Hooks | 4 | **3** (`pr-merge-reflect` not ported) |
 
 The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
@@ -99,11 +99,6 @@ model. The last hook drives a background LLM job, so it needs its own decisions 
 | `history` | Browse and search local sessions by time |
 | `feedback-review` | Decide whether review feedback should become a project rule or a skill |
 | `memory-update` | Promote `_pending` drafts to shared memory after human review |
-| `merge-cleanup` | Report cleanup candidates after a merge: branches, issues, worktrees, leftovers |
-| `prettier-guard` | Keep `prettier --write` from reformatting files that were already dirty |
-| `review-ledger` | Track findings and their status across multiple review rounds |
-| `stale-scan` | Classify old issues using linked merged PRs as evidence |
-| `verify-regression` | Run a new test against the pre-fix source to confirm it catches a real regression |
 
 ## The self-improvement loop
 
@@ -181,7 +176,7 @@ generated adapters are in sync.
 
 - Plugin version: `0.5.0`
 - Public marketplace installation verified for both Claude Code and Codex
-- 12 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
+- 7 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
 - Codex ships `project-memory-index`, `memory-search` and `reflection` (codex-cli 0.145.0);
@@ -189,10 +184,6 @@ generated adapters are in sync.
 
 ### Known issues
 
-- [#78](https://github.com/foxyberry/agent-harness/issues/78) — `merge-cleanup` reports zero
-  local branches in squash-merge repositories
-- [#79](https://github.com/foxyberry/agent-harness/issues/79) — `stale-scan` reads a plain
-  mention as a resolution
 - [#81](https://github.com/foxyberry/agent-harness/issues/81) — `feedback-review` ignores
   `_pending` and past sessions
 

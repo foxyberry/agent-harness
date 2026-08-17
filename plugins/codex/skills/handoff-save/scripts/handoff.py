@@ -800,102 +800,6 @@ def _facts_lines(facts, header):
         "- 변경 파일 (status -sb):", "```", facts["status"] or "(없음)", "```",
         f"- 열린 PR: {facts['pr']}",
     ]
-
-
-def _review_ledger_summary(root, branch):
-    """현재 브랜치의 로컬 review ledger를 커밋 handoff용 Markdown으로 축약."""
-    directory = os.path.join(root, ".claude", ".cache", "review-ledger")
-    try:
-        names = sorted(os.listdir(directory))
-    except OSError:
-        return ""
-    candidates = []
-    other_branches = []
-    for name in names:
-        if not re.fullmatch(r"pr-\d+\.json", name):
-            continue
-        try:
-            path = os.path.join(directory, name)
-            with open(path, encoding="utf-8") as handle:
-                ledger = json.load(handle)
-        except (OSError, ValueError):
-            continue
-        try:
-            mtime_ns = os.stat(path).st_mtime_ns
-        except OSError:
-            continue
-        candidate = (mtime_ns, name, ledger)
-        if ledger.get("branch") == branch:
-            candidates.append(candidate)
-        else:
-            other_branches.append(candidate)
-    branch_warning = ""
-    if not candidates and len(other_branches) == 1:
-        candidates = other_branches
-        old_branch = candidates[0][2].get("branch") or "(unknown)"
-        branch_warning = (
-            f"- ⚠️ 원장 브랜치 `{old_branch}`와 현재 `{branch}`가 다름 — "
-            "브랜치 rename 여부 확인"
-        )
-    elif not candidates and other_branches:
-        branches = sorted({
-            item[2].get("branch") or "(unknown)" for item in other_branches
-        })
-        return (
-            "## 리뷰 원장 경고\n"
-            f"- 현재 브랜치 `{branch}`와 일치하는 원장은 없고 다른 브랜치 원장이 "
-            f"{len(other_branches)}개 있음: {', '.join(f'`{item}`' for item in branches)}"
-        )
-    if candidates:
-        latest_mtime = max(item[0] for item in candidates)
-        latest = [item for item in candidates if item[0] == latest_mtime]
-        _mtime, name, ledger = latest[0]
-        findings = [
-            item for item in ledger.get("findings", [])
-            if isinstance(item, dict) and item.get("status") == "open"
-        ]
-        lines = [
-            f"## 리뷰 원장 — PR #{ledger.get('pr', '?')}",
-            f"- 로컬 원장: `.claude/.cache/review-ledger/{name}` (gitignore, 원본은 이 머신 한정)",
-            f"- 원장 상태: round {ledger.get('round', '?')} · updated `{ledger.get('updated_at', '?')}`",
-        ]
-        if branch_warning:
-            lines.append(branch_warning)
-        if len(latest) > 1:
-            lines.append(
-                "- ⚠️ 최신 원장 시각이 같은 후보가 여러 개임: "
-                + ", ".join(f"`{item[1]}`" for item in latest)
-            )
-        reviewers = ledger.get("reviewers", [])
-        for reviewer in reviewers:
-            if not isinstance(reviewer, dict):
-                continue
-            suffix = f" · thread `{reviewer['thread']}`" if reviewer.get("thread") else ""
-            lines.append(f"- reviewer: {reviewer.get('name', '?')}{suffix}")
-        if findings:
-            lines.append("- open findings (신규 탐색 전에 먼저 재검수):")
-            for item in findings:
-                loc = item.get("file") or "-"
-                if item.get("line"):
-                    loc += f":{item['line']}"
-                reviewer = item.get("reviewer")
-                thread = item.get("thread")
-                source = ""
-                if reviewer or thread:
-                    source = " · " + (reviewer or "reviewer")
-                    if thread:
-                        source += f" thread `{thread}`"
-                lines.append(
-                    f"  - {item.get('id', '?')} [{item.get('severity', '?')}] "
-                    f"{loc} — {item.get('claim', '')}{source} "
-                    f"(opened round {item.get('round_opened', '?')})"
-                )
-        else:
-            lines.append("- open findings: 없음")
-        return "\n".join(lines)
-    return ""
-
-
 def cmd_save(args):
     root = repo_root(getattr(args, "project_dir", None))
     branch = current_branch(root)
@@ -908,8 +812,6 @@ def cmd_save(args):
     nxt = args.next or "(미작성)"
     summary = args.summary or "(미작성)"
     verify = args.verify or "(미작성)"
-    review_ledger = _review_ledger_summary(root, branch)
-    review_section = f"\n{review_ledger}\n" if review_ledger else ""
 
     body = f"""# 작업 핸드오프 — {branch}
 
@@ -928,7 +830,6 @@ def cmd_save(args):
 
 ## 검증 상태
 {verify}
-{review_section}
 
 ---
 {AUTO_MARK}

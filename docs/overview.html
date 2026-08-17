@@ -492,77 +492,6 @@ type: feedback | project | reference
     Codex가 남긴 상태를 그대로 받아 계속. <b>툴이 바뀌어도 작업은 안 끊긴다.</b>
   </div>
 
-  <div class="cat">
-    <div class="no">03</div>
-    <div class="tx">
-      <div class="t">리뷰 · 테스트 · 점검</div>
-      <p>“고쳤다”는 말보다 한 단계 더 나아가, <b>근거가 맞는지 확인</b>한다</p>
-    </div>
-  </div>
-
-  <h2>새 테스트가 <span class="em">진짜 버그를 잡는지</span> 확인</h2>
-  <p><code>/verify-regression</code>은 하네스 저장소의 테스트가 아니라,
-    <b>하네스를 설치해 사용하는 실제 프로젝트의 테스트</b>를 검사한다.
-    수정된 코드에서 테스트가 통과한다는 사실만으로는 이번 버그를 재현했는지 알 수 없기 때문이다.</p>
-  <div class="loop">
-    <div class="step">
-      <div class="n">01 · 수정 후</div>
-      <div class="t">현재 코드에서 PASS 확인</div>
-      <div class="d">여기서 실패하면 테스트 경로나 실행 환경 문제일 수 있어 판정을 멈춘다.</div>
-    </div>
-    <div class="arrow">→</div>
-    <div class="step">
-      <div class="n">02 · 임시 공간</div>
-      <div class="t">구현 파일만 수정 전으로</div>
-      <div class="d">원래 작업 폴더는 건드리지 않고 별도 worktree에서 바꾼다.</div>
-    </div>
-    <div class="arrow">→</div>
-    <div class="step">
-      <div class="n">03 · 같은 테스트</div>
-      <div class="t">수정 전 결과로 분류</div>
-      <div class="d">FAIL이면 버그 재현, PASS면 새 동작을 지키는 가드다.</div>
-    </div>
-  </div>
-  <table>
-    <thead><tr><th>수정 후</th><th>수정 전</th><th>뜻</th></tr></thead>
-    <tbody>
-      <tr><td><b>PASS</b></td><td><b>FAIL</b></td><td><b>이번 버그를 실제로 잡는 회귀 테스트</b></td></tr>
-      <tr><td><b>PASS</b></td><td><b>PASS</b></td><td>이번 버그 재현은 아니지만 새 동작을 지키는 테스트</td></tr>
-      <tr><td><b>FAIL</b></td><td>실행 안 함</td><td>파일 누락·잘못된 명령·환경 문제 가능성 — <b>판정 보류</b></td></tr>
-    </tbody>
-  </table>
-  <div class="note tip">
-    <b>예: study-words의 버그 수정</b> — <code>useStudyProgress.ts</code>를 고치고
-    <code>useStudyProgress.test.ts</code>를 추가했다면, 구현 파일만 수정 전 버전으로 바꿔
-    같은 테스트가 실패하는지 확인한다. 결과 표는 PR 댓글과 <code>/review-ledger</code>의 근거로 그대로 쓴다.
-  </div>
-
-  <h2>여러 번 받은 리뷰를 잃지 않기</h2>
-  <p><code>/review-ledger</code>는 리뷰 지적마다 <code>F-001</code> 같은 ID를 붙이고
-    <code>open</code>·<code>fixed</code>·<code>rejected</code>·<code>withdrawn</code> 상태로 관리한다.
-    다음 리뷰에서는 기존 open 항목부터 다시 확인한 뒤 새 문제를 찾는다.</p>
-  <div class="note tip">
-    <b>둘을 같이 쓰면:</b> <code>/verify-regression</code>이 만든 테스트 근거를 finding에 남기고,
-    Claude·Codex 리뷰가 여러 라운드로 이어져도 “무엇을 고쳤고 무엇을 철회했는지” 다시 추측하지 않는다.
-  </div>
-
-  <h2>정리·점검 명령 <span class="muted">(전부 제안만 한다)</span></h2>
-  <p>세 명령은 성격이 같다. <b>후보를 찾아서 보여주기만 하고, 스스로 지우거나 닫거나 고치지 않는다.</b>
-    브랜치 삭제·이슈 닫기·파일 덮어쓰기처럼 되돌리기 번거로운 일이라, 마지막 판단은 사람이 하도록 남겨뒀다.</p>
-  <table>
-    <thead><tr><th>명령</th><th>언제 쓰나</th><th>찾아주는 것</th></tr></thead>
-    <tbody>
-      <tr><td><code>/merge-cleanup</code></td><td>PR 머지한 직후</td><td>뒤처진 main, 남은 브랜치, 안 닫힌 이슈, worktree·임시파일 잔여물</td></tr>
-      <tr><td><code>/stale-scan</code></td><td>이슈 백로그 정리할 때</td><td>오래 열려 있지만 <b>이미 해결된</b> 이슈 — 근거로 머지된 PR을 함께 보여줌</td></tr>
-      <tr><td><code>/prettier-guard</code></td><td><code>prettier --write</code> 돌리기 전</td><td>남의 미완성 변경이 섞인 파일을 빼고, 안전한 명령을 대신 제안</td></tr>
-    </tbody>
-  </table>
-  <div class="note tip">
-    <b><code>/stale-scan</code>은 근거의 세기까지 구분한다.</b> 이슈에 딸린 PR이 <code>Closes #33</code>처럼
-    <b>닫겠다고 선언</b>한 것인지, 그냥 번호만 <b>언급</b>한 것인지 나눠서 표시하고, 선언이 있는 쪽을 위로 올린다.
-    언급뿐이라고 후보에서 빼지는 않는다 — 실제로 해결한 PR이 선언 없이 머지되는 경우도 있기 때문이다.
-  </div>
-
   <div class="cat plain">
     <div class="no">＋</div>
     <div class="tx">
@@ -628,22 +557,18 @@ codex plugin add agent-harness@foxyberry
 │  │  ├─ reflect.py              <span class="c">회고 잡 — 교훈 + 결정 ADR 초안</span>
 │  │  ├─ mine.py                 <span class="c">git 히스토리에서 결정 소급 마이닝</span>
 │  │  └─ compact_transcript.py   <span class="c">트랜스크립트 압축</span>
-│  ├─ <span class="d">skills/</span>                <span class="c">스킬 12개 (SKILL.md)</span>
+│  ├─ <span class="d">skills/</span>                <span class="c">스킬 7개 (SKILL.md)</span>
 │  │  ├─ handoff-save · handoff-load · fw · fw-both
-│  │  ├─ history · feedback-review · memory-update
-│  │  ├─ merge-cleanup · stale-scan · prettier-guard
-│  │  └─ review-ledger · verify-regression
+│  │  └─ history · feedback-review · memory-update
 │  └─ <span class="d">scripts/</span>               <span class="c">스킬이 부르는 실행 스크립트</span>
 │     ├─ handoff.py             <span class="c">핸드오프 저장·복원</span>
-│     ├─ merge_cleanup.py       <span class="c">머지 후 정리 후보</span>
-│     ├─ stale_collect.py · stale_resolve.py · stale.py
-│     ├─ prettier_guard.py · review_ledger.py
-│     └─ verify_regression.py
+│     ├─ hook_io.py             <span class="c">편집 훅 입력 정규화·출력</span>
+│     └─ repo_identity.py       <span class="c">프로젝트 식별</span>
 │
 ├─ <span class="d">plugins/harness/</span>          <span class="c">← Claude용 사본 (build.sh가 만듦)</span>
 │  ├─ hooks/  <span class="c">(hooks.json + *.py)</span>
 │  ├─ skills/
-│  └─ bin/  <span class="c">agent-handoff · agent-review-ledger · agent-verify-regression · 정리 도구</span>
+│  └─ bin/  <span class="c">agent-handoff · repo_identity.py</span>
 │
 ├─ <span class="d">plugins/codex/</span>            <span class="c">← Codex용 사본 (build.sh가 만듦)</span>
 │  ├─ .codex-plugin/plugin.json
@@ -664,9 +589,7 @@ codex plugin add agent-harness@foxyberry
 
   <h2>상태</h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Claude·Codex용 사본 — 스킬 12개 + 스스로 돌아보는 Claude 훅 4개 구현</li>
-    <li><span class="badge done">DONE</span> 리뷰 근거 검증 — <code>/review-ledger</code>로 다중 라운드 지적을 추적하고, <code>/verify-regression</code>으로 실제 프로젝트 테스트의 수정 전 실패 여부를 확인</li>
-    <li><span class="badge done">DONE</span> 정리·점검 명령 — <code>/merge-cleanup</code>·<code>/stale-scan</code>·<code>/prettier-guard</code>. 셋 다 제안만 하고 직접 실행하지 않는다</li>
+    <li><span class="badge done">DONE</span> Claude·Codex용 사본 — 스킬 7개 + 스스로 돌아보는 Claude 훅 4개 구현</li>
     <li><span class="badge done">DONE</span> 실제 설치 검증 — Claude·Codex 양쪽에서 marketplace로 받아 설치하고, <b>설치된 사본으로</b> 스킬을 돌려봤다. Claude가 저장한 핸드오프를 Codex가 그대로 읽는 것까지 확인</li>
     <li><span class="badge done">POC</span> 의사결정 기록(ADR) — 회고가 결정 초안 자동 생성 + Claude용 수동 <code>mine.py</code>로 git 히스토리 소급 마이닝, 승격 경로 dogfood 완료</li>
     <li><span class="badge done">DONE</span> 훅이 실제로 <b>발화</b>하는지 확인 — Codex에 <code>project-memory-index</code>를 올려 실제 사용자 환경에서 <b>메모리 인덱스가 컨텍스트에 주입되는 것</b>까지 확인했다. 훅을 끈 세션과 켠 세션을 같은 질문으로 비교해, 모델이 파일을 직접 읽은 게 아님을 가렸다</li>
