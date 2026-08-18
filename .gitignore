@@ -11,3 +11,6 @@ __pycache__/
 # 자기개선 훅 런타임 산출물 (커밋 금지 — governance/머신별 상태)
 .claude/memory/_pending/
 .claude/.cache/
+# 폐기한 회고 초안 기록. **개인 tier** 다 — 안 남기기로 한 교훈 목록은 곧 작업 습관·실수
+# 이력이고, AGENTS.md 의 메모리 tier 규칙상 그건 커밋하지 않는다(이 저장소는 공개다).
+.claude/memory/_rejected.md
