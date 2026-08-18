@@ -9,6 +9,7 @@
 |------|---------|------|--------|
 | `routes.json` | memory-search (PreToolUse 편집·Bash) | 편집 파일·셸 명령 → 주입할 메모리 매핑 | no-op (주입 없음) |
 | `reflection-rules.json` | reflection (PostToolUse Edit/Write) | 새 코드 → 품질 경고 정규식 규칙 | 내장 TODO/FIXME 규칙만 |
+| `_rejected.md` | reflect 잡 + `/memory-update` | 이미 폐기한 회고 초안 → 같은 초안 재생성 방지 | 폐기한 게 다음 세션에 다시 올라옴 |
 
 기본 활성 예시는 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
 

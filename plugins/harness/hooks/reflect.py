@@ -68,6 +68,10 @@ PROMPT = ("""너는 "자가 개선 회고 시스템"이다. 아래는 한 작업
 ## (A) 교훈 memory
 - 사용자가 준 지적·교정·결정(특히 "~하지 마", "~로 해", 방식 변경)을 우선 추출.
 - 이 세션에만 해당하는 일회성 사실(특정 PR 번호, 특정 파일 경로)은 제외. 일반화되는 패턴만. 애매하면 빼라.
+- **아래 "이미 폐기한 초안" 목록을 먼저 본다.** 같은 얘기면 다시 만들지 마라 — 사람이 이미
+  보고 안 남기기로 한 것이다. 단어가 달라도 같은 교훈이면 같은 것으로 친다.
+  ⚠️ 금지 목록이 아니다. 그 사이에 **같은 일이 반복돼 값어치가 생겼다면** 다시 올려도 된다 —
+  대신 초안 안에 **무엇이 달라졌는지**(몇 번 더 반복됐는지, 어떤 비용이 났는지)를 적어라.
 - 0~5개. 각 초안은 코드블록 하나:
 
 ```
@@ -88,6 +92,54 @@ type: feedback | project | user | reference
 
 def _project_dir():
     return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+
+
+def _rejected_index(project_dir):
+    """사람이 이미 폐기한 초안 목록 — LLM 이 같은 걸 또 만들지 않게 프롬프트에 넣는다.
+
+    ## 왜 이게 필요한가
+
+    초안을 폐기하면 파일이 지워진다. **거절했다는 사실이 어디에도 안 남는다.** 다음 세션이
+    같은 트랜스크립트를 읽고 같은 교훈을 뽑아 같은 초안을 또 만든다. 사람은 또 버린다.
+    백로그가 커질수록 이 비용이 매번 반복된다(이슈 #109).
+
+    ## 왜 정규식이나 유사도 계산이 아닌가
+
+    "같은 교훈인가"는 문자열 비교로 안 갈린다 — 같은 얘기를 다른 말로 쓰면 못 잡는다.
+    그런데 그 판단을 **이미 LLM 이 하고 있다.** `_decisions_index` 가 기존 ADR 을 프롬프트에
+    넣어 체인 제안을 시키는 것과 똑같은 방식으로, 폐기 목록을 보여주면 알아본다.
+    별도 기계장치가 필요 없다.
+
+    ## 왜 하드 필터가 아니라 프롬프트 힌트인가
+
+    한 번 거절했다고 **영원히** 막으면 그게 또 버그다 — 7월에 "너무 사소하다"고 버린 교훈이
+    9월에 세 번 더 반복되면 남길 값어치가 생긴다. 프롬프트에 넣으면 LLM 이 정황을 보고 다시
+    올릴 수 있다. 그래서 만료 규칙이 필요 없다.
+
+    파일이 없으면 `(아직 없음)`. `_decisions_index` 와 같이 **읽기만** 한다.
+    """
+    path = os.path.join(project_dir, ".claude/memory/_rejected.md")
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return "(아직 없음)"
+    # ⚠️ 주석 블록을 **먼저** 걷어낸다. 템플릿이 예시 항목을 `<!-- ... -->` 안에 넣는데,
+    # 줄 단위로만 보면 그 예시가 `- ` 로 시작해 **진짜 폐기 기록으로 잡힌다.** 템플릿을
+    # 복사한 프로젝트마다 있지도 않은 거절이 프롬프트에 주입돼, 비슷한 교훈이 조용히 막힌다.
+    # (`_decisions_index` 가 README·EXAMPLE 파일을 거르는 것과 같은 이유다.)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    # 항목은 `- ` 로 시작하는 줄. 나머지(제목·설명문)는 무시한다.
+    rows = [l.rstrip() for l in text.splitlines() if l.startswith("- ")]
+    if not rows:
+        return "(아직 없음)"
+    # 추가 전용 파일이라 **뒤쪽이 최신**이다. 넘치면 오래된 앞쪽을 버린다 — 최근 거절일수록
+    # 다시 생성될 확률이 높다.
+    cap = 50
+    truncated = len(rows) > cap
+    out = "\n".join(rows[-cap:])
+    if truncated:
+        out += f"\n(… 오래된 {len(rows) - cap}건 생략)"
+    return out
 
 
 def _decisions_index(project_dir):
@@ -265,7 +317,9 @@ def main():
     project_dir = _project_dir()
     prompt = (
         PROMPT
-        + "\n=== 기존 결정 체인 인덱스 (proposed_chain/proposed_supersedes 제안에 참고) ===\n"
+        + "\n=== 이미 폐기한 초안 (같은 얘기면 다시 만들지 말 것) ===\n"
+        + _rejected_index(project_dir)
+        + "\n\n=== 기존 결정 체인 인덱스 (proposed_chain/proposed_supersedes 제안에 참고) ===\n"
         + _decisions_index(project_dir)
         + "\n\n=== 압축 트랜스크립트 ===\n"
         + body
