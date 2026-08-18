@@ -9,7 +9,12 @@
 |------|---------|------|--------|
 | `routes.json` | memory-search (PreToolUse 편집·Bash) | 편집 파일·셸 명령 → 주입할 메모리 매핑 | no-op (주입 없음) |
 | `reflection-rules.json` | reflection (PostToolUse Edit/Write) | 새 코드 → 품질 경고 정규식 규칙 | 내장 TODO/FIXME 규칙만 |
-| `_rejected.md` | reflect 잡 + `/memory-update` | 이미 폐기한 회고 초안 → 같은 초안 재생성 방지 | 폐기한 게 다음 세션에 다시 올라옴 |
+| `_rejected.md` *(자동 생성)* | reflect 잡 + `/memory-update` | 이미 폐기한 회고 초안 → 같은 초안 재생성 방지 | 폐기한 게 다음 세션에 다시 올라옴 |
+
+`_rejected.md` 는 템플릿에 없다 — `/memory-update` 가 처음 초안을 폐기할 때 머리말과 함께
+만든다. **gitignore 대상**이다: 안 남기기로 한 교훈 목록은 작업 습관·실수 이력에 가까워
+개인 tier 로 둔다. 같은 프로젝트의 Claude·Codex 는 같은 경로를 읽으므로 커밋하지 않아도
+두 툴이 함께 쓴다.
 
 기본 활성 예시는 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
 

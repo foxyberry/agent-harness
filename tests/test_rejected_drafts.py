@@ -58,33 +58,46 @@ class RejectedIndexTest(unittest.TestCase):
         self.assertIn("생략", out, "잘렸다는 사실을 알리지 않았다")
 
 
-class ShippedTemplateTest(unittest.TestCase):
-    """**배포되는 템플릿 파일 자체**를 파서에 먹인다 — 직접 만든 본문이 아니라.
+class CommentedExampleTest(unittest.TestCase):
+    """주석 안의 예시가 **진짜 폐기 기록으로 새지 않는지.**
 
-    템플릿은 예시 항목을 `<!-- ... -->` 안에 넣는다. 줄 단위 파서는 주석을 못 보므로,
-    그 예시가 **진짜 폐기 기록으로 잡힌다.** 템플릿을 복사한 프로젝트마다 있지도 않은 거절이
+    파서는 `- ` 로 시작하는 줄을 항목으로 본다. 사람이 파일 안에 예시를 적을 때 자연스럽게
+    `<!-- ... -->` 로 감싸는데, **줄 단위 파서는 주석을 못 본다.** 그러면 있지도 않은 거절이
     모든 회고 프롬프트에 주입돼, 비슷한 교훈이 조용히 막힌다.
 
-    `_decisions_index` 는 이미 같은 실패를 막고 있다(README·EXAMPLE 파일 제외). 새 경로에
-    같은 버그를 다시 넣지 않았는지 본다.
+    `_decisions_index` 는 이미 같은 실패를 막고 있다 — README·EXAMPLE 파일을 걸러
+    "복사한 새 프로젝트에서 예시가 실제 기존 체인으로 주입되는 걸 막는다". 새 경로에 같은
+    버그를 다시 넣지 않았는지 본다.
     """
 
-    def test_the_template_contributes_no_phantom_rejections(self):
-        template = (pathlib.Path(__file__).parents[1]
-                    / "project-template" / ".claude" / "memory" / "_rejected.md")
-        self.assertTrue(template.is_file(), "템플릿 파일이 없다")
-
+    def _index(self, body):
         with tempfile.TemporaryDirectory() as tmp:
             memory = pathlib.Path(tmp) / ".claude" / "memory"
             memory.mkdir(parents=True)
-            (memory / "_rejected.md").write_text(
-                template.read_text(encoding="utf-8"), encoding="utf-8")
-            out = reflect._rejected_index(tmp)
+            (memory / "_rejected.md").write_text(body, encoding="utf-8")
+            return reflect._rejected_index(tmp)
 
-        self.assertEqual(
-            "(아직 없음)", out,
-            "템플릿의 예시가 실제 폐기 기록으로 새고 있다 — 복사한 프로젝트마다 "
-            f"있지도 않은 거절이 회고 프롬프트에 주입된다.\n실제 반환:\n{out}")
+    def test_commented_out_examples_are_not_entries(self):
+        out = self._index(
+            "# 폐기한 회고 초안\n\n"
+            "<!-- 예시다. 실제로는 지우고 시작한다.\n"
+            "- `use-tabs-not-spaces` — .editorconfig 가 이미 강제 (2026-08-18)\n"
+            "-->\n"
+        )
+        self.assertEqual("(아직 없음)", out,
+                         f"주석 안 예시가 실제 기록으로 샜다:\n{out}")
+
+    def test_real_entries_around_a_comment_still_count(self):
+        """주석을 걷어내다 진짜 항목까지 날리면 안 된다."""
+        out = self._index(
+            "# 폐기\n\n"
+            "- `real-one` — 실제 폐기 (2026-08-18)\n"
+            "<!-- 참고: 아래는 예시\n- `fake-one` — 예시 (2026-08-18)\n-->\n"
+            "- `real-two` — 실제 폐기 (2026-08-18)\n"
+        )
+        self.assertIn("real-one", out)
+        self.assertIn("real-two", out)
+        self.assertNotIn("fake-one", out)
 
 
 class RenderedSkillTest(unittest.TestCase):
