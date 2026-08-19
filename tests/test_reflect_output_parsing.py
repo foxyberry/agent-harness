@@ -154,8 +154,8 @@ class CodexUserMessageTest(unittest.TestCase):
         self.assertIn("진짜 사용자 발화다", out)
         self.assertIn("어시스턴트 답변", out)
 
-    def test_claude_transcripts_are_unaffected(self):
-        """Codex 분기를 고치다 Claude 경로를 깨면 안 된다 — 그쪽이 주 사용처다."""
+    def test_claude_real_turns_survive(self):
+        """주 사용처다. 거르다 진짜 발화를 죽이면 회고 자체가 죽는다."""
         out = self._compact([
             {"type": "user", "message": {"role": "user", "content": "클로드 발화"}},
             {"type": "assistant", "message": {"role": "assistant",
@@ -164,6 +164,129 @@ class CodexUserMessageTest(unittest.TestCase):
 
         self.assertIn("클로드 발화", out)
         self.assertIn("클로드 답변", out)
+
+
+class ClaudeInjectedTurnTest(unittest.TestCase):
+    """Claude 쪽도 `role: "user"` 자리에 주입이 온다 — Codex 와 같은 부류.
+
+    이전 판의 테스트는 "Claude 사용자 텍스트가 **필터 없이** 살아남는다" 를 지켰다. 즉
+    결함 동작을 올바름으로 못박고 있었다. 실측: 한 트랜스크립트에서 USER 블록 9개 중 6개가
+    주입이었고, 그중엔 **스킬 본문**이 있었다 — 하네스 자신의 규칙이 사용자 발화로 둔갑한다.
+    """
+
+    def _compact(self, records):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            for r in records:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            return compact_transcript.compact(path)[0]
+        finally:
+            pathlib.Path(path).unlink()
+
+    def _user(self, text, **extra):
+        return dict({"type": "user", "message": {"role": "user", "content": text}}, **extra)
+
+    HUMAN = {"origin": {"kind": "human", "promptSource": "typed"}}
+
+    def test_origin_marks_who_typed_it(self):
+        """최근 트랜스크립트는 origin 을 달고 온다. 있으면 그걸 믿는다."""
+        out = self._compact([
+            self._user("사람이 친 말", **self.HUMAN),
+            self._user("도구가 넣은 것", origin={"kind": "task-notification"}),
+        ])
+
+        self.assertIn("사람이 친 말", out)
+        self.assertNotIn("도구가 넣은 것", out)
+
+    def test_prompt_source_is_read_from_the_record_not_from_origin(self):
+        """`promptSource` 는 레코드 최상위에 있다. origin 안에서 읽으면 죽은 조건이다
+        (실측: `origin.promptSource` 는 2616건 전부 None)."""
+        out = self._compact([
+            self._user("사람이 친 말", promptSource="typed"),
+            self._user("자동화가 넣은 평문 프롬프트", promptSource="sdk"),
+            self._user("시스템이 넣은 평문", promptSource="system"),
+        ])
+
+        self.assertIn("사람이 친 말", out)
+        self.assertNotIn("자동화가 넣은 평문 프롬프트", out,
+                         "SDK 프롬프트가 사용자 피드백으로 들어왔다")
+        self.assertNotIn("시스템이 넣은 평문", out)
+
+    def test_machine_prompts_without_a_tag_are_still_caught(self):
+        """마커 폴백으로는 못 잡는 부류다 — 평문이라 태그가 없다.
+        origin 도 없어서(실측 sdk 40건이 그렇다) promptSource 만이 유일한 신호다."""
+        out = self._compact([self._user("이 PR 을 리뷰해주세요", promptSource="sdk")])
+
+        self.assertNotIn("리뷰해주세요", out)
+
+    def test_meta_records_are_dropped(self):
+        self.assertNotIn("메타", self._compact([self._user("메타 레코드", isMeta=True)]))
+
+    def test_old_records_without_origin_fall_back_to_markers(self):
+        """origin 이 생기기 전 파일이 훨씬 많다(이 프로젝트 46개 중 40개).
+        엄격히 걸면 그 파일들에서 사용자 발화가 0건이 되고, '회고할 게 없었다' 와 구별이 안 된다."""
+        out = self._compact([
+            self._user("옛 파일의 진짜 발화"),
+            self._user("<task-notification>\n작업 알림 본문"),
+            self._user("Base directory for this skill: /x/skills/feedback-review\n스킬 규칙 본문"),
+            self._user("<local-command-caveat>Caveat: ...</local-command-caveat>"),
+        ])
+
+        self.assertIn("옛 파일의 진짜 발화", out)
+        self.assertNotIn("작업 알림 본문", out)
+        self.assertNotIn("스킬 규칙 본문", out, "스킬 본문이 사용자 발화로 들어왔다")
+        self.assertNotIn("Caveat", out)
+
+    def test_whole_injected_families_are_filtered_not_just_the_tags_i_thought_of(self):
+        """태그를 하나씩 적으면 반드시 빠뜨린다.
+
+        첫 판은 `<command-name>` 만 적고 `<command-message>` 를 빠뜨렸다 — 실측 corpus 에
+        6건 있었다. 같은 계열은 변형이 계속 생기므로 **계열 접두사**로 잡는다.
+        """
+        families = [
+            "<command-name>/plugin</command-name>",
+            "<command-message>plugin</command-message>",
+            "<command-args>x</command-args>",
+            "<local-command-stdout>출력</local-command-stdout>",
+            "<local-command-stderr>에러</local-command-stderr>",
+            "<bash-input>ls -la</bash-input>",
+            "<bash-stdout>파일 목록</bash-stdout>",
+        ]
+        out = self._compact([self._user(t + "\n주입된 본문 " + str(i))
+                             for i, t in enumerate(families)] + [self._user("진짜 발화")])
+
+        self.assertIn("진짜 발화", out)
+        for i, t in enumerate(families):
+            with self.subTest(family=t[:20]):
+                self.assertNotIn(f"주입된 본문 {i}", out)
+
+    def test_talking_about_a_marker_is_not_injection(self):
+        """마커를 **언급하는** 정상 발화까지 죽이면 안 된다 — 그래서 머리에서만 본다."""
+        out = self._compact([
+            self._user("압축기가 <task-notification> 을 왜 거르는지 설명해줘"),
+        ])
+
+        self.assertIn("왜 거르는지", out)
+
+    def test_the_fallback_announces_itself(self):
+        """폴백은 origin 기반보다 약하다. 조용히 퇴화하면 이 저장소의 그 실패 모드다."""
+        import contextlib, io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self._compact([self._user("origin 없는 발화")])
+
+        self.assertIn("마커 기반", err.getvalue())
+
+    def test_no_fallback_notice_when_origin_is_present(self):
+        """신호가 있으면 경고가 뜨면 안 된다 — 매번 뜨면 아무도 안 읽는다."""
+        import contextlib, io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self._compact([self._user("사람이 친 말", **self.HUMAN)])
+
+        self.assertNotIn("마커 기반", err.getvalue())
 
 
 class TranscriptDecodeTest(unittest.TestCase):
