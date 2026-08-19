@@ -200,6 +200,27 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertIn("사람이 친 말", out)
         self.assertNotIn("도구가 넣은 것", out)
 
+    def test_prompt_source_is_read_from_the_record_not_from_origin(self):
+        """`promptSource` 는 레코드 최상위에 있다. origin 안에서 읽으면 죽은 조건이다
+        (실측: `origin.promptSource` 는 2616건 전부 None)."""
+        out = self._compact([
+            self._user("사람이 친 말", promptSource="typed"),
+            self._user("자동화가 넣은 평문 프롬프트", promptSource="sdk"),
+            self._user("시스템이 넣은 평문", promptSource="system"),
+        ])
+
+        self.assertIn("사람이 친 말", out)
+        self.assertNotIn("자동화가 넣은 평문 프롬프트", out,
+                         "SDK 프롬프트가 사용자 피드백으로 들어왔다")
+        self.assertNotIn("시스템이 넣은 평문", out)
+
+    def test_machine_prompts_without_a_tag_are_still_caught(self):
+        """마커 폴백으로는 못 잡는 부류다 — 평문이라 태그가 없다.
+        origin 도 없어서(실측 sdk 40건이 그렇다) promptSource 만이 유일한 신호다."""
+        out = self._compact([self._user("이 PR 을 리뷰해주세요", promptSource="sdk")])
+
+        self.assertNotIn("리뷰해주세요", out)
+
     def test_meta_records_are_dropped(self):
         self.assertNotIn("메타", self._compact([self._user("메타 레코드", isMeta=True)]))
 

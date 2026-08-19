@@ -82,13 +82,16 @@ def _claude_user_is_human(d, text):
     그래서 **파일이 아니라 레코드 단위로** 판단한다 — origin 이 붙어 있으면 그걸 믿고,
     없으면 마커로 거른다. 폴백을 썼다는 건 호출자가 알린다(compact 참조).
     """
+    # ⚠️ promptSource 는 **레코드 최상위**에 있다. origin 안이 아니다(실측: origin.promptSource
+    # 는 2616건 전부 None — 거기서 읽으면 죽은 조건이다). 그리고 이게 가장 정확한 신호다:
+    # sdk 40건·system 22건이 origin.kind 없이 오므로, origin 만 보면 그것들이 마커 폴백으로
+    # 떨어지고 평문이라 사람 입력으로 통과한다. 자동화가 넣은 프롬프트가 회고 재료가 된다.
+    src = d.get("promptSource")
+    if src is not None:
+        return src in HUMAN_PROMPT_SOURCES, False
     origin = d.get("origin")
     if isinstance(origin, dict) and origin.get("kind"):
-        if origin["kind"] != "human":
-            return False, False
-        src = origin.get("promptSource")
-        # promptSource 가 없는 human 은 옛 형식 — kind 만으로 인정한다.
-        return (src is None or src in HUMAN_PROMPT_SOURCES), False
+        return origin["kind"] == "human", False
     if d.get("isMeta"):
         return False, False
     # `in` 이 아니라 `startswith` 다. 주입된 턴은 마커로 **시작**한다. `in` 으로 보면
