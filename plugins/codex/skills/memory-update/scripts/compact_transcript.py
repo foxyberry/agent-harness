@@ -52,6 +52,30 @@ def _claude_msg(d):
     return None, None
 
 
+def _codex_user_message(d):
+    """Codex rollout 의 **실제 사용자 발화** — `event_msg.user_message` 의 `message`.
+
+    ⚠️ `response_item` 의 `role: "user"` 를 사용자 발화로 읽으면 안 된다. Codex 는 주입한
+    컨텍스트도 거기에 `role: "user"` 로 넣는다 — `<user_action>` 래퍼, 환경 정보, 프로젝트의
+    AGENTS.md 본문 같은 것들. 8개 세션을 실측하니 그 17건 중 **8건이 주입**이었다.
+
+    회고 재료로는 치명적이다. AGENTS.md 전문이 "사용자가 한 말" 로 들어가면, 회고가 그걸
+    새 교훈으로 뽑아 메모리 승격 후보로 올린다 — 프로젝트의 기존 규칙이 사용자 피드백으로
+    둔갑해 규칙이 자기복제한다.
+
+    Codex 는 둘을 구분해 준다. 실제 입력은 `event_msg.user_message` 에만 온다.
+    """
+    if d.get("type") != "event_msg":
+        return None, None
+    p = d.get("payload") or {}
+    if p.get("type") != "user_message":
+        return None, None
+    text = p.get("message")
+    if not isinstance(text, str) or not text.strip():
+        return None, None
+    return "user", [("text", text)]
+
+
 def _codex_msg(d):
     """Codex rollout .jsonl: {"type":"response_item","payload":{"type":"message",
     "role","content":[{"type":"input_text"|"output_text","text"}]}} → (role, blocks).
@@ -60,6 +84,10 @@ def _codex_msg(d):
         return None, None
     p = d.get("payload") or {}
     if p.get("type") != "message":
+        return None, None
+    # assistant 만 본다. role="user" 는 주입이 섞이므로 _codex_user_message 가 따로 맡고,
+    # role="developer" 는 시스템 지시라 회고 재료가 아니다.
+    if p.get("role") != "assistant":
         return None, None
     blocks = [
         ("text", b.get("text", ""))
@@ -86,7 +114,9 @@ def compact(path):
                 continue
             role, blocks = _claude_msg(d)
             if role is None:
-                role, blocks = _codex_msg(d)  # Codex rollout 포맷 fallback
+                role, blocks = _codex_user_message(d)   # Codex 실제 사용자 발화
+            if role is None:
+                role, blocks = _codex_msg(d)            # Codex assistant
             if role is None:
                 continue
             if role == "user":

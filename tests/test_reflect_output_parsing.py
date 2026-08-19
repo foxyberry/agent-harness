@@ -3,6 +3,7 @@
 둘 다 실패가 "초안 없음" 으로 보인다 — 뽑을 게 없었던 것과 구별이 안 된다.
 """
 import importlib.util
+import json
 import pathlib
 import tempfile
 import unittest
@@ -98,6 +99,71 @@ class NestedFenceTest(unittest.TestCase):
         """살리는 것과 아무거나 받는 건 다르다."""
         self.assertEqual([], reflect._split_drafts("````\n그냥 산문\n````\n"))
         self.assertEqual([], reflect._split_drafts("````\n닫히지 않은 산문"))
+
+
+class CodexUserMessageTest(unittest.TestCase):
+    """Codex 롤아웃에서 **주입된 컨텍스트**를 사용자 발화로 읽지 않는지.
+
+    Codex 는 자기가 주입한 것도 `response_item` 에 `role: "user"` 로 넣는다 —
+    `<user_action>` 래퍼, 환경 정보, 프로젝트의 AGENTS.md 본문. 실측(8개 세션)에서
+    그런 항목 17건 중 8건이 주입이었다.
+
+    회고 재료로 쓰면 치명적이다. AGENTS.md 전문이 "사용자가 한 말" 로 들어가면 회고가 그걸
+    새 교훈으로 뽑아 승격 후보로 올린다 — **기존 규칙이 사용자 피드백으로 둔갑해 자기복제한다.**
+    """
+
+    def _rollout(self, records):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            for r in records:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+            return fh.name
+
+    def _compact(self, records):
+        path = self._rollout(records)
+        try:
+            return compact_transcript.compact(path)[0]
+        finally:
+            pathlib.Path(path).unlink()
+
+    INJECTED = {"type": "response_item", "payload": {"type": "message", "role": "user",
+                "content": [{"type": "input_text",
+                             "text": "<user_action><context>주입된 지시</context></user_action>"}]}}
+    REAL = {"type": "event_msg", "payload": {"type": "user_message",
+            "message": "진짜 사용자 발화다"}}
+    ASSISTANT = {"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                 "content": [{"type": "output_text", "text": "어시스턴트 답변"}]}}
+    DEVELOPER = {"type": "response_item", "payload": {"type": "message", "role": "developer",
+                 "content": [{"type": "input_text", "text": "시스템 지시문"}]}}
+
+    def test_injected_context_is_not_treated_as_user_feedback(self):
+        out = self._compact([self.INJECTED, self.REAL])
+
+        self.assertIn("진짜 사용자 발화다", out)
+        self.assertNotIn("주입된 지시", out, "주입된 컨텍스트가 사용자 발화로 들어왔다")
+
+    def test_developer_instructions_are_not_feedback_either(self):
+        out = self._compact([self.DEVELOPER, self.REAL])
+
+        self.assertNotIn("시스템 지시문", out)
+
+    def test_assistant_text_still_survives(self):
+        """주입을 걸러내다 응답까지 날리면 회고가 결론을 못 본다."""
+        out = self._compact([self.REAL, self.ASSISTANT])
+
+        self.assertIn("진짜 사용자 발화다", out)
+        self.assertIn("어시스턴트 답변", out)
+
+    def test_claude_transcripts_are_unaffected(self):
+        """Codex 분기를 고치다 Claude 경로를 깨면 안 된다 — 그쪽이 주 사용처다."""
+        out = self._compact([
+            {"type": "user", "message": {"role": "user", "content": "클로드 발화"}},
+            {"type": "assistant", "message": {"role": "assistant",
+                                              "content": [{"type": "text", "text": "클로드 답변"}]}},
+        ])
+
+        self.assertIn("클로드 발화", out)
+        self.assertIn("클로드 답변", out)
 
 
 class TranscriptDecodeTest(unittest.TestCase):
