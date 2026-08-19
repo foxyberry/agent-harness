@@ -42,9 +42,9 @@ ADR_DRAFT_CONTRACT = """\
 - **안 고른 대안(Alternatives)** 과 **결과(Consequence)** 가 둘 다 있어야 ADR 이다. 없으면 ADR 아님 → 교훈 memory 로 돌리거나 버려라.
 - 기준: 기각한 대안이 있거나 / 방향을 바꿨거나 / 되돌리기 비싼 결정. **0~3개, 각각 하나의 결정만(작게)**.
 - **체인 배정은 확정하지 말고 제안만** 하라 — 아래 "기존 결정 체인 인덱스"를 참고해, 이어지는 축이면 그 chain slug 를, 새 축이면 `new:<이름>` 을 쓴다. 확신 없으면 confidence 를 낮춰라.
-- 각 초안은 코드블록 하나:
+- 각 초안은 **백틱 4개** 블록 하나로 감싼다(안에 ``` 코드 인용이 들어갈 수 있으므로):
 
-```
+````
 ---
 name: <kebab-case-slug>
 description: <한 줄 요약 — INDEX/검색 요약에 쓰인다. 꼭 채운다>
@@ -59,7 +59,7 @@ keywords: [<검색어>, ...]                 # 검색 표면 — 꼭 채운다
 ## Alternatives
 ## Consequence
 ## Evidence
-```"""
+````"""
 
 
 PROMPT = ("""너는 "자가 개선 회고 시스템"이다. 아래는 한 작업 세션의 압축된 대화 트랜스크립트다.
@@ -72,16 +72,16 @@ PROMPT = ("""너는 "자가 개선 회고 시스템"이다. 아래는 한 작업
   보고 안 남기기로 한 것이다. 단어가 달라도 같은 교훈이면 같은 것으로 친다.
   ⚠️ 금지 목록이 아니다. 그 사이에 **같은 일이 반복돼 값어치가 생겼다면** 다시 올려도 된다 —
   대신 초안 안에 **무엇이 달라졌는지**(몇 번 더 반복됐는지, 어떤 비용이 났는지)를 적어라.
-- 0~5개. 각 초안은 코드블록 하나:
+- 0~5개. 각 초안은 **백틱 4개** 블록 하나로 감싼다(안에 ``` 코드 인용이 들어갈 수 있으므로):
 
-```
+````
 ---
 name: <kebab-case-slug>
 description: <한 줄 요약>
 type: feedback | project | user | reference
 ---
 <핵심 내용. feedback/project 면 **Why:** 와 **How to apply:** 줄 포함>
-```
+````
 
 ## (B) 의사결정 ADR
 """ + ADR_DRAFT_CONTRACT + """
@@ -278,10 +278,55 @@ BACKENDS = {
 
 # ---------- 출력 파싱 → 초안 파일 ----------
 
+def _fenced_blocks(text):
+    """백틱 블록들의 본문. **닫는 펜스는 연 펜스만큼 길어야 하고** 언어 태그가 없어야 한다.
+
+    이 두 조건이 중첩 인용 문제를 푼다 — 바깥이 ```` 로 열리면 안쪽 ``` 는 길이가 모자라
+    닫지 못한다. 세거나 추측하지 않는다.
+    """
+    fence = re.compile(r"^(`{3,})\s*([A-Za-z0-9_+-]*)\s*$")
+    blocks, buf, opener = [], None, 0
+    for line in text.splitlines():
+        m = fence.match(line.strip())
+        if m and buf is None:
+            buf, opener = [], len(m.group(1))
+            continue
+        if m and buf is not None and not m.group(2) and len(m.group(1)) >= opener:
+            blocks.append("\n".join(buf))
+            buf = None
+            continue
+        if buf is not None:
+            buf.append(line)
+    if buf is not None:                      # 안 닫힘 = 출력이 잘림
+        blocks.append("\n".join(buf))
+    return blocks
+
+
 def _split_drafts(text):
-    """LLM 출력에서 frontmatter 를 가진 ``` 블록들을 추출."""
-    blocks = re.findall(r"```[a-zA-Z]*\n(.*?)```", text, re.S)
-    return [b.strip() for b in blocks if "name:" in b and re.search(r"^type:", b, re.M)]
+    """LLM 출력에서 frontmatter 를 가진 블록들을 추출.
+
+    ## 왜 백틱 4개인가
+
+    초안 안에 코드를 인용하는 건 예외가 아니라 기본이다 — ADR 계약이 `Evidence` 섹션을
+    요구한다. 그런데 바깥 펜스도 ```, 안쪽 인용도 ``` 면 **어느 쪽인지 알 방법이 없다.**
+    태그 유무로 세는 것도 안 된다: 언어 태그 없는 ``` 인용이 흔하고, 그건 닫는 펜스와
+    글자까지 같다. 추측하면 초안이 잘리고, 잘린 초안은 멀쩡한 얼굴로 `_pending/` 에 저장돼
+    사람이 승격 검토를 하게 된다.
+
+    그래서 **프롬프트에서 백틱 4개를 요구한다.** 우리가 프롬프트와 파서를 둘 다 갖고 있으니
+    모호함을 없앨 수 있다 — 파싱을 잘하려 애쓰는 대신 파싱할 게 명확해지게 만든다.
+
+    3개 블록은 **호환용 폴백**이다(옛 출력·지시 이탈). 그 경로는 원래의 모호함을 그대로
+    안고 있으므로, 4개 블록이 하나라도 있으면 그쪽만 쓴다.
+    """
+    blocks = _fenced_blocks(text)
+    kept = [b.strip() for b in blocks
+            if "name:" in b and re.search(r"^type:", b, re.M)]
+    # 마지막 블록이 안 닫힌 채 살아남았으면 출력이 잘린 것이다. 통째로 버리면 "뽑을 게
+    # 없었다" 와 구별이 안 되므로 살리되, 잘렸다는 사실은 알린다.
+    if kept and not text.rstrip().endswith("`"):
+        sys.stderr.write("[reflect] ⚠️ 마지막 블록이 안 닫힘 — 출력이 잘린 듯. 그대로 살림\n")
+    return kept
 
 
 def _slug(block):

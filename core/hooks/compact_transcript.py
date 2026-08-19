@@ -74,7 +74,10 @@ def compact(path):
     # 대용량(수십 MB) 트랜스크립트에서 피크 메모리가 2배가 된다. 한 줄씩만 필요하므로 iterate.
     md = []
     n = 0
-    with open(path, encoding="utf-8") as f:
+    # errors="replace": 트랜스크립트 한 줄에 깨진 바이트가 있어도 잡 전체가 죽으면 안 된다.
+    # 죽으면 그 세션은 이미 seen 처리돼 **영영 재시도되지 않는다**.
+    # handoff.py 는 같은 파일을 세 곳에서 이미 이렇게 연다 — 여기만 빠져 있었다.
+    with open(path, encoding="utf-8", errors="replace") as f:
         for ln in f:
             n += 1
             try:
