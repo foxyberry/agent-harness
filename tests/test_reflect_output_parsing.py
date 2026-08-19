@@ -218,6 +218,29 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertNotIn("스킬 규칙 본문", out, "스킬 본문이 사용자 발화로 들어왔다")
         self.assertNotIn("Caveat", out)
 
+    def test_whole_injected_families_are_filtered_not_just_the_tags_i_thought_of(self):
+        """태그를 하나씩 적으면 반드시 빠뜨린다.
+
+        첫 판은 `<command-name>` 만 적고 `<command-message>` 를 빠뜨렸다 — 실측 corpus 에
+        6건 있었다. 같은 계열은 변형이 계속 생기므로 **계열 접두사**로 잡는다.
+        """
+        families = [
+            "<command-name>/plugin</command-name>",
+            "<command-message>plugin</command-message>",
+            "<command-args>x</command-args>",
+            "<local-command-stdout>출력</local-command-stdout>",
+            "<local-command-stderr>에러</local-command-stderr>",
+            "<bash-input>ls -la</bash-input>",
+            "<bash-stdout>파일 목록</bash-stdout>",
+        ]
+        out = self._compact([self._user(t + "\n주입된 본문 " + str(i))
+                             for i, t in enumerate(families)] + [self._user("진짜 발화")])
+
+        self.assertIn("진짜 발화", out)
+        for i, t in enumerate(families):
+            with self.subTest(family=t[:20]):
+                self.assertNotIn(f"주입된 본문 {i}", out)
+
     def test_talking_about_a_marker_is_not_injection(self):
         """마커를 **언급하는** 정상 발화까지 죽이면 안 된다 — 그래서 머리에서만 본다."""
         out = self._compact([

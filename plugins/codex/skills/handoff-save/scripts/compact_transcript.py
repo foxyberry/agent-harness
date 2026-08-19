@@ -47,11 +47,17 @@ def _text_blocks(content):
 # 사용자가 친 것으로 인정하는 origin. 이 밖은 도구·시스템이 넣은 것이다.
 HUMAN_PROMPT_SOURCES = {"typed", "queued", "suggestion_accepted"}
 
-# origin 신호가 없는 옛 트랜스크립트용 폴백 마커. 주입된 턴은 이걸로 **시작**한다.
+# origin 신호가 없는 옛 트랜스크립트용 폴백. 주입된 턴은 이걸로 **시작**한다.
 # 시작 여부만 보므로, 이 마커를 본문에서 얘기하는 정상 발화는 안 죽는다.
+#
+# ⚠️ 개별 태그가 아니라 **계열 접두사**다. 처음엔 태그를 하나씩 적었는데 `<command-message>`
+# 를 빠뜨렸다(실측 corpus 에 6건). 같은 계열은 변형이 계속 생긴다 — command-name/message/args,
+# local-command-stdout/stderr/caveat, bash-input/stdout/stderr. 계열로 잡으면 새 변형도 덮는다.
+# 사람이 친 메시지가 이런 태그로 **시작**하는 일은 사실상 없다.
 _INJECTED_HEADS = (
-    "<command-name>", "<local-command-stdout>", "<local-command-caveat>",
-    "<task-notification>", "<system-reminder>", "Base directory for this skill",
+    "<command-", "<local-command-", "<bash-",
+    "<task-notification>", "<system-reminder>",
+    "Base directory for this skill",   # 스킬 본문 주입 — 태그가 아니라 평문으로 시작한다
 )
 
 
