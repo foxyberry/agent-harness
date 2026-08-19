@@ -10,6 +10,7 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
   sed -e "s|{{AGENT}}|$AGENT|g" \
       -e "s|{{RULES_FILE}}|$RULES_FILE|g" \
       -e "s|{{HANDOFF}}|$HANDOFF|g" \
+      -e "s|{{COMPACT}}|$COMPACT|g" \
       -e "s|{{DEEP_RECOVERY}}|$DEEP_RECOVERY|g" \
       -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
@@ -37,10 +38,14 @@ SKILLS=$(cd core/skills && ls -d */ | sed 's#/##')
 rm -rf plugins/harness/skills plugins/harness/bin plugins/harness/hooks
 mkdir -p plugins/harness/bin
 cp core/scripts/handoff.py plugins/harness/bin/agent-handoff
-chmod +x plugins/harness/bin/agent-handoff
 # repo_identity: agent-handoff 가 dirname(__file__)=bin/ 에서 import 한다(co-locate 규약).
 cp core/scripts/repo_identity.py plugins/harness/bin/repo_identity.py
-AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff
+# 회고 스킬이 과거 세션을 후보로 쓸 때 압축본이 필요하다(원본은 수 MB). 훅에도 같은 파일이
+# 있지만 스킬은 hooks/ 를 참조하지 않는다 — repo_identity 와 같은 co-locate 규약.
+cp core/hooks/compact_transcript.py plugins/harness/bin/compact_transcript.py
+# ⚠️ chmod 는 **cp 다음**이다. 없는 파일에 chmod 하면 build.sh 가 거기서 멈춘다.
+chmod +x plugins/harness/bin/agent-handoff plugins/harness/bin/compact_transcript.py
+AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff; COMPACT=compact_transcript.py
 DEEP_RECOVERY='`/fw --from claude` 또는 `/fw-both`'   # 실제 존재하는 명령만 (없는 이름을 안내하면 손 탐색을 부른다 — 이슈 #95)
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
@@ -88,6 +93,7 @@ chmod +x plugins/harness/hooks/*.py
 # 스크립트는 스킬 폴더에 번들(scripts/) — bin PATH 가정 회피(Codex 미검증 영역).
 rm -rf plugins/codex/skills plugins/codex/bin
 AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
+COMPACT='python3 scripts/compact_transcript.py'
 # 예전 값은 "`~/.codex/sessions` 의 최근 세션 로그" 였다 — 폴더를 직접 뒤지라는 안내다.
 # 손 탐색에는 프로젝트 스코핑이 없어서 남의 프로젝트 세션을 집을 수 있다(이슈 #95).
 DEEP_RECOVERY='`/fw --from codex` 또는 `/fw-both`'
@@ -107,6 +113,7 @@ for s in $SKILLS; do
   cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
   # handoff.py 가 같은 폴더에서 import 한다 — 번들되는 곳마다 함께 둔다.
   cp core/scripts/repo_identity.py "plugins/codex/skills/$s/scripts/repo_identity.py"
+  cp core/hooks/compact_transcript.py "plugins/codex/skills/$s/scripts/compact_transcript.py"
   render "core/skills/$s/SKILL.md" "plugins/codex/skills/$s/SKILL.md"
 done
 
