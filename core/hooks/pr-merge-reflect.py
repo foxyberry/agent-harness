@@ -123,11 +123,24 @@ def _cache_path(project_dir):
     return os.path.join(project_dir, ".claude/.cache/pr-merge-seen.json")
 
 
+# 커밋되면 안 되는 하네스 산출물. **엔진이 지킨다** — project-template 의 .gitignore 는
+# 사용자가 복사해야 생기고, README 는 그 복사를 선택 단계로 안내한다. 안 복사한 사용자는
+# `git add -A` 로 이것들을 커밋하게 된다.
+LOCAL_EXCLUDE_ENTRIES = (
+    ".claude/.cache/",              # 런타임 캐시·로그
+    ".claude/memory/_pending/",     # 회고 초안 — 세션 대화에서 뽑은 것, 사람 검토 전
+    ".claude/memory/_rejected.md",  # 폐기 기록 — 작업 습관·실수 이력에 가깝다(개인 tier)
+)
+
+
 def _ensure_local_cache_exclude(project_dir):
-    """기존 프로젝트에서도 런타임 캐시가 커밋되지 않게 로컬 exclude를 보강한다.
+    """커밋되면 안 되는 하네스 산출물을 로컬 exclude에 보강한다.
 
     사용자의 tracked .gitignore는 수정하지 않는다. Git이 아니거나 read-only인 프로젝트는
     훅 실행을 막지 않도록 조용히 통과한다.
+
+    ⚠️ 캐시만이 아니다. `_pending/` 은 **세션 대화에서 뽑은 초안**이고 `_rejected.md` 는
+    **안 남기기로 한 교훈 목록** = 작업 습관·실수 이력이다. 공개 저장소면 그대로 공개된다.
     """
     try:
         result = subprocess.run(
@@ -155,13 +168,15 @@ def _ensure_local_cache_exclude(project_dir):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as handle:
                 existing = handle.read()
-        entry = prefix + ".claude/.cache/"
-        if entry in existing.splitlines():
+        have = set(existing.splitlines())
+        missing = [prefix + e for e in LOCAL_EXCLUDE_ENTRIES if prefix + e not in have]
+        if not missing:
             return
         with open(path, "a", encoding="utf-8") as handle:
             if existing and not existing.endswith("\n"):
                 handle.write("\n")
-            handle.write(entry + "\n")
+            for entry in missing:
+                handle.write(entry + "\n")
     except (OSError, subprocess.SubprocessError):
         pass
 
