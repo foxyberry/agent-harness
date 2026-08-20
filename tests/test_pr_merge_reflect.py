@@ -49,12 +49,13 @@ class PrMergeReflectTest(unittest.TestCase):
             with patch("builtins.open", side_effect=OSError("temporary")), \
                     patch.object(pr_merge_reflect, "_save_state") as save_state, \
                     patch.object(pr_merge_reflect, "_recent_merged", return_value=[(2, "two")]), \
-                    patch.object(pr_merge_reflect, "_announce_pending_drafts"), \
-                    patch.object(pr_merge_reflect, "_sweep_codex_sessions"):
-                with self.assertRaises(OSError):
-                    pr_merge_reflect._on_session_start(tmp, str(cache))
+                    patch.object(pr_merge_reflect, "_announce_pending_drafts") as announce, \
+                    patch.object(pr_merge_reflect, "_sweep_codex_sessions") as sweep:
+                pr_merge_reflect._on_session_start(tmp, str(cache))
 
             save_state.assert_not_called()
+            announce.assert_called_once_with(tmp)
+            sweep.assert_called_once_with(tmp)
 
     def test_post_tool_does_not_turn_corrupt_cache_into_empty_history(self):
         with tempfile.TemporaryDirectory() as tmp:

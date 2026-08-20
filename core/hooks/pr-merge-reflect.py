@@ -617,14 +617,19 @@ def _on_session_start(project_dir, cache):
     merged = _recent_merged(project_dir)
     if merged is not None:
         nums = [n for n, _ in merged]
-        state = _load_state(cache)
-        if state is None:
-            # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
-            _save_state(cache, set(nums), [])
-        else:
-            _scan_reflectable(
-                project_dir, nums, cache, set(state["seen"]), list(state["pending"])
-            )
+        try:
+            state = _load_state(cache)
+            if state is None:
+                # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
+                _save_state(cache, set(nums), [])
+            else:
+                _scan_reflectable(
+                    project_dir, nums, cache, set(state["seen"]), list(state["pending"])
+                )
+        except OSError:
+            # 상태 파일의 일시적 I/O 실패는 이번 PR 갱신만 건너뛴다. 아래 초안 알림과
+            # Codex 스윕은 독립 기능이므로 함께 막지 않는다.
+            pass
     # 이전에 돌아간 잡이 남긴 초안이 있으면 검토 권고
     _announce_pending_drafts(project_dir)
     # 이 프로젝트의 미회고 Codex 단독 세션을 회고 (opt-in)
