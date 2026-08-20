@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 # repo_identity 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(reflect.py 와 동일 규약).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -61,6 +62,10 @@ REMIND = (
 
 # _pending 초안이 이만큼 쌓이면 머지 리마인더를 "지금 정리" 로 강하게 에스컬레이션한다.
 DRAFT_BACKLOG_THRESHOLD = 8
+
+# PR 세부 정보는 PR마다 `gh pr view` 한 번(최대 8초)이 필요하다. SessionStart/UserPromptSubmit
+# 를 오래 막지 않도록 한 번에 일부만 처리하고, 나머지는 다음 훅 호출에서 이어간다.
+PR_SCAN_MAX_PER_RUN = 3
 
 # 회고 산출물 PR 이 다시 회고를 요구하는 루프를 막는 기본 예외.
 # 프로젝트별로 .claude/memory/reflect-skip.json 에서 확장/override 가능.
@@ -193,29 +198,79 @@ def _pending_dir(project_dir):
     return os.path.join(project_dir, ".claude/memory/_pending")
 
 
+def _write_json_atomic(path, data):
+    """같은 디렉터리에 임시 파일로 쓰고 rename 한다. rename 은 원자적이다.
+
+    ⚠️ 이 훅은 세션 종료·호스트 타임아웃에 **언제든 죽을 수 있다.** 그냥 `open(path,"w")` 로
+    쓰면 자르기와 쓰기 사이에서 죽었을 때 **잘린 파일**이 남고, 다음 실행이 그걸 읽는다.
+    그 상태가 "손상" 이 아니라 "비어 있음" 으로 해석되면(과거에 그랬다) 회고 대상이 통째로
+    다시 밀려든다.
+
+    같은 디렉터리에 만드는 이유: `os.replace` 는 같은 파일시스템 안에서만 원자적이다.
+    """
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def _load_state(cache):
-    """캐시 없으면 None(=최초), 있으면 {'seen': set, 'pending': list}."""
+    """캐시 없으면 None(=최초), 있으면 {'seen': set, 'pending': list}.
+
+    ⚠️ **손상도 None 이다.** 예전엔 파싱 실패 시 빈 상태를 돌려줬는데, 호출부는 None 만
+    "최초 실행" 으로 보고 빈 seen 은 "아직 아무것도 회고 안 함" 으로 본다. 그래서 잘린 캐시
+    하나가 **머지된 PR 30개를 전부 미회고로** 만들었다 — 설계가 막는다고 적어둔 바로 그 폭주다.
+
+    "손상됨" 과 "없었음" 은 다른 사건이지만, **복구 방법은 같다** — 현재 상태를 조용히 시드하고
+    과거를 캐지 않는다. 그래서 같은 값을 돌려주는 게 맞다.
+    """
     if not os.path.exists(cache):
         return None
     try:
-        with open(cache) as f:
+        with open(cache, encoding="utf-8") as f:
             d = json.load(f)
-        return {"seen": set(d.get("seen", [])), "pending": list(d.get("pending", []))}
-    except Exception:
-        return {"seen": set(), "pending": []}
+        if not isinstance(d, dict):
+            raise ValueError("state must be an object")
+        seen = d.get("seen", [])
+        pending = d.get("pending", [])
+        if not isinstance(seen, list) or not isinstance(pending, list):
+            raise ValueError("seen and pending must be lists")
+        if not all(isinstance(n, int) and not isinstance(n, bool) for n in seen + pending):
+            raise ValueError("seen and pending must contain PR numbers")
+        return {"seen": set(seen), "pending": list(pending)}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        sys.stderr.write(
+            "[pr-merge-reflect] 캐시가 손상돼 최초 실행처럼 다시 시드한다 "
+            "(기존 pending 은 복구할 수 없음)\n"
+        )
+        return None
+    except OSError:
+        # 일시적인 읽기 실패를 손상으로 오판해 정상 캐시를 재시드로 덮어쓰지 않는다.
+        sys.stderr.write("[pr-merge-reflect] 캐시를 읽지 못해 이번 상태 갱신을 건너뛴다\n")
+        raise
 
 
 def _save_state(cache, seen, pending):
+    """seen 은 최근 200개만(무한 증가 방지), pending 은 전부 유지."""
     try:
-        os.makedirs(os.path.dirname(cache), exist_ok=True)
-        with open(cache, "w") as f:
-            # seen 은 무한 증가 방지로 최근 200개만, pending 은 전부 유지.
-            json.dump({
-                "seen": sorted(set(seen), reverse=True)[:200],
-                "pending": sorted(set(pending), reverse=True),
-            }, f)
-    except Exception:
-        pass
+        _write_json_atomic(cache, {
+            "seen": sorted(set(seen), reverse=True)[:200],
+            "pending": sorted(set(pending), reverse=True),
+        })
+    except Exception as exc:
+        # 훅은 fail-open 이어야 하지만, 상태가 저장되지 않았다는 사실은 진단 가능해야 한다.
+        sys.stderr.write(f"[pr-merge-reflect] 캐시 저장 실패: {type(exc).__name__}\n")
 
 
 def _recent_merged(project_dir):
@@ -333,8 +388,25 @@ def _should_skip_reflect(project_dir, num):
     return False
 
 
-def _filter_reflectable(project_dir, nums):
-    return [n for n in nums if not _should_skip_reflect(project_dir, n)]
+def _scan_reflectable(project_dir, nums, cache, seen, pending):
+    """미확인 PR 을 제한된 수만 검사하고 PR마다 상태를 저장한다.
+
+    `seen` 은 skip 판정을 마친 PR만 뜻한다. 아직 상한 밖인 PR까지 seen 으로 넣으면 다음
+    호출에서도 검사되지 않아 영구 누락된다. 반대로 각 판정 직후 저장하면 훅이 중간에
+    종료돼도 같은 네트워크 작업을 처음부터 반복하지 않는다.
+    """
+    processed = 0
+    for num in nums:
+        if num in seen:
+            continue
+        if processed >= PR_SCAN_MAX_PER_RUN:
+            break
+        if not _should_skip_reflect(project_dir, num):
+            pending.append(num)
+        seen.add(num)
+        processed += 1
+        _save_state(cache, seen, pending)
+    return seen, pending
 
 
 def _detail(pending, titles):
@@ -497,10 +569,19 @@ def _sweep_codex_sessions(project_dir):
         matcher.record_worktrees()
 
         seen_path = _codex_seen_path(project_dir)
-        first_run = not os.path.exists(seen_path)
-        try:
-            seen_list = list(json.load(open(seen_path))) if not first_run else []
-        except Exception:
+        # ⚠️ first_run 을 **파일 존재**로 정하면 안 된다. 잘린 파일이 있으면 "최초 아님 +
+        # 빈 seen" 이 되어 이미 회고한 rollout 을 다시 회고하고, 아래 저장이 새 sid 만 남겨
+        # **이전 기록을 통째로 버린다.** 자가 치유가 안 되고 백로그를 걸어가며 중복을 만든다.
+        # 읽기에 성공했을 때만 "최초 아님" 이다 — 손상은 최초와 같이 취급해 조용히 시드한다.
+        seen_list = None
+        if os.path.exists(seen_path):
+            try:
+                with open(seen_path, encoding="utf-8") as f:
+                    seen_list = list(json.load(f))
+            except Exception:
+                sys.stderr.write("[pr-merge-reflect] codex seen 캐시가 손상돼 다시 시드한다\n")
+        first_run = seen_list is None
+        if first_run:
             seen_list = []
         seen = set(seen_list)  # 멤버십 조회용. seen_list 는 삽입(처리)순 — 캡 시 최신 유지
 
@@ -525,7 +606,7 @@ def _sweep_codex_sessions(project_dir):
                     seen.add(sid); seen_list.append(sid)  # 스폰 성공 시에만 seen — 실패는 다음 스윕 재시도
 
         os.makedirs(os.path.dirname(seen_path), exist_ok=True)
-        json.dump(seen_list[-500:], open(seen_path, "w"))  # 삽입순 최신 500 유지(무한증가 방지)
+        _write_json_atomic(seen_path, seen_list[-500:])  # 삽입순 최신 500 유지(무한증가 방지)
     except Exception:
         pass
 
@@ -536,13 +617,19 @@ def _on_session_start(project_dir, cache):
     merged = _recent_merged(project_dir)
     if merged is not None:
         nums = [n for n, _ in merged]
-        state = _load_state(cache)
-        if state is None:
-            # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
-            _save_state(cache, set(nums), [])
-        else:
-            new = _filter_reflectable(project_dir, [n for n in nums if n not in state["seen"]])
-            _save_state(cache, state["seen"] | set(nums), state["pending"] + new)
+        try:
+            state = _load_state(cache)
+            if state is None:
+                # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
+                _save_state(cache, set(nums), [])
+            else:
+                _scan_reflectable(
+                    project_dir, nums, cache, set(state["seen"]), list(state["pending"])
+                )
+        except OSError:
+            # 상태 파일의 일시적 I/O 실패는 이번 PR 갱신만 건너뛴다. 아래 초안 알림과
+            # Codex 스윕은 독립 기능이므로 함께 막지 않는다.
+            pass
     # 이전에 돌아간 잡이 남긴 초안이 있으면 검토 권고
     _announce_pending_drafts(project_dir)
     # 이 프로젝트의 미회고 Codex 단독 세션을 회고 (opt-in)
@@ -591,8 +678,11 @@ def _on_post_tool(data, project_dir, cache):
         return
     # 캐시는 SessionStart 시드로만 생성(무더기 보고 방지) → 없으면 적재 보류.
     if os.path.exists(cache):
-        state = _load_state(cache) or {"seen": set(), "pending": []}
-        _save_state(cache, state["seen"] | {num}, state["pending"] + [num])
+        state = _load_state(cache)
+        # 손상 캐시(None)는 빈 상태로 덮어쓰지 않는다. 다음 SessionStart 가 최근 머지
+        # 전체를 조용히 재시드해야 과거 PR 이 호출마다 다시 pending 으로 들어오지 않는다.
+        if state is not None:
+            _save_state(cache, state["seen"] | {num}, state["pending"] + [num])
     # 현재 세션이 작업 세션 → 자동 회고 잡 실행(opt-in)
     _spawn_reflect_job(data, project_dir)
 
@@ -607,13 +697,20 @@ def _on_user_prompt(data, project_dir, cache):
         merged = _recent_merged(project_dir)
         if state is None:
             if merged is not None:
-                seen = {n for n, _ in merged}
-                pending = _filter_reflectable(project_dir, [merged[0][0]] if merged else [])
-                _save_state(cache, seen, [])
+                # 과거 PR 은 조용히 시드하되, 사용자가 방금 머지했다고 알려준 최신 PR 하나는
+                # 실제 skip 판정을 거친다. 먼저 최신을 제외해 저장해야 중간 종료 시 누락되지 않는다.
+                latest = [merged[0][0]] if merged else []
+                seen = {n for n, _ in merged if n not in latest}
+                pending = []
+                _save_state(cache, seen, pending)
+                seen, pending = _scan_reflectable(
+                    project_dir, latest, cache, seen, pending
+                )
                 if pending:
                     titles = {n: t for n, t in merged}
                     _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
                     _spawn_reflect_job(data, project_dir)
+                    _save_state(cache, seen, [])
                 return
             _emit("UserPromptSubmit", _remind_text(project_dir, ""))
             _spawn_reflect_job(data, project_dir)
@@ -622,8 +719,9 @@ def _on_user_prompt(data, project_dir, cache):
             titles = {}
             if merged is not None:
                 titles = {n: t for n, t in merged}
-                pending += _filter_reflectable(project_dir, [n for n, _ in merged if n not in seen])
-                seen |= {n for n, _ in merged}
+                seen, pending = _scan_reflectable(
+                    project_dir, [n for n, _ in merged], cache, seen, pending
+                )
             if pending:
                 _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
                 _spawn_reflect_job(data, project_dir)
