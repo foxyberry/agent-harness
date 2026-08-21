@@ -40,8 +40,17 @@ try:
 except ImportError:  # 단독 복사본 등 helper 부재 — 스윕만 비활성, 나머지 훅 기능은 유지
     ProjectMatcher = None
 try:
-    from hook_io import trace_entry   # 진입 추적(HARNESS_HOOK_TRACE). 없으면 그냥 없는 대로.
+    from hook_io import emit_context, project_dir as hook_project_dir, trace_entry
 except ImportError:
+    def emit_context(event, text):
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": event, "additionalContext": text}}))
+
+    def hook_project_dir(data=None):
+        return (os.environ.get("CLAUDE_PROJECT_DIR")
+                or ((data or {}).get("cwd") if isinstance(data, dict) else None)
+                or os.getcwd())
+
     def trace_entry(*_a, **_kw):
         pass
 
@@ -435,9 +444,7 @@ def _detail(pending, titles):
 
 
 def _emit(event_name, text):
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": event_name, "additionalContext": text}
-    }))
+    emit_context(event_name, text)
 
 
 # ---------- 자동 회고 잡 (B) ----------
@@ -538,7 +545,7 @@ def _codex_meta(rollout_path):
     return None, None
 
 
-def _sweep_codex_sessions(project_dir):
+def _sweep_codex_sessions(project_dir, current_session_id=None):
     """이 프로젝트(cwd) 의 미회고 Codex rollout 을 찾아 reflect 스폰. opt-in 꺼져 있으면 no-op.
 
     - 최초 실행: 과거 무더기 회고 방지로 현재 것을 seen 시드만(회고 X).
@@ -552,6 +559,8 @@ def _sweep_codex_sessions(project_dir):
     """
     if not _auto_reflect_enabled():
         return
+    if not os.path.exists(_reflect_script()):
+        return  # Codex 3a 번들은 자동 LLM 회고를 의도적으로 싣지 않는다.
     if ProjectMatcher is None:
         return
     import time
@@ -607,7 +616,7 @@ def _sweep_codex_sessions(project_dir):
             sid, cwd = _codex_meta(fp)
             # 경로 prefix 가 아니라 git 저장소 identity 로 판정 — worktree 가 프로젝트
             # 폴더 밖(`~/.codex/worktrees/`, 형제 `.agent-worktrees/`)에 있어도 잡힌다.
-            if sid and sid not in seen and matcher.belongs(cwd):
+            if sid and sid != current_session_id and sid not in seen and matcher.belongs(cwd):
                 fresh.append((sid, fp))
 
         if first_run:
@@ -628,7 +637,7 @@ def _sweep_codex_sessions(project_dir):
 
 # ---------- 이벤트 핸들러 ----------
 
-def _on_session_start(project_dir, cache):
+def _on_session_start(project_dir, cache, data=None):
     merged = _recent_merged(project_dir)
     if merged is not None:
         nums = [n for n, _ in merged]
@@ -648,7 +657,29 @@ def _on_session_start(project_dir, cache):
     # 이전에 돌아간 잡이 남긴 초안이 있으면 검토 권고
     _announce_pending_drafts(project_dir)
     # 이 프로젝트의 미회고 Codex 단독 세션을 회고 (opt-in)
-    _sweep_codex_sessions(project_dir)
+    _sweep_codex_sessions(project_dir, (data or {}).get("session_id"))
+
+
+def _git_toplevel(path):
+    """Codex payload cwd가 하위 디렉터리여도 프로젝트 캐시를 저장소 루트에 통일한다."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], cwd=path,
+            capture_output=True, text=True, timeout=3,
+        )
+        top = result.stdout.strip()
+        if result.returncode == 0 and top:
+            return os.path.normpath(top)
+    except Exception:
+        pass
+    return os.path.normpath(path)
+
+
+def _resolved_project_dir(data):
+    """Claude의 명시 경로는 보존하고, Codex payload cwd만 저장소 루트로 통일한다."""
+    if os.environ.get("CLAUDE_PROJECT_DIR"):
+        return os.path.normpath(hook_project_dir(data))
+    return _git_toplevel(hook_project_dir(data))
 
 
 def _pr_is_merged(project_dir, num):
@@ -766,7 +797,7 @@ def main():
     event = data.get("hook_event_name", "")
     trace_entry(__file__, event)
     # normpath: 끝 슬래시 제거 등 정규화 (Codex in-project 매칭이 trailing sep 로 깨지지 않게).
-    project_dir = os.path.normpath(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    project_dir = _resolved_project_dir(data)
     cache = _cache_path(project_dir)
 
     # 이 프로젝트가 하네스 메모리 시스템을 안 쓰면(.claude/memory 없음) 전체 no-op.
@@ -777,7 +808,7 @@ def main():
     try:
         _ensure_local_cache_exclude(project_dir)
         if event == "SessionStart":
-            _on_session_start(project_dir, cache)
+            _on_session_start(project_dir, cache, data)
         elif event == "PostToolUse":
             _on_post_tool(data, project_dir, cache)
         elif event == "UserPromptSubmit":

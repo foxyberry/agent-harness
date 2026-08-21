@@ -9,8 +9,9 @@ project-memory-index  ──▶  memory-search  ──▶  reflection  ──▶
 (세션 시작 인덱스)        (편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
 ```
 
-훅은 **양쪽에 배포된다** — Claude 는 4개 전부(`plugins/harness/hooks/`), Codex 는 3개
-(`plugins/codex/hooks/`). `pr-merge-reflect` 만 아직 이식 전이다(#85). Codex 는 **훅을
+훅은 **양쪽에 배포된다** — Claude 는 4개 전부(`plugins/harness/hooks/`), Codex 도 4개
+(`plugins/codex/hooks/`). `pr-merge-reflect` 는 SessionStart·PostToolUse 탐지/큐 단계만
+이식됐고, UserPromptSubmit 리마인더와 자동 LLM 회고는 실측 전까지 보류한다(#85). Codex 는 **훅을
 신뢰해야** 실행된다 — 신뢰 전에는 에러도 경고도 없이 조용히 건너뛴다(`docs/codex-hooks.md`).
 
 ---

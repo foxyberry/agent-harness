@@ -23,9 +23,9 @@
   예시 데이터는 `project-template/.claude/memory/` 에.
 - **훅은 Claude 전량 + Codex 일부** 배포. 양쪽 다 `hooks/hooks.json` 과 `${CLAUDE_PLUGIN_ROOT}` 를 쓴다
   — Codex 도 이 변수를 **호환 별칭으로 세팅해 준다**(0.145.0 실측). Codex 는 매니페스트에
-  `"hooks": "./hooks/hooks.json"` 키로 등록한다. 현재 Codex 에 올린 건 `project-memory-index`
-  ·`memory-search`·`reflection` 셋. `pr-merge-reflect` 만 남았다(LLM 잡·회고 중복 정리가 선행).
-  자세한 제약과 이식 상태는 `docs/codex-hooks.md`.
+  `"hooks": "./hooks/hooks.json"` 키로 등록한다. Codex 에는 네 훅을 번들하지만,
+  `pr-merge-reflect` 는 SessionStart·PostToolUse 탐지/큐 단계만 올렸다. UserPromptSubmit 리마인더와
+  자동 LLM 회고는 설치 실측 전까지 보류한다. 자세한 제약과 이식 상태는 `docs/codex-hooks.md`.
 - **자동 회고 잡**(`reflect.py` 가 `claude -p` 로 초안 생성)은 **기본 꺼짐**. 설치만으로
   백그라운드 LLM 잡이 뜨지 않게 `HARNESS_AUTO_REFLECT=1` opt-in 뒤에 게이트. 리마인더는 항상 켜짐.
 - 경로 규약: **스크립트**는 `${CLAUDE_PLUGIN_ROOT}`(플러그인 루트, co-located),

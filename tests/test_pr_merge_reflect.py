@@ -1,5 +1,6 @@
 import builtins
 import importlib.util
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -16,6 +17,19 @@ SPEC.loader.exec_module(pr_merge_reflect)
 
 
 class PrMergeReflectTest(unittest.TestCase):
+    def test_codex_payload_cwd_uses_git_toplevel_but_claude_env_stays_exact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            nested = root / "packages" / "api"
+            nested.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+            with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": ""}):
+                self.assertEqual(str(root.resolve()),
+                                 pr_merge_reflect._resolved_project_dir({"cwd": str(nested)}))
+            with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(nested)}):
+                self.assertEqual(str(nested), pr_merge_reflect._resolved_project_dir({"cwd": str(root)}))
+
     def test_corrupt_state_is_reseeded_instead_of_replaying_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = pathlib.Path(tmp) / "state.json"
@@ -55,7 +69,7 @@ class PrMergeReflectTest(unittest.TestCase):
 
             save_state.assert_not_called()
             announce.assert_called_once_with(tmp)
-            sweep.assert_called_once_with(tmp)
+            sweep.assert_called_once_with(tmp, None)
 
     def test_post_tool_does_not_turn_corrupt_cache_into_empty_history(self):
         with tempfile.TemporaryDirectory() as tmp:

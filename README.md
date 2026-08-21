@@ -72,11 +72,12 @@ say **when to use the skill**, not just what it does.
 | | Claude Code | Codex |
 |---|---|---|
 | Skills | 7 | 7 |
-| Hooks | 4 | **3** (`pr-merge-reflect` not ported) |
+| Hooks | 4 | **4** (`pr-merge-reflect` detection/queue phase) |
 
 The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
 rather than a file path plus new text, so a normalization step turns both shapes into the same
-model. The last hook drives a background LLM job, so it needs its own decisions first
+model. Codex now registers merge/session detection and shared-queue updates, pending an installed
+smoke test; prompt injection and background LLM paths remain disabled until that test verifies them
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## Why this exists
@@ -109,11 +110,11 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
 | Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ |
 | After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ |
-| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | ⬜ |
+| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 detect/queue registered, smoke pending |
 
-**Codex runs all but the last one.** A single Codex patch can touch several files, and the
-rules are applied to each of them. The remaining hook is portable — that has been
-measured — but the port is still open work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+Codex registers the last hook only for SessionStart and Bash PostToolUse detection. Prompt delivery
+and automatic drafts remain disabled until the installed-plugin smoke test verifies them
+([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
 to check is decided by data in the project's `.claude/memory/`. With no data the hooks are
@@ -183,18 +184,13 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.5.0`
+- Plugin version: `0.11.0`
 - Public marketplace installation verified for both Claude Code and Codex
 - 7 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
-- Codex ships `project-memory-index`, `memory-search` and `reflection` (codex-cli 0.145.0);
-  `pr-merge-reflect` is next
-
-### Known issues
-
-- [#81](https://github.com/foxyberry/agent-harness/issues/81) — `feedback-review` ignores
-  `_pending` and past sessions
+- Codex ships four hooks; `pr-merge-reflect` is registered for detect/queue only until its
+  installed-plugin smoke test completes
 
 ## Documentation
 
