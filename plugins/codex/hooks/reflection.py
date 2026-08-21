@@ -45,15 +45,14 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
-from hook_io import edited_files, emit_context, trace_entry  # noqa: E402
+from hook_io import (  # noqa: E402
+    edited_files,
+    emit_context,
+    project_dir as _project_dir,
+    trace_entry,
+)
 
 TODO_MESSAGE = "⚠️  TODO/FIXME 남아있음 — 작업 완료 후 제거 필요"
-
-
-def _project_dir():
-    # 플러그인 배포 시 이 스크립트는 프로젝트 밖(플러그인 루트)에 있으므로 __file__ 기반
-    # fallback 은 프로젝트가 아닌 플러그인 dir 을 가리킨다. cwd(훅 실행 위치=프로젝트)로 fallback.
-    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
 def _load_config(memory_dir):
@@ -133,7 +132,7 @@ def main():
     if not targets:
         sys.exit(0)
 
-    memory_dir = os.path.join(_project_dir(), ".claude/memory")
+    memory_dir = os.path.join(_project_dir(data), ".claude/memory")
     cfg = _load_config(memory_dir)
 
     # ⚠️ 규칙은 **파일마다 따로** 적용한다. 여러 파일의 추가 내용을 합쳐서 한 번에 돌리면

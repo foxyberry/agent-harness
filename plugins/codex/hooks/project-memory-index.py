@@ -20,33 +20,16 @@ import json
 import os
 import sys
 
-# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다. 여기서 쓰는 건 진입 추적
-# 하나뿐이라 없어도 훅은 그대로 돈다 — 진단 장치가 훅을 죽이면 안 된다.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-try:
-    from hook_io import trace_entry
-except ImportError:
-    def trace_entry(*_a, **_kw):
-        pass
+# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 하는 **필수 의존**이다.
+# project_dir 해석 정본까지 여기 있으므로 누락된 깨진 설치본에서 로컬 fallback 으로 계속
+# 실행하면 훅마다 계약이 다시 갈린다. core 소스 트리에서 직접 실행할 때만 ../scripts 를 본다.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
+from hook_io import project_dir as _project_dir, trace_entry  # noqa: E402
 
 DEFAULT_MAX_CHARS = 12000
 MAX_CAP = 50000
-
-
-def _project_dir(data=None):
-    """프로젝트 루트. 툴마다 알려주는 방식이 다르다.
-
-    - Claude Code: `CLAUDE_PROJECT_DIR` 환경변수
-    - Codex: 이 변수를 안 준다. 대신 훅 입력 JSON 의 `cwd` 가 프로젝트다
-      (`CLAUDE_PLUGIN_ROOT` 는 Codex 도 호환 별칭으로 세팅해 주므로 hooks.json 은 공용).
-
-    프로세스 cwd 는 최후 수단 — 플러그인 배포 시 스크립트는 프로젝트 밖에 있다.
-    """
-    return (
-        os.environ.get("CLAUDE_PROJECT_DIR")
-        or (data or {}).get("cwd")
-        or os.getcwd()
-    )
 
 
 def _safe_child_path(parent, name):

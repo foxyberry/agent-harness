@@ -38,6 +38,22 @@ _FILE_MARKER = re.compile(r"^\*\*\*\s+(Add|Update|Delete)\s+File:\s*(.+?)\s*$")
 _MOVE_MARKER = re.compile(r"^\*\*\*\s+Move\s+to:\s*(.+?)\s*$")
 
 
+def project_dir(data=None):
+    """훅이 실행 중인 사용자 프로젝트 경로를 툴 공통 순서로 해석한다.
+
+    Claude 는 환경변수를, Codex 는 입력 payload 의 `cwd` 를 준다. 프로세스 cwd 는
+    호스트가 훅을 프로젝트 안에서 실행할 때만 맞으므로 최후 fallback 이다.
+    """
+    from_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if from_env:
+        return from_env
+    if isinstance(data, dict):
+        from_payload = data.get("cwd")
+        if isinstance(from_payload, str) and from_payload:
+            return from_payload
+    return os.getcwd()
+
+
 class EditedFile:
     """편집된 파일 하나. `path` 는 빈 문자열일 수 있다(경로를 못 얻은 편집)."""
 

@@ -16,6 +16,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MEMORY_SEARCH = ROOT / "core" / "hooks" / "memory-search.py"
 REFLECTION = ROOT / "core" / "hooks" / "reflection.py"
+PROJECT_INDEX = ROOT / "core" / "hooks" / "project-memory-index.py"
 
 # 이슈 #85 본문의 실측 입력 (codex-cli 0.145.0).
 CODEX_PATCH = ("*** Begin Patch\n"
@@ -45,12 +46,17 @@ class _HookRun(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def run_hook(self, script, payload):
+    def run_hook(self, script, payload, *, use_env=True, cwd=None):
         env = dict(os.environ)
-        env["CLAUDE_PROJECT_DIR"] = str(self.project)
+        # 상위 프로세스가 회고 잡이어도 이 테스트는 훅 자체를 검증해야 한다.
+        env.pop("REFLECT_JOB", None)
+        if use_env:
+            env["CLAUDE_PROJECT_DIR"] = str(self.project)
+        else:
+            env.pop("CLAUDE_PROJECT_DIR", None)
         proc = subprocess.run(
             ["python3", str(script)], input=json.dumps(payload),
-            capture_output=True, text=True, env=env, cwd=self.project,
+            capture_output=True, text=True, env=env, cwd=cwd or self.project,
         )
         self.assertEqual(0, proc.returncode, proc.stderr)
         return proc.stdout.strip()
@@ -83,6 +89,17 @@ class MemorySearchTest(_HookRun):
         out = self.context_of(self.run_hook(MEMORY_SEARCH, _codex(CODEX_PATCH)))
 
         self.assertIsNotNone(out, "Codex 패치 입력에서 아무것도 주입하지 않았다")
+        self.assertIn("텍스트 파일 규칙", out)
+
+    def test_codex_payload_cwd_wins_when_process_runs_elsewhere(self):
+        payload = _codex(CODEX_PATCH)
+        payload["cwd"] = str(self.project)
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            out = self.context_of(self.run_hook(
+                MEMORY_SEARCH, payload, use_env=False, cwd=elsewhere
+            ))
+
         self.assertIn("텍스트 파일 규칙", out)
 
     def test_claude_edit_still_works(self):
@@ -136,6 +153,18 @@ class ReflectionTest(_HookRun):
         self.assertIn("TODO/FIXME", out)
         self.assertIn("print 1개", out)
 
+    def test_codex_payload_cwd_loads_rules_when_process_runs_elsewhere(self):
+        patch = "*** Begin Patch\n*** Add File: a.py\n+print('x')\n*** End Patch"
+        payload = _codex(patch, "PostToolUse")
+        payload["cwd"] = str(self.project)
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            out = self.context_of(self.run_hook(
+                REFLECTION, payload, use_env=False, cwd=elsewhere
+            ))
+
+        self.assertIn("print 1개", out)
+
     def test_claude_edit_still_works(self):
         out = self.context_of(self.run_hook(
             REFLECTION, _claude("a.py", "print('x')", "PostToolUse")))
@@ -175,6 +204,18 @@ class ReflectionTest(_HookRun):
                    "hook_event_name": "PostToolUse"}
 
         self.assertEqual("", self.run_hook(REFLECTION, payload))
+
+
+class ProjectMemoryIndexTest(_HookRun):
+    def test_codex_payload_cwd_loads_index_when_process_runs_elsewhere(self):
+        (self.memory / "INDEX.md").write_text("payload cwd canary", encoding="utf-8")
+        payload = {"hook_event_name": "SessionStart", "cwd": str(self.project)}
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            stdout = self.run_hook(PROJECT_INDEX, payload, use_env=False, cwd=elsewhere)
+        out = (json.loads(stdout).get("hookSpecificOutput") or {}).get("additionalContext")
+
+        self.assertIn("payload cwd canary", out)
 
 
 if __name__ == "__main__":

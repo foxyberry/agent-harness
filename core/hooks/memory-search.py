@@ -45,7 +45,13 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
-from hook_io import edited_files, emit_context, shell_command, trace_entry  # noqa: E402
+from hook_io import (  # noqa: E402
+    edited_files,
+    emit_context,
+    project_dir as _project_dir,
+    shell_command,
+    trace_entry,
+)
 
 # 주입 총량 상한. project-memory-index 와 같은 값을 쓴다 — 두 훅이 같은 컨텍스트를 나눠 쓰므로
 # 한쪽만 무제한이면 상한이 없는 것과 같다.
@@ -53,12 +59,6 @@ from hook_io import edited_files, emit_context, shell_command, trace_entry  # no
 # ⚠️ 이 파일들은 **프로젝트가 주는 데이터**다. 사용자가 클론한 남의 저장소일 수도 있다.
 # 상한이 없으면 그 저장소가 편집·셸 명령마다 임의 길이 텍스트를 모델에 밀어 넣을 수 있다.
 MAX_INJECT_CHARS = 12000
-
-
-def _project_dir():
-    # 플러그인 배포 시 이 스크립트는 프로젝트 밖(플러그인 루트)에 있으므로 __file__ 기반
-    # fallback 은 프로젝트가 아닌 플러그인 dir 을 가리킨다. cwd(훅 실행 위치=프로젝트)로 fallback.
-    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
 def _load_rules(memory_dir):
@@ -138,7 +138,7 @@ def main():
     paths = [f.path for f in edited_files(data)] or [""]
     # 셸 명령이면 경로 대신 명령으로 매칭한다(`command_contains`). 편집이면 None.
     command = shell_command(data)
-    memory_dir = os.path.join(_project_dir(), ".claude/memory")
+    memory_dir = os.path.join(_project_dir(data), ".claude/memory")
 
     rules = _load_rules(memory_dir)
     if not rules:
