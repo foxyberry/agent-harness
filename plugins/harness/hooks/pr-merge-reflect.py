@@ -138,6 +138,20 @@ LOCAL_EXCLUDE_ENTRIES = (
 )
 
 
+def _gitignore_literal(path):
+    """저장소 상대 경로를 gitignore glob이 아닌 literal 패턴으로 만든다.
+
+    backslash를 먼저 이스케이프한 뒤 glob·주석·부정·공백 문법 문자를 이스케이프한다.
+    공백은 끝에 있을 때만 필수지만 전부 처리하면 segment 위치와 무관하게 같은 규칙이 된다.
+    """
+    escaped = []
+    for char in path:
+        if char in "\\*?[]#! ":
+            escaped.append("\\")
+        escaped.append(char)
+    return "".join(escaped)
+
+
 def _ensure_local_cache_exclude(project_dir):
     """커밋되면 안 되는 하네스 산출물을 로컬 exclude에 보강한다.
 
@@ -174,7 +188,8 @@ def _ensure_local_cache_exclude(project_dir):
             with open(path, encoding="utf-8") as handle:
                 existing = handle.read()
         have = set(existing.splitlines())
-        missing = [prefix + e for e in LOCAL_EXCLUDE_ENTRIES if prefix + e not in have]
+        entries = [_gitignore_literal(prefix + entry) for entry in LOCAL_EXCLUDE_ENTRIES]
+        missing = [entry for entry in entries if entry not in have]
         if not missing:
             return
         with open(path, "a", encoding="utf-8") as handle:

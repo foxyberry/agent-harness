@@ -252,6 +252,39 @@ class PrMergeReflectTest(unittest.TestCase):
             exclude = root / ".git" / "info" / "exclude"
             self.assertIn("packages/api/.claude/.cache/", exclude.read_text().splitlines())
 
+    def test_monorepo_prefix_gitignore_metacharacters_are_literal(self):
+        names = ["pkg[1]", "star*dir", "question?dir", "#hash", "!bang", "space dir",
+                 "back\\slash"]
+        for name in names:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                project = root / name / "api"
+                project.mkdir(parents=True)
+                subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+                pr_merge_reflect._ensure_local_cache_exclude(str(project))
+                cache_file = project / ".claude" / ".cache" / "reflect.log"
+                cache_file.parent.mkdir(parents=True)
+                cache_file.write_text("private", encoding="utf-8")
+
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "--", str(cache_file.relative_to(root))],
+                    cwd=root, capture_output=True, text=True,
+                )
+                self.assertEqual(0, ignored.returncode, ignored.stderr)
+
+                # literal prefix가 비슷한 형제 경로까지 glob으로 삼키면 안 된다.
+                sibling_name = name.replace("*", "X").replace("?", "Z").replace("[1]", "1")
+                if sibling_name != name:
+                    sibling = root / sibling_name / "api" / ".claude" / ".cache" / "reflect.log"
+                    sibling.parent.mkdir(parents=True)
+                    sibling.write_text("unrelated", encoding="utf-8")
+                    overmatched = subprocess.run(
+                        ["git", "check-ignore", "--", str(sibling.relative_to(root))],
+                        cwd=root, capture_output=True, text=True,
+                    )
+                    self.assertEqual(1, overmatched.returncode, overmatched.stdout)
+
     def test_non_git_project_is_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:
             pr_merge_reflect._ensure_local_cache_exclude(tmp)
