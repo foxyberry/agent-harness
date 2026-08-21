@@ -273,12 +273,9 @@ dangling 경로가 생기지 않는다. Codex 는 `0.8.0` 이 실제로 사라�
 얻는다. 프로세스 cwd 가 플러그인 루트가 아니므로 **상대경로 `command` 는 실패**한다(실측) —
 `${CLAUDE_PLUGIN_ROOT}` 기준 절대경로나 문서의 `$(git rev-parse ...)` 관용구를 쓴다.
 
-```python
-def _project_dir(data=None):
-    return (os.environ.get("CLAUDE_PROJECT_DIR")     # Claude
-            or (data or {}).get("cwd")               # Codex
-            or os.getcwd())
-```
+이 해석 순서의 정본은 `core/scripts/hook_io.py` 의 `project_dir(data)` 다. 각 훅에서 같은
+fallback 을 다시 쓰지 말고 이 helper 를 사용한다. `build.sh` 가 `hook_io.py` 를 양쪽 어댑터의
+훅 디렉터리에 함께 복사한다.
 
 ## 기타 제약
 

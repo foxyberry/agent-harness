@@ -4,8 +4,11 @@ Codex 픽스처는 **실측 원문**이다(codex-cli 0.145.0). 앞선 판들이 
 도구 이름을 `exec` 로 잘못 알았던 전례가 있어서, 여기서는 실제로 관측된 입력을 그대로 쓴다.
 """
 import importlib.util
+import os
 import pathlib
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -151,6 +154,21 @@ class ConvenienceTest(unittest.TestCase):
 
         self.assertEqual(["a.py", "b.py"], hook_io.edited_paths(data))
         self.assertEqual("하나\n둘", hook_io.added_content(data))
+
+
+class ProjectDirTest(unittest.TestCase):
+    def test_environment_wins_over_payload_and_process_cwd(self):
+        with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": "/from-env"}):
+            self.assertEqual("/from-env", hook_io.project_dir({"cwd": "/from-payload"}))
+
+    def test_payload_cwd_is_used_when_environment_is_absent(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual("/from-payload", hook_io.project_dir({"cwd": "/from-payload"}))
+
+    def test_process_cwd_is_the_final_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.dict(os.environ, {}, clear=True), patch.object(os, "getcwd", return_value=tmp):
+            self.assertEqual(tmp, hook_io.project_dir({}))
 
 
 if __name__ == "__main__":
