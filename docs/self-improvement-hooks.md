@@ -185,6 +185,18 @@ PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조�
 압축 → LLM 으로 분석 → 영속할 교훈을 `.claude/memory/_pending/*.md` 에 **초안**으로 저장.
 detached 라 세션을 닫아도 완료된다. 같은 slug 초안은 덮어쓰지 않고 suffix 로 보존한다.
 
+회고 후보는 **출처 근거가 있는 사용자 턴에서 시작한 구간만** 사용한다. Claude 로그는
+레코드별 `promptSource`(`typed`·`queued`·`suggestion_accepted`) 또는 `origin.kind=human`을
+양성 귀속 근거로 쓴다. 근거가 없는 옛 user 턴은 해당 구간에서 제외한다. 단순 알림·메타
+주입은 그 레코드만 버리지만, `sdk`·`system`·비인간 `origin`처럼 자동화 출처가 명시된 턴은
+뒤 assistant 응답도 자동화의 산물일 수 있어 구간 신뢰를 끊는다. 양성 귀속 user 턴이 하나도
+없으면 자동 회고는 후보를 거부하고, strict CLI는 경고와 exit 3으로 끝난다. 일부만 유지한
+경우 stderr에 귀속·제외 턴 수를 표시한다. Codex 로그에는 동등한 귀속 필드가 없어,
+`event_msg.user_message`라는 채널 구분을 신뢰하고 주입 컨텍스트가 섞인 `response_item`의
+`role=user`는 버린다. 따라서 Codex쪽은 Claude와 같은 레코드별 양성 귀속을 보장하지는 않는다.
+`/feedback-review`·`/memory-update`의 과거 세션 압축도 같은 strict 모드를 쓴다.
+옵션 없는 `compact_transcript.py` CLI는 기존 사용과 호환되도록 best-effort fallback을 유지한다.
+
 ---
 
 ## ⚠️ 자동 회고는 opt-in (기본 꺼짐)

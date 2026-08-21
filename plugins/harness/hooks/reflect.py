@@ -355,7 +355,9 @@ def main():
     if not os.path.exists(transcript):
         sys.exit(f"transcript 없음: {transcript}")
 
-    body, n = compact(transcript)
+    # 메모리 초안은 출처가 확실한 사용자 턴에서만 만든다. 복원(fw/history)은 옛 로그를
+    # best-effort 로 읽어도 되지만, 규칙 승격 후보는 재현율보다 신뢰가 우선이다(이슈 #121).
+    body, n = compact(transcript, require_attributed_user=True)
     if not body.strip():
         sys.exit(0)  # 빈 세션 → 조용히
 

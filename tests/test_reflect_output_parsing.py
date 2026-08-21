@@ -4,9 +4,12 @@
 """
 import importlib.util
 import json
+import os
 import pathlib
+import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -288,6 +291,92 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
 
         self.assertNotIn("마커 기반", err.getvalue())
 
+    def test_retrospective_mode_refuses_unattributed_user_turns(self):
+        """복원은 fallback 을 써도 되지만, 메모리 후보는 출처 불명 턴에서 만들지 않는다."""
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(json.dumps(self._user("옛 파일의 진짜 발화"), ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            body, _ = compact_transcript.compact(path, require_attributed_user=True)
+        finally:
+            pathlib.Path(path).unlink()
+
+        self.assertEqual("", body)
+
+    def test_retrospective_mode_accepts_positively_attributed_turns(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(json.dumps(self._user("사람이 친 말", promptSource="typed"),
+                                ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            body, _ = compact_transcript.compact(path, require_attributed_user=True)
+        finally:
+            pathlib.Path(path).unlink()
+
+        self.assertIn("사람이 친 말", body)
+
+    def test_attributed_turn_survives_injected_marker_in_the_same_file(self):
+        """실제 파일은 사람 턴과 command 주입이 섞인다. 파일 단위로 거부하면 안 된다."""
+        records = [
+            self._user("사람이 친 말", promptSource="typed"),
+            self._user("<command-name>/model</command-name>"),
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            for record in records:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            body, _ = compact_transcript.compact(path, require_attributed_user=True)
+        finally:
+            pathlib.Path(path).unlink()
+
+        self.assertIn("사람이 친 말", body)
+        self.assertNotIn("command-name", body)
+
+    def test_unattributed_turn_and_its_assistant_segment_are_dropped(self):
+        records = [
+            self._user("사람이 친 말", promptSource="typed"),
+            {"type": "assistant", "message": {"role": "assistant", "content": "신뢰 구간 응답"}},
+            self._user("출처 불명 턴"),
+            {"type": "assistant", "message": {"role": "assistant", "content": "불명 구간 응답"}},
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            for record in records:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            body, _ = compact_transcript.compact(path, require_attributed_user=True)
+        finally:
+            pathlib.Path(path).unlink()
+
+        self.assertIn("사람이 친 말", body)
+        self.assertIn("신뢰 구간 응답", body)
+        self.assertNotIn("출처 불명 턴", body)
+        self.assertNotIn("불명 구간 응답", body)
+
+    def test_tool_results_do_not_make_an_attributed_session_untrusted(self):
+        records = [
+            self._user("사람이 친 말", promptSource="typed"),
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": "도구 출력"},
+            ]}},
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
+                                         encoding="utf-8") as fh:
+            for record in records:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            path = fh.name
+        try:
+            body, _ = compact_transcript.compact(path, require_attributed_user=True)
+        finally:
+            pathlib.Path(path).unlink()
+
+        self.assertIn("사람이 친 말", body)
+
 
 class TranscriptDecodeTest(unittest.TestCase):
     """깨진 바이트 하나로 회고 잡이 죽으면, 그 세션은 이미 seen 처리돼 영영 재시도 안 된다."""
@@ -306,6 +395,71 @@ class TranscriptDecodeTest(unittest.TestCase):
         self.assertGreater(n, 0)
         self.assertIn("before", body, "깨진 줄 앞이 사라졌다")
         self.assertIn("after", body, "깨진 줄 뒤가 사라졌다 — 한 줄 때문에 나머지를 잃었다")
+
+
+class ReflectProvenanceGateTest(unittest.TestCase):
+    def test_automatic_reflect_never_calls_llm_for_unattributed_transcript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            transcript = root / "old.jsonl"
+            transcript.write_text(json.dumps({
+                "type": "user",
+                "message": {"role": "user", "content": "출처 불명 사용자 턴"},
+            }, ensure_ascii=False) + "\n", encoding="utf-8")
+            backend = Mock(return_value="should not run")
+
+            with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": tmp}), \
+                    patch.dict(reflect.BACKENDS, {"ollama": backend}), \
+                    patch.object(sys, "argv", [
+                        "reflect.py", "--transcript", str(transcript), "--backend", "ollama"
+                    ]):
+                with self.assertRaises(SystemExit) as stopped:
+                    reflect.main()
+
+            self.assertEqual(0, stopped.exception.code)
+            backend.assert_not_called()
+
+    def test_strict_cli_rejection_is_nonzero_and_removes_stale_output(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            transcript = root / "old.jsonl"
+            output = root / "compact.md"
+            transcript.write_text(json.dumps({
+                "type": "user",
+                "message": {"role": "user", "content": "출처 불명 사용자 턴"},
+            }, ensure_ascii=False) + "\n", encoding="utf-8")
+            output.write_text("stale previous session", encoding="utf-8")
+
+            proc = subprocess.run([
+                sys.executable,
+                str(ROOT / "core" / "hooks" / "compact_transcript.py"),
+                str(transcript),
+                "-o", str(output),
+                "--require-attributed-user",
+            ], capture_output=True, text=True)
+
+            self.assertEqual(3, proc.returncode)
+            self.assertIn("회고 거부", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_unknown_cli_option_fails_closed(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            transcript = pathlib.Path(tmp) / "session.jsonl"
+            transcript.write_text(json.dumps({
+                "type": "user", "promptSource": "typed",
+                "message": {"role": "user", "content": "human"},
+            }) + "\n", encoding="utf-8")
+
+            proc = subprocess.run([
+                sys.executable,
+                str(ROOT / "core" / "hooks" / "compact_transcript.py"),
+                str(transcript), "--require-attributed-users",
+            ], capture_output=True, text=True)
+
+            self.assertEqual(2, proc.returncode)
+            self.assertIn("unrecognized arguments", proc.stderr)
 
 
 if __name__ == "__main__":

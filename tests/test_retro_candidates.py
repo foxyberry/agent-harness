@@ -51,6 +51,8 @@ class PastSessionTest(unittest.TestCase):
                                   "과거 세션을 찾는 방법을 안내하지 않는다")
                     self.assertIn("compact_transcript", text,
                                   "고른 세션의 내용을 읽는 방법이 없다 — 목록만으로는 회고 못 한다")
+                    self.assertIn("--require-attributed-user", text,
+                                  "출처 불명 턴도 메모리 승격 후보로 들어간다")
 
     def test_the_command_is_rendered_runnable_not_a_placeholder(self):
         """`{{HANDOFF}}` 가 그대로 남으면 복붙해도 안 돈다."""
