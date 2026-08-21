@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"옛 사용자 발화"}}
+{"type":"assistant","message":{"role":"assistant","content":"응답"}}
+{"type":"user","message":{"role":"user","content":"<system-reminder>주입</system-reminder>"}}

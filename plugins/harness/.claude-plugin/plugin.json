@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "핸드오프·자기개선 회고·워크플로 스킬과 훅 (Claude 어댑터). 정본은 repo core/ 에서 생성됨.",
   "author": { "name": "foxyberry" },
   "homepage": "https://github.com/foxyberry/agent-harness",

@@ -72,10 +72,12 @@ python3 scripts/handoff.py history --from both --since 7d --limit 10 --project-d
 사용자가 고른 경로를 압축해서 읽는다(원본은 수 MB, 압축본은 사용자 발화를 통째로 남긴다):
 
 ```
-python3 scripts/compact_transcript.py <고른 세션 경로>
+python3 scripts/compact_transcript.py <고른 세션 경로> --require-attributed-user
 ```
 
 여러 개를 고르면 각각 돌리고, **어느 세션에서 나온 후보인지 표시**해서 제시한다.
+압축기가 `회고 거부`를 알리면 그 세션은 후보 풀에 넣지 않는다. 출처 불명 user 턴을 메모리
+승격 근거로 쓰지 않는다. 옛 로그에서 덜 얻더라도 기존 규칙이 사용자 피드백으로 둔갑하는 것보다 낫다.
 
 ### 1.6 결정(ADR) 초안 승격 — `_pending/decisions/`
 
