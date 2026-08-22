@@ -98,6 +98,19 @@ class RegisteredPathsTest(unittest.TestCase):
                     self.assertTrue((bundle / rel).is_file(),
                                     f"{adapter}: {rel} 이 번들에 없다. {BUILD_HINT}")
 
+    def test_codex_merge_hook_cannot_spawn_reflection_job(self):
+        """3a에서는 탐지·큐만 배포한다. reflect.py가 들어오면 live rollout 중복 회고가 열린다."""
+        hooks = ROOT / "plugins" / "codex" / "hooks"
+        self.assertTrue((hooks / "pr-merge-reflect.py").is_file())
+        self.assertFalse((hooks / "reflect.py").exists())
+
+    def test_codex_merge_hook_phase_3a_registration_boundary(self):
+        regs = [r for r in _registrations("codex") if r[2].endswith("pr-merge-reflect.py")]
+        self.assertEqual(
+            [("PostToolUse", "Bash"), ("SessionStart", "")],
+            [(event, matcher) for event, matcher, _script in regs],
+        )
+
 
 class RegisteredCommandRunTest(unittest.TestCase):
     """2. **hooks.json 의 `command` 문자열을 그대로 셸에서 돌린다.**
@@ -137,7 +150,7 @@ class RegisteredCommandRunTest(unittest.TestCase):
 
     def _run(self, command, plugin_root, project, payload, trace=None):
         env = {k: v for k, v in os.environ.items()
-               if k not in ("HARNESS_AUTO_REFLECT", "HARNESS_HOOK_TRACE")}
+               if k not in ("HARNESS_AUTO_REFLECT", "HARNESS_HOOK_TRACE", "REFLECT_JOB")}
         env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
         env["CLAUDE_PROJECT_DIR"] = str(project)
         if trace:

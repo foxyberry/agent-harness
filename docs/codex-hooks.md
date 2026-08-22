@@ -385,8 +385,8 @@ cat /tmp/hook-trace.jsonl
 
 | 툴 | 있어야 할 줄 |
 |---|---|
-| Codex | `project-memory-index`(SessionStart), `memory-search`(PreToolUse ×2), `reflection`(PostToolUse) |
-| Claude | 위 셋 + `pr-merge-reflect`(SessionStart·UserPromptSubmit·PostToolUse) |
+| Codex | `project-memory-index`(SessionStart), `memory-search`(PreToolUse ×2), `reflection`(PostToolUse), `pr-merge-reflect`(SessionStart·PostToolUse/Bash, 설치 smoke 대기) |
+| Claude | 앞의 세 편집/인덱스 훅 + `pr-merge-reflect`(SessionStart·UserPromptSubmit·PostToolUse) |
 
 줄이 **없는** 훅이 무음 실패다. 원인은 셋 중 하나다 — 플러그인 미신뢰(→ [신뢰](#신뢰trust--안-하면-무음으로-건너뛴다)),
 matcher 불일치(→ 위 배선 테스트), 설치본이 구버전(→ 설치 경로·버전 확인).
@@ -400,7 +400,7 @@ matcher 불일치(→ 위 배선 테스트), 설치본이 구버전(→ 설치 �
 | `project-memory-index` (SessionStart) | ✅ | ✅ |
 | `memory-search` (PreToolUse — 셸·편집 둘 다) | ✅ | ✅ |
 | `reflection` (PostToolUse — 편집) | ✅ | ✅ |
-| `pr-merge-reflect` (SessionStart·UserPromptSubmit·PostToolUse) | ✅ | — 미이식이라 안 뜨는 게 정상 |
+| `pr-merge-reflect` | ✅ (세 이벤트) | 🟡 SessionStart·PostToolUse 등록, 설치 실측 대기 |
 
 `HARNESS_HOOK_TRACE` 는 **양쪽 다 훅 서브프로세스까지 전파된다**(Codex 도 별도 설정 불필요).
 
@@ -434,7 +434,12 @@ matcher 불일치(→ 위 배선 테스트), 설치본이 구버전(→ 설치 �
 | `project-memory-index` | ✅ | ✅ | SessionStart — 커버리지 한계와 무관 |
 | `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch`. 패치 원문에서 편집 파일 목록을 뽑아 라우팅 |
 | `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. 규칙은 **파일마다** 적용 |
-| `pr-merge-reflect` | ✅ | ⬜ | 마지막 — LLM 잡·seen 캐시, Codex 세션에서 회고 중복 정리 필요 |
+| `pr-merge-reflect` | ✅ | 🟡 | 3a: SessionStart·PostToolUse 탐지/큐만. UserPromptSubmit 주입·LLM 잡은 실측 전 미등록 |
+
+Codex 3a 번들에는 의도적으로 `reflect.py`를 넣지 않는다. 따라서 머지와 세션 시작을 감지해
+공유 큐를 갱신할 수는 있지만, 진행 중 Codex rollout을 즉시 자동 회고하거나 아직 검증되지 않은
+`UserPromptSubmit`에서 큐를 비우지는 않는다. 실제 설치본에서 이벤트 발화와 컨텍스트 주입을
+둘 다 관측한 뒤 마지막 등록을 연다(#85).
 
 입력 정규화는 `core/scripts/hook_io.py` 가 맡는다 — Claude(`file_path` + `new_string`/`content`/
 `edits`)와 Codex(`command` 에 담긴 패치 원문)를 **편집 파일 목록 + 추가된 내용**이라는 같은

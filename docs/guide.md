@@ -101,10 +101,10 @@ Codex 로그를 본다). 현재 세션이 자기 자신을 "직전 작업"으로
 편집 전 관련 메모리 표시, PR 머지 후 회고 재촉이 전부 훅이다. "안 썼다"가 아니라 **이미 계속
 쓰고 있었다.**
 
-**단, 이건 Claude 이야기다.** Claude 에서는 4개가 전부 돈다. **Codex 에서는 셋이 돌고**
-(`project-memory-index`·`memory-search`·`reflection`), 그것도 **훅을 신뢰해야** 실행된다 —
+**단, 이건 Claude 이야기다.** Claude 에서는 4개가 전부 돈다. Codex 는 네 훅을 번들하지만
+`pr-merge-reflect`는 탐지/큐만 등록하며, 모두 **훅을 신뢰해야** 실행된다 —
 신뢰 등록 전에는 에러도 경고도 없이 조용히 건너뛴다. 머지 후 회고 재촉
-(`pr-merge-reflect`)만 아직 이식 전이다(#85).
+(`pr-merge-reflect`)는 탐지/큐만 이식됐고 사용자 리마인더·자동 회고는 아직 검증 중이다(#85).
 
 ---
 
@@ -128,10 +128,10 @@ Codex 로그를 본다). 현재 세션이 자기 자신을 "직전 작업"으로
 세션 시작  → INDEX.md 목록이 통째로 주입 (project-memory-index)   ← Claude·Codex 둘 다
 편집·명령 전 → routes.json 이 가리키는 메모리 본문이 주입 (memory-search)  ← Claude·Codex 둘 다
 파일 편집 후 → reflection-rules.json 정규식으로 품질 경고 (reflection)     ← Claude·Codex 둘 다
-PR 머지 후  → 회고 재촉 (pr-merge-reflect)                              ← Claude 만
+PR 머지 후  → 회고 재촉 (pr-merge-reflect)                 ← Claude; Codex는 탐지/큐만
 ```
 
-**Codex 는 마지막 줄만 아직 안 돈다**(#85). 편집 훅은 Codex 의 `apply_patch` 에 걸리는데,
+**Codex 는 마지막 줄의 탐지/큐만 등록된 상태다**(#85). 편집 훅은 Codex 의 `apply_patch` 에 걸리는데,
 패치 하나가 여러 파일을 건드리면 **그 파일들 전부**에 대해 규칙이 적용된다.
 
 **`routes.json` 이 없으면 두 번째가 아예 안 돈다.** 메모리를 만들어놓고 route 를 안 걸면
@@ -182,11 +182,11 @@ core/ 수정 → ./build.sh → plugins/harness (Claude) + plugins/codex (Codex)
 | | Claude | Codex |
 |---|---|---|
 | 스킬 | 7개 | 7개 |
-| 훅 | 4개 전부 | **3개** (`pr-merge-reflect` 만 이식 전) |
+| 훅 | 4개 전부 | **4개** (`pr-merge-reflect` 는 탐지/큐 단계) |
 | 호출 방식 | 슬래시 커맨드 | description 매칭 |
 | 훅 신뢰 | 불필요 | **필요** — 안 하면 무음으로 안 돎 |
 
-Codex 훅 나머지 3개는 이식 가능한 것까지 확인됐고 작업이 남아 있다(#85).
+Codex 머지 훅의 사용자 리마인더·자동 회고 단계는 설치 smoke test 뒤에 연다(#85).
 
 ### 알려진 버그
 

@@ -1,5 +1,6 @@
 import builtins
 import importlib.util
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -16,6 +17,19 @@ SPEC.loader.exec_module(pr_merge_reflect)
 
 
 class PrMergeReflectTest(unittest.TestCase):
+    def test_codex_payload_cwd_uses_git_toplevel_but_claude_env_stays_exact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            nested = root / "packages" / "api"
+            nested.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+            with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": ""}):
+                self.assertEqual(str(root.resolve()),
+                                 pr_merge_reflect._resolved_project_dir({"cwd": str(nested)}))
+            with patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(nested)}):
+                self.assertEqual(str(nested), pr_merge_reflect._resolved_project_dir({"cwd": str(root)}))
+
     def test_corrupt_state_is_reseeded_instead_of_replaying_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = pathlib.Path(tmp) / "state.json"
@@ -55,7 +69,7 @@ class PrMergeReflectTest(unittest.TestCase):
 
             save_state.assert_not_called()
             announce.assert_called_once_with(tmp)
-            sweep.assert_called_once_with(tmp)
+            sweep.assert_called_once_with(tmp, None)
 
     def test_post_tool_does_not_turn_corrupt_cache_into_empty_history(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,6 +265,39 @@ class PrMergeReflectTest(unittest.TestCase):
             self.assertEqual(ignored.returncode, 0)
             exclude = root / ".git" / "info" / "exclude"
             self.assertIn("packages/api/.claude/.cache/", exclude.read_text().splitlines())
+
+    def test_monorepo_prefix_gitignore_metacharacters_are_literal(self):
+        names = ["pkg[1]", "star*dir", "question?dir", "#hash", "!bang", "space dir",
+                 "back\\slash"]
+        for name in names:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                project = root / name / "api"
+                project.mkdir(parents=True)
+                subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+
+                pr_merge_reflect._ensure_local_cache_exclude(str(project))
+                cache_file = project / ".claude" / ".cache" / "reflect.log"
+                cache_file.parent.mkdir(parents=True)
+                cache_file.write_text("private", encoding="utf-8")
+
+                ignored = subprocess.run(
+                    ["git", "check-ignore", "--", str(cache_file.relative_to(root))],
+                    cwd=root, capture_output=True, text=True,
+                )
+                self.assertEqual(0, ignored.returncode, ignored.stderr)
+
+                # literal prefix가 비슷한 형제 경로까지 glob으로 삼키면 안 된다.
+                sibling_name = name.replace("*", "X").replace("?", "Z").replace("[1]", "1")
+                if sibling_name != name:
+                    sibling = root / sibling_name / "api" / ".claude" / ".cache" / "reflect.log"
+                    sibling.parent.mkdir(parents=True)
+                    sibling.write_text("unrelated", encoding="utf-8")
+                    overmatched = subprocess.run(
+                        ["git", "check-ignore", "--", str(sibling.relative_to(root))],
+                        cwd=root, capture_output=True, text=True,
+                    )
+                    self.assertEqual(1, overmatched.returncode, overmatched.stdout)
 
     def test_non_git_project_is_ignored(self):
         with tempfile.TemporaryDirectory() as tmp:
