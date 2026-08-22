@@ -126,14 +126,17 @@ done
 # matcher 는 **실측된 도구 이름**을 쓴다: 파일 편집=`apply_patch`, 셸=`Bash`(0.145.0).
 # rollout 로그에 보이는 `exec` 는 tool_use_id 접두사지 도구 이름이 아니다 — 로그로 정하지 말 것.
 # `Edit|Write` 도 matcher 로 받아준다고 문서에 있으나, 실측된 이름만 쓴다.
-# pr-merge-reflect 는 아직 안 올린다 — LLM 잡·seen 캐시가 붙어 있고 Codex 세션에서
-# Codex 회고를 또 띄우는 중복 정리가 선행이다(이슈 #85 3단계).
+# pr-merge-reflect 3a: SessionStart·PostToolUse 탐지/큐만 등록한다. UserPromptSubmit 은
+# 주입 성공을 실측하기 전 pending 을 지우면 알림을 잃으므로 미등록. reflect.py 도 번들하지
+# 않아 진행 중 Codex rollout의 즉시·중복 자동 회고 경로를 구조적으로 닫는다(#85).
 rm -rf plugins/codex/hooks
 mkdir -p plugins/codex/hooks
 cp core/hooks/project-memory-index.py core/hooks/memory-search.py core/hooks/reflection.py \
+   core/hooks/pr-merge-reflect.py \
    plugins/codex/hooks/
 # 편집 훅이 dirname(__file__) 에서 import 한다 — 번들되는 곳마다 함께 둔다.
 cp core/scripts/hook_io.py plugins/codex/hooks/hook_io.py
+cp core/scripts/repo_identity.py plugins/codex/hooks/repo_identity.py
 chmod +x plugins/codex/hooks/*.py
 {
   printf '%s\n' '{'
@@ -141,11 +144,13 @@ chmod +x plugins/codex/hooks/*.py
   printf '%s\n' '    "PreToolUse": ['
   printf '      { "matcher": "apply_patch|Bash", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command memory-search.py)"
   printf '%s\n' '    ],'
-  printf '%s\n' '    "PostToolUse": ['
-  printf '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command reflection.py)"
+    printf '%s\n' '    "PostToolUse": ['
+  printf '      { "matcher": "apply_patch", "hooks": [ { "type": "command", "command": "%s" } ] },\n' "$(hook_command reflection.py)"
+  printf '      { "matcher": "Bash", "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
-  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command project-memory-index.py)"
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] },\n' "$(hook_command project-memory-index.py)"
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ]'
   printf '%s\n' '  }'
   printf '%s\n' '}'

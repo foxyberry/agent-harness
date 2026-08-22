@@ -69,11 +69,12 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | | Claude Code | Codex |
 |---|---|---|
 | 스킬 | 7 | 7 |
-| 훅 | 4 | **3** (`pr-merge-reflect` 만 이식 전) |
+| 훅 | 4 | **4** (`pr-merge-reflect` 는 탐지/큐 단계) |
 
 편집 훅은 이제 Codex 에서도 돕니다. Codex 는 편집을 파일 경로와 새 내용이 아니라 `apply_patch`
-원문으로 넘겨서, 두 모양을 같은 모델로 바꾸는 정규화 단계를 뒀습니다. 남은 하나는 백그라운드
-LLM 잡을 띄우는 훅이라 별도 판단이 먼저입니다
+원문으로 넘겨서, 두 모양을 같은 모델로 바꾸는 정규화 단계를 뒀습니다. 머지 훅은 탐지와 공유
+큐 갱신까지만 이식했고, 사용자 프롬프트 주입과 백그라운드 LLM 잡은 설치 smoke test 전까지
+꺼 둡니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## 왜 만들었나
@@ -105,11 +106,11 @@ LLM 잡을 띄우는 훅이라 별도 판단이 먼저입니다
 | 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md` 를 컨텍스트에 주입 | ✅ | ✅ |
 | 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ✅ |
 | 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ✅ |
-| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | ⬜ |
+| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | 🟡 탐지/큐 등록, smoke 대기 |
 
-**Codex 는 마지막 줄만 아직 안 돕니다.** Codex 패치 하나가 여러 파일을 건드리면 그 파일들
-전부에 규칙이 적용됩니다. 남은 하나도 이식 가능하다는 것은 측정으로 확인했고, 작업만
-남아 있습니다 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+Codex 는 마지막 훅을 SessionStart와 Bash PostToolUse 탐지에만 등록합니다. 사용자 프롬프트
+전달과 자동 초안은 설치 smoke test 전까지 비활성입니다
+([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 훅 엔진은 `core/` 에 있고 generic 합니다. *어떤* 메모리를 넣고 *어떤* 규칙을 검사할지는 프로젝트의
 `.claude/memory/` 데이터가 정합니다. 데이터가 없으면 훅은 조용히 아무것도 안 합니다. 자동 회고는
@@ -177,18 +178,13 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 상태
 
-- 플러그인 버전: `0.5.0`
+- 플러그인 버전: `0.11.0`
 - Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료
-- 양쪽 어댑터에 스킬 12개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)
+- 양쪽 어댑터에 스킬 7개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)
 - 훅 발화와 컨텍스트 주입 검증 완료 — 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을
   직접 읽어 답한 경우를 배제했습니다
-- Codex 에는 `project-memory-index`·`memory-search`·`reflection` 이 올라가 있고(codex-cli
-  0.145.0), `pr-merge-reflect` 가 다음 작업입니다
-
-### 알려진 문제
-
-- [#81](https://github.com/foxyberry/agent-harness/issues/81) — `feedback-review` 가 `_pending`
-  과 과거 세션을 보지 않음
+- Codex 에는 훅 4개가 올라가 있고, `pr-merge-reflect` 는 설치 smoke test 전까지
+  탐지/큐 단계만 등록됩니다
 
 ## 문서
 
