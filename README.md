@@ -194,13 +194,40 @@ generated adapters are in sync.
 
 ## Documentation
 
+Every document in this repository is listed here. A test fails the build if one is added
+without a link, so nothing goes missing.
+
+**Using it**
+
 | Document | For |
 |---|---|
 | [docs/guide.md](docs/guide.md) | **Start here** — what to use, and when |
 | [docs/overview.html](docs/overview.html) | Illustrated design overview |
 | [docs/self-improvement-hooks.md](docs/self-improvement-hooks.md) | How the hooks work |
 | [docs/codex-hooks.md](docs/codex-hooks.md) | Codex hook contract and constraints |
-| [AGENTS.md](AGENTS.md) | This repository's own rules |
+
+**Adopting it in your project**
+
+| Document | For |
+|---|---|
+| [project-template/AGENTS.md](project-template/AGENTS.md) | Rules to merge into your project |
+| [project-template/.claude/memory/README.md](project-template/.claude/memory/README.md) | Memory layout and the tier split |
+| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | ADR schema for decision records |
+
+**This repository itself**
+
+| Document | For |
+|---|---|
+| [AGENTS.md](AGENTS.md) | This repository's own rules (canonical; `CLAUDE.md` imports it) |
+| [SECURITY.md](SECURITY.md) | How to report a vulnerability |
+| [README.ko.md](README.ko.md) | Korean translation of this file |
+
+**Records — point-in-time, not current how-to**
+
+| Document | For |
+|---|---|
+| [docs/decision-mining.md](docs/decision-mining.md) | Design for decision mining — **not built yet** ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
+| [docs/public-release-audit.md](docs/public-release-audit.md) | Security audit taken before going public (2026-08-06) |
 
 ## Security, license, contributing
 
