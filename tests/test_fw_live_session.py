@@ -14,6 +14,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -59,8 +60,10 @@ class _Fixture(unittest.TestCase):
         self.cdir.mkdir(parents=True)
 
         # 직전 세션 (오래됨) / live 세션 (최신) — mtime 정렬이면 live 가 이긴다.
-        self._write(PREV, "직전 작업이다", 1_785_000_000)
-        self._write(LIVE, "방금 켠 세션이다", 1_785_003_600)
+        # 상대 시각으로 — 고정 epoch 은 최근성 창(cutoff)이 지나면 스스로 깨진다.
+        base = time.time() - 86400.0
+        self._write(PREV, "직전 작업이다", base)
+        self._write(LIVE, "방금 켠 세션이다", base + 3600)
 
     def _write(self, stem, text, mtime):
         path = self.cdir / f"{stem}.jsonl"

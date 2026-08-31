@@ -16,6 +16,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -68,7 +69,9 @@ class _TwoProjects(unittest.TestCase):
         self.a = _git_init(base / "proj-a")
         self.b = _git_init(base / "proj-b")
         # B 를 더 최신으로 — 전역 mtime 정렬이면 B 가 이긴다.
-        self.now = 1_785_000_000.0
+        # 고정 epoch 을 쓰면 안 된다: rollout 탐색은 mtime 이 30일 안인 것만 읽으므로
+        # 박아둔 값은 그 날짜가 지나는 순간 코드 변경 없이 CI 를 깨뜨린다(실제로 깨졌다).
+        self.now = time.time() - 86400.0
         self._env = dict(os.environ)
         os.environ["HOME"] = str(self.home)
 
