@@ -6,6 +6,7 @@
 - 설계·구조 → [overview.html](overview.html)
 - 훅 내부 동작 → [self-improvement-hooks.md](self-improvement-hooks.md)
 - Codex 훅 제약 → [codex-hooks.md](codex-hooks.md)
+- 아직 안 지은 것의 설계 → [decision-mining.md](decision-mining.md)
 
 ---
 
@@ -159,6 +160,15 @@ PR 머지 후  → 회고 재촉 (pr-merge-reflect)                 ← Claude; 
 > 설치만으로 백그라운드 LLM 잡이 뜨지 않게 한 것이다. 그래서 지금까지 `_pending` 은 한 번도
 > 생긴 적이 없고, 메모리는 전부 `/memory-update` 로 수동 승격했다.
 
+사람이 **버린** 초안은 `.claude/memory/_rejected.md` 에 남아 같은 게 다시 후보로 올라오지
+않는다. 금지 목록은 아니다 — 같은 얘기가 반복돼 값어치가 생겼으면 **무엇이 달라졌는지**를
+붙여 다시 올린다.
+
+`_pending/` 과 `_rejected.md` 는 **세션 대화에서 뽑은 내용**이라 통째로 커밋되면 곤란하다.
+그래서 훅 엔진이 직접 `.git/info/exclude` 에 넣어 가린다 — `project-template/` 을 복사하지
+않은 사람도 보호받게 하기 위해서다. `.gitignore` 가 아니라 로컬 exclude 라서 남의 저장소
+설정을 건드리지 않는다.
+
 ---
 
 ## 5. 고칠 때 알아야 할 것
@@ -177,7 +187,7 @@ core/ 수정 → ./build.sh → plugins/harness (Claude) + plugins/codex (Codex)
 
 ---
 
-## 6. 지금 상태 (2026-08-17)
+## 6. 지금 상태 (2026-08-31)
 
 | | Claude | Codex |
 |---|---|---|
@@ -188,6 +198,5 @@ core/ 수정 → ./build.sh → plugins/harness (Claude) + plugins/codex (Codex)
 
 Codex 머지 훅의 사용자 리마인더·자동 회고 단계는 설치 smoke test 뒤에 연다(#85).
 
-### 알려진 버그
-
-- **#81** `/feedback-review` 가 `_pending` 과 과거 세션을 안 봄
+`/feedback-review` 가 현재 세션만 보던 문제(#81)는 고쳐졌다 — 이제 쌓인 `_pending` 초안은
+항상, 과거·반대 툴 세션은 **사람이 고른 것만** 후보에 들어온다.

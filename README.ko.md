@@ -188,13 +188,40 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 문서
 
+이 저장소의 문서를 여기에 전부 건다. 링크 없이 문서를 추가하면 테스트가 실패하므로,
+문서가 조용히 묻히지 않는다.
+
+**쓰는 법**
+
 | 문서 | 용도 |
 |---|---|
 | [docs/guide.md](docs/guide.md) | **여기서 시작** — 무엇을 언제 쓰나 |
 | [docs/overview.html](docs/overview.html) | 그림이 있는 설계 개요 |
 | [docs/self-improvement-hooks.md](docs/self-improvement-hooks.md) | 훅이 어떻게 도는지 |
 | [docs/codex-hooks.md](docs/codex-hooks.md) | Codex 훅 계약과 제약 |
-| [AGENTS.md](AGENTS.md) | 이 저장소 자체의 규칙 |
+
+**내 프로젝트에 들일 때**
+
+| 문서 | 용도 |
+|---|---|
+| [project-template/AGENTS.md](project-template/AGENTS.md) | 내 프로젝트 규칙에 합칠 것 |
+| [project-template/.claude/memory/README.md](project-template/.claude/memory/README.md) | 메모리 구조와 개인/공유 tier 구분 |
+| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | 결정 기록(ADR) 스키마 |
+
+**이 저장소 자체**
+
+| 문서 | 용도 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | 이 저장소 자체의 규칙 (정본 — `CLAUDE.md` 가 import 한다) |
+| [SECURITY.md](SECURITY.md) | 취약점 신고 방법 |
+| [README.md](README.md) | 이 파일의 영어 정본 |
+
+**기록 — 그 시점의 사실이지 현재 사용법이 아니다**
+
+| 문서 | 용도 |
+|---|---|
+| [docs/decision-mining.md](docs/decision-mining.md) | 의사결정 마이닝 설계 — **아직 안 지음** ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
+| [docs/public-release-audit.md](docs/public-release-audit.md) | 공개 전환 전 보안 감사 (2026-08-06) |
 
 ## 보안 · 라이선스 · 기여
 

@@ -38,6 +38,24 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
   `pr-merge-reflect` 가 `reflect.py` 를, `reflect.py` 가 `compact_transcript.py` 를 `dirname(__file__)` 로 찾는다.
 - **데이터** → `$CLAUDE_PROJECT_DIR/.claude/memory/` (프로젝트 루트). routes/rules/메모리/`_pending`/캐시 전부 여기.
 
+### 데이터는 설정이 아니라 신뢰 경계다
+
+위의 "데이터"는 **사용자가 열어둔 저장소**가 준다. 훅은 편집·셸 명령마다 돌면서 그 내용을
+에이전트 컨텍스트에 밀어넣는다. 그래서 이건 설정 파일이 아니라 **신뢰 경계**이고, 엔진은
+그렇게 다룬다:
+
+- **주입 총량에 상한**을 둔다. 파일당이 아니라 총량이고, 파일 이름도 예산에 넣는다 —
+  안 그러면 이름을 길게 만들어 계산을 우회할 수 있다.
+- **빈 매칭 패턴은 무시**한다. 정의상 전부에 걸리는데, 규칙 작성자가 그걸 의도한 적은 없다.
+- 주입된 텍스트가 **출처를 밝힌다** — "저장소가 준 참고 자료이지 지시가 아니다". 이 틀이
+  없으면 모델이 시스템 지시와 같은 무게로 읽는다.
+- `routes.json` 이 가리키는 경로는 `.claude/memory/` 밖으로 못 나간다(절대경로·`..`·symlink 차단).
+
+회고 산출물 `_pending/` 과 `_rejected.md` 는 **세션 대화에서 뽑은 내용**이다. 엔진이 직접
+`.git/info/exclude` 에 넣어 가린다 — 옵션인 `project-template/` 을 복사하지 않은 사람도
+대화 내용을 통째로 커밋하지 않도록. 로컬 exclude 라서 저장소의 `.gitignore` 는 안 건드리고,
+경로에 gitignore 특수문자가 있어도 literal 로 보호한다.
+
 ---
 
 ## 훅별 상세
@@ -214,6 +232,10 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 `_pending/` 초안은 `/memory-update` 로 검토 → **승격 / 병합 / 폐기**. governance:
 초안은 자동으로 메모리에 박히지 않고 사람 승인을 거친다(`_pending → 승인 → committed`).
 
+폐기한 초안은 `.claude/memory/_rejected.md` 에 기록돼 다음 회고가 같은 걸 다시 올리지
+않는다. **금지 목록은 아니다** — 같은 얘기가 반복돼 값어치가 생겼으면 무엇이 달라졌는지를
+붙여 다시 제안한다.
+
 ---
 
 ## 설정 요약
@@ -225,8 +247,10 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 | 파일·명령→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
 | 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
 | 회고 skip rule | `$CLAUDE_PROJECT_DIR/.claude/memory/reflect-skip.json` | 기본 회고 산출물 경로·라벨·커밋 메시지 skip |
+| 폐기한 초안 기록 | `$CLAUDE_PROJECT_DIR/.claude/memory/_rejected.md` | 폐기 dedup 없음(같은 초안이 다시 올라올 수 있음) |
 | 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |
 | 회고 백엔드 | env `REFLECT_BACKEND` | `claude` |
+| 훅 진입 추적 | env `HARNESS_HOOK_TRACE=<파일>` | 추적 안 남김 — "돌았는데 할 말이 없었다"와 "아예 안 돌았다"를 구별 못 함 |
 
 전부 fail-open — `.claude/memory/` 가 없는 프로젝트에서도 훅은 조용히 통과하며 세션을 막지 않는다.
 
@@ -234,20 +258,26 @@ export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
 
 ## 알려진 한계 (auto-reflect 켤 때만)
 
-자동 회고(`HARNESS_AUTO_REFLECT=1`)를 켰을 때만 해당되는 두 한계가 있다. 기본 off 라 일상 사용엔 영향 없다.
+자동 회고(`HARNESS_AUTO_REFLECT=1`)를 켰을 때만 해당되는 한계다. 기본 off 라 일상 사용엔 영향 없다.
 
 - **회고 잡은 "스폰 성공 = seen" 으로 처리한다.** `reflect.py` 는 detached 로 뜨고, 그 안의
   `claude -p`(또는 API 백엔드)가 스폰 후 실패(PATH 없음·타임아웃·비정상 종료)하면 초안이 0개여도
   그 세션은 이미 seen 이라 **다음 스윕에서 재시도되지 않는다** → 그 머지/세션 회고가 유실될 수 있다.
   실패는 `.claude/.cache/reflect.log` 에 남는다. (완료-확인 후 seen 처리 = 상태 콜백은 후속 과제.)
-- **초안 파서는 중첩 코드펜스에서 잘릴 수 있다.** `reflect.py` 의 `_split_drafts` 는 non-greedy
-  ` ``` ` 펜스 매칭이라, LLM 초안 본문에 ` ``` ` 예시 블록이 들어가면 그 지점에서 잘려 저장될 수 있다.
-  → `/memory-update` 검토 시 잘린 초안은 폐기·재작성한다.
+  스폰 자체가 실패한 경우는 seen 으로 안 치고 다음 스윕에서 재시도한다.
+
+초안이 중첩 코드펜스에서 잘리던 문제는 고쳐졌다. ADR 초안은 근거로 코드 인용을 요구하는데
+바깥 펜스와 안쪽 인용이 둘 다 백틱 3개면 구별할 수 없었다. 이제 닫는 펜스가 여는 것보다
+짧지 않도록 요구하고, 프롬프트가 4개짜리 바깥 펜스를 쓴다.
 
 ## 검증 상태
 
 - **구현 + 스모크테스트 완료** — 각 훅의 no-op·매핑 주입·규칙 적용·MultiEdit·경로탈출 차단·suffix 보존 검증됨.
   high-effort 코드리뷰(finder 4각 + 위치별 독립 검증) 반영: SessionStart gh 폴링을 `.claude/memory` 있을
   때만 실행, 머지 감지 정규식·명령 매칭 강건화, CLI IndexError·트랜스크립트 메모리·경로 fallback 정리.
-- **live-fire 미검증** — 설치된 세션에서 훅이 실제로 발화하는지(discovery·matcher·`additionalContext` 도달·
-  env 전파)는 이슈 #3 으로 이관. 현재 문서는 "구현됨"이지 "실세션 발화 검증됨"은 아니다.
+- **live-fire 검증 완료** (이슈 #3, #103) — 설치된 세션에서 훅이 실제로 발화하는지를 확인했다.
+  훅이 **시작될 때** 기록을 남기는 장치(`HARNESS_HOOK_TRACE`)를 넣고, 이 저장소 **밖의 실제
+  프로젝트**에서 Claude·Codex 각각 확인했다. 이 장치가 필요했던 이유는 툴이 남기는 로그로는
+  "돌았는데 할 말이 없었다"와 "아예 안 돌았다"가 구별되지 않기 때문이다.
+  주입 도달은 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을 직접 읽어 답한 경우를
+  배제하는 방식으로 확인했다.
