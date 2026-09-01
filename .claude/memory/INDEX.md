@@ -14,6 +14,8 @@
 - [committed-artifact-env-leak](committed-artifact-env-leak.md) — 커밋되는 산출물에 호스트명·절대경로 자동 삽입 금지; 기본 비공개 + 환경변수 opt-in
 - [squash-merge-consequences](squash-merge-consequences.md) — squash merge라 branch --merged 무력화; stacked PR은 base 머지 후 rebase
 - [cache-must-outlive-target](cache-must-outlive-target.md) — 캐시·alias 저장 위치: worktree/세션 안에 두지 말 것, worktree 상태는 .git 공통 디렉터리에
+- [no-absolute-time-in-fixtures](no-absolute-time-in-fixtures.md) — 최근성 창을 보는 코드의 테스트 fixture 에 절대 시각 금지; 날짜가 지나면 코드 변경 없이 CI 가 깨진다
+- [close-the-issue-close-the-doc](close-the-issue-close-the-doc.md) — "알려진 버그·미검증·한계"를 적었으면 그 이슈를 닫을 때 문서도 같은 PR 에서 고친다
 
 ## 결정 기록 (ADR)
 

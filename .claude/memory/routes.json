@@ -12,6 +12,10 @@
     { "contains": ["codex/"], "memory": ["plugin-release-updates.md"] },
     { "contains": ["handoff.py", "scripts/"], "memory": ["adapter-cross-project-testing.md"] },
     { "contains": ["handoff.py", "reflect.py"], "memory": ["committed-artifact-env-leak.md"] },
-    { "contains": ["repo_identity.py", ".cache", "cache_", "alias"], "memory": ["cache-must-outlive-target.md"] }
+    { "contains": ["repo_identity.py", ".cache", "cache_", "alias"], "memory": ["cache-must-outlive-target.md"] },
+    { "glob": "*/tests/*", "memory": ["no-absolute-time-in-fixtures.md"] },
+    { "glob": "*/docs/*", "memory": ["close-the-issue-close-the-doc.md"] },
+    { "glob": "*README*.md", "memory": ["close-the-issue-close-the-doc.md"] },
+    { "command_contains": ["gh issue close"], "memory": ["close-the-issue-close-the-doc.md"] }
   ]
 }
