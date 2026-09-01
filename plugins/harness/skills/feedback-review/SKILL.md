@@ -140,3 +140,5 @@ compact_transcript.py <고른 세션 경로> --require-attributed-user
 - 너무 구체적인 규칙보다는 일반화된 원칙 선호
 - 사용자 승인 없이 `CLAUDE.md` 나 skill 수정 금지
 - 승격 대상 피드백은 [[memory-update]] 로 메모리에 영속화하는 것과 연계
+- 승격 결과를 커밋할 때 메시지에 **`[skip reflect]`** 를 넣는다. 회고 산출물이라
+  다시 회고 대상이 되면 루프가 돈다 — 경로 기반 skip rule 이 새는 경우의 최후 방어선(#130)

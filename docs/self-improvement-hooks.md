@@ -188,16 +188,26 @@ PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조�
 
 ```json
 {
-  "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**"],
+  "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**",
+            "CLAUDE.md", "AGENTS.md", "**/CLAUDE.md", "**/AGENTS.md",
+            ".claude/agents/**", ".claude/skills/**"],
+  "ignore_paths": [".gitignore", "**/.gitignore", ".gitattributes", "**/.gitattributes"],
   "labels": ["skip-reflect", "no-reflect"],
   "commit_messages": ["[skip reflect]", "skip-reflect", "no-reflect"]
 }
 ```
 
 - `paths`: PR 변경 파일이 **전부** 이 패턴들에 매칭될 때 skip 한다(fnmatch).
+  회고 산출물은 `.claude/memory/**` 뿐 아니라 **교훈을 규칙으로 승격하는 자리**
+  (`CLAUDE.md`·`AGENTS.md`·`.claude/agents/**`·`.claude/skills/**`)로도 나간다.
+  fnmatch 라 `**/AGENTS.md` 는 하위 경로만 맞는다 — 루트 사본은 따로 적어야 한다.
+- `ignore_paths`: **판정에서 아예 빼는** 부수 파일. skip 경로도 코드도 아닌, 같이
+  딸려오는 것들(`.gitignore` 등). 이게 없으면 `.gitignore` 한 줄 때문에 위의 "전부"
+  조건이 깨져 회고 산출물이 작업 PR 로 판정된다(#130). 뺐더니 파일이 하나도 안 남으면
+  판단 근거가 없는 것이라 skip 하지 않는다(fail-open — 회고를 빠뜨리지 않는 쪽).
 - `labels`: PR 라벨이 하나라도 매칭되면 skip 한다(fnmatch, 대소문자 무시).
 - `commit_messages`: 커밋 메시지에 문자열이 하나라도 포함되면 skip 한다(대소문자 무시).
-- `"defaults": false` 를 두면 내장 기본값을 비우고 프로젝트 설정만 사용한다.
+- `"defaults": false` 를 두면 내장 기본값을 **모든 키에 대해** 비우고 프로젝트 설정만 사용한다.
 
 ### reflect.py + compact_transcript.py — 자동 회고 잡
 `pr-merge-reflect` 가 스폰하는 백그라운드 잡. 세션 트랜스크립트(Claude `.jsonl` / Codex rollout 둘 다)를

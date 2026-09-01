@@ -2,7 +2,19 @@
   "paths": [
     ".claude/memory/**",
     ".claude/handoff/**",
-    ".agents/skills/**"
+    ".agents/skills/**",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "**/CLAUDE.md",
+    "**/AGENTS.md",
+    ".claude/agents/**",
+    ".claude/skills/**"
+  ],
+  "ignore_paths": [
+    ".gitignore",
+    "**/.gitignore",
+    ".gitattributes",
+    "**/.gitattributes"
   ],
   "labels": [
     "skip-reflect",
