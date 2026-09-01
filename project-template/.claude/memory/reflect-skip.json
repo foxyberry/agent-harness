@@ -1,4 +1,5 @@
 {
+  "//": "엔진 기본값은 .claude/memory|handoff|.agents/skills 만 안다. CLAUDE.md·AGENTS.md·ignore_paths 는 프로젝트 판단이라 여기서 준다 — 그 파일 변경이 회고할 값어치가 있으면 빼라.",
   "paths": [
     ".claude/memory/**",
     ".claude/handoff/**",
