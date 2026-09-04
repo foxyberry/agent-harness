@@ -1,60 +1,63 @@
-# Codex 훅 — 공식 문서 정리 + 실측 보완
+# Codex hooks — the official contract, plus what we measured
 
-**1차 출처는 공식 문서다.** 이 문서는 그 요약이고, 우리가 직접 확인한 것만 "실측" 으로 구분해
-덧붙인다.
+**The official documentation is the primary source.** This is a summary of it, with anything
+we confirmed ourselves marked separately as **measured**.
 
-- 공식: <https://learn.chatgpt.com/docs/config-file/config-advanced>
-- 확인 시점: 2026-08-10 / codex-cli 0.145.0
+- Official: <https://learn.chatgpt.com/docs/config-file/config-advanced>
+- Checked: 2026-08-10 / codex-cli 0.145.0
 
-> **정정 이력:** 이 문서의 앞선 두 판은 바이너리 문자열과 rollout 로그 역추론으로 썼고,
-> **도구 이름을 틀렸다**(`exec` 라고 단정 → 실제 canonical 은 `Bash`·`apply_patch`).
-> 로그의 `exec` 는 code mode 내부 이름이라 훅 계층과 레이어가 다르다. 문서를 먼저 봤으면
-> 안 틀렸다. 역추론은 문서가 없을 때의 보조 수단이다.
+> **Correction history:** the first two versions of this document were written from binary
+> strings and by reverse-engineering rollout logs, and **got the tool names wrong** (asserted
+> `exec`; the actual canonical names are `Bash` and `apply_patch`). The `exec` in the logs is
+> an internal code-mode name, a different layer from hooks. Reading the docs first would have
+> avoided it. Reverse-engineering is what you do when there is no documentation.
 
-## 결론
+## Conclusion
 
-Codex 훅은 Claude 와 **형식이 거의 같다.** 훅 스크립트 본문은 대부분 손대지 않고 양쪽에서
-돌릴 수 있다. 다만 **커버리지 한계**와 **신뢰 절차**가 다르다.
+Codex hooks are **nearly the same shape** as Claude's. A hook script body can run on both
+sides largely untouched. What differs is the **coverage limits** and the **trust procedure**.
 
-## 이벤트
+## Events
 
-**턴 단위:** `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
+**Per turn:** `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
 `UserPromptSubmit`, `SubagentStop`, `Stop`
 
-**세션 단위:** `SessionStart`, `SubagentStart`, `SessionEnd`(⚠️ 아래 참조 — 발화 미검증)
+**Per session:** `SessionStart`, `SubagentStart`, `SessionEnd` (⚠️ see below — firing unverified)
 
-Claude 대비 `PermissionRequest`·`PreCompact`/`PostCompact`·`Stop`/`SubagentStop`·`SubagentStart`
-가 더 있다.
+Compared to Claude there are extras: `PermissionRequest`, `PreCompact`/`PostCompact`,
+`Stop`/`SubagentStop`, `SubagentStart`.
 
-> **`SessionEnd` — 목록에는 있으나 발화는 미검증.** 위 공식 문서 페이지의 이벤트 목록에는
-> `SessionEnd` 가 없다. 그런데 **Codex 의 `/hooks` 화면이 이 이벤트를 목록에 표시한다**
-> (`Right before a session ends`, 0.145.0). 바이너리 문자열에도 있다.
+> **`SessionEnd` — listed, but firing unverified.** The official page above does not list
+> `SessionEnd` among its events. Yet **Codex's `/hooks` screen shows it** (`Right before a
+> session ends`, 0.145.0), and it appears in the binary's strings.
 >
-> 다만 **실제로 발화하는 것을 관측하지는 못했다.** `/hooks` 에 보이는 것은 "설정 가능한
-> 이벤트"라는 뜻이지 "우리 환경에서 반드시 dispatch 된다"는 증명이 아니다.
-> **정리 작업(cleanup) 훅을 여기에 걸기 전에 반드시 실제 발화를 한 번 관측하라** — 안 뜨면
-> 무음으로 안 도는데, 세션 종료 훅은 안 돌아도 티가 안 난다.
+> But **we never observed it actually fire.** Appearing in `/hooks` means "this event is
+> configurable", not "it is guaranteed to dispatch in our environment."
+> **Observe it firing at least once before hanging cleanup work off it** — if it does not
+> fire it does nothing silently, and a session-end hook that never runs leaves no trace.
 >
-> 이 구분을 일반화하면: **열거형 항목**(이벤트 목록)은 문서가 불완전할 수 있어 실물 교차
-> 확인이 값싸지만, 그 결과는 "존재"까지만 말해준다. **계약**(도구 이름, 입출력 스키마)은
-> 실물 역추론이 특히 위험하다 — 이 문서의 앞선 판이 `tool_use_id` 접두사 `exec-` 를 도구
-> 이름으로 오인한 게 그 예다. 그리고 **"동작한다"는 발화 관측으로만 증명된다.**
+> Generalizing the distinction: **enumerations** (lists of events) can be incomplete in the
+> docs, so cross-checking against the real thing is cheap — but the result only tells you
+> something *exists*. **Contracts** (tool names, input/output schemas) are where reverse
+> engineering is especially dangerous — this document's earlier version mistaking the
+> `tool_use_id` prefix `exec-` for a tool name is the example. And **"it works" is proven
+> only by observing it fire.**
 
-## 도구 이름 (matcher 대상)
+## Tool names (what `matcher` matches)
 
-`matcher` 는 **도구 이름에 대한 정규식**이다. 생략하거나 `"*"`·`""` 이면 모든 발생에 매칭.
+`matcher` is a **regex over the tool name**. Omitted, `"*"`, or `""` matches every occurrence.
 
-| 이름 | 대상 |
+| Name | Covers |
 |---|---|
-| `Bash` | 셸 명령 |
-| `apply_patch` | 파일 편집 — matcher 는 `Edit`·`Write` 도 받는다 |
-| `mcp__<server>__<tool>` | MCP 도구 |
+| `Bash` | shell commands |
+| `apply_patch` | file edits — the matcher also accepts `Edit` and `Write` |
+| `mcp__<server>__<tool>` | MCP tools |
 
-⚠️ **rollout 로그에 보이는 `exec` 는 훅의 도구 이름이 아니다.** 실측으로 정체가 밝혀졌다 —
-훅 입력의 **`tool_use_id` 접두사**다(`exec-9fa03e9a-13d8-...`). `tool_name` 은 그와 별개로
-`Bash`·`apply_patch` 가 온다. 로그로 matcher 값을 정하지 말 것.
+⚠️ **The `exec` you see in rollout logs is not a hook tool name.** Measurement settled what it
+is: the **`tool_use_id` prefix** in the hook input (`exec-9fa03e9a-13d8-...`). `tool_name`
+arrives separately as `Bash` or `apply_patch`. Do not derive matcher values from logs.
 
-실제 입력 예시(발췌):
+Real input, abridged:
 
 ```json
 {"hook_event_name":"PreToolUse","tool_name":"Bash",
@@ -66,78 +69,80 @@ Claude 대비 `PermissionRequest`·`PreCompact`/`PostCompact`·`Stop`/`SubagentS
  "tool_use_id":"exec-9fa03e9a-13d8-438e-bb96-796a2717a0fe"}
 ```
 
-**`apply_patch` 의 `tool_input.command` 는 패치 원문 그대로다** — JS 래퍼가 아니다.
-`*** Begin Patch` / `*** Add File:` / `*** Update File:` / `*** Move to:` / `+` 라인을 그대로
-파싱하면 된다. `PostToolUse` 에는 `tool_response` 가 추가로 온다.
+**`apply_patch`'s `tool_input.command` is the raw patch text** — not a JS wrapper. Parse
+`*** Begin Patch` / `*** Add File:` / `*** Update File:` / `*** Move to:` / `+` lines directly.
+`PostToolUse` additionally carries `tool_response`.
 
-## ⚠️ 커버리지 한계 — 이게 가장 중요하다
+## ⚠️ Coverage limits — the most important section
 
 > `PreToolUse` and `PostToolUse` intercept **"simple" shell calls only**, not the newer
 > `unified_exec` mechanism or tools like `WebSearch`. — *"doesn't intercept all shell calls yet"*
 
-**실측 (2026-08-10, 실제 사용자 환경 / code mode 기본값):** `PreToolUse`·`PostToolUse` 둘 다
-**정상 발화했다.** 셸 실행과 `apply_patch` 편집 모두 잡혔고, matcher 도 정확히 매칭됐다.
+**Measured (2026-08-10, real user environment, code mode defaults):** both `PreToolUse` and
+`PostToolUse` **fired normally.** Shell execution and `apply_patch` edits were both caught, and
+matchers matched exactly.
 
-| 동작 | `tool_name` | 매칭된 matcher |
+| Action | `tool_name` | Matchers that matched |
 |---|---|---|
-| `echo hello` | `Bash` | matcher 없음, `Bash` |
-| 파일 생성 | `apply_patch` | matcher 없음, `apply_patch` |
+| `echo hello` | `Bash` | no matcher, `Bash` |
+| creating a file | `apply_patch` | no matcher, `apply_patch` |
 
-따라서 이 한계가 **평범한 셸·편집 호출에는 해당하지 않는다.** 다만 문서가 `unified_exec` 를
-명시적으로 제외하므로, 그 경로를 쓰는 환경에서는 여전히 안 걸릴 수 있다. 이식 시에는
-대상 환경에서 한 번 관측하는 게 안전하다 — **안 뜨는 걸 matcher 이름 문제로 오진하기 쉽다.**
+So this limit **does not apply to ordinary shell and edit calls.** The docs do explicitly
+exclude `unified_exec`, though, so environments using that path may still not be intercepted.
+When porting, observe it once in the target environment — **it is easy to misdiagnose "did not
+fire" as a matcher-name problem.**
 
-## 입력 (stdin JSON)
+## Input (stdin JSON)
 
-**공통:** `session_id`, `transcript_path`(nullable), `cwd`, `hook_event_name`, `model`,
-`permission_mode`(`default`|`acceptEdits`|`plan`|`dontAsk`|`bypassPermissions`)
+**Common:** `session_id`, `transcript_path` (nullable), `cwd`, `hook_event_name`, `model`,
+`permission_mode` (`default`|`acceptEdits`|`plan`|`dontAsk`|`bypassPermissions`)
 
-**턴 단위 추가:** `turn_id`
+**Added per turn:** `turn_id`
 
-**이벤트별:**
+**Per event:**
 
-| 이벤트 | 추가 필드 |
+| Event | Additional fields |
 |---|---|
-| `PreToolUse`/`PostToolUse` | `tool_name`, `tool_use_id`, `tool_input` (Bash·apply_patch 는 `command` 를 가진 객체) |
-| `PermissionRequest` | `tool_name`, `tool_input`(선택적 `description`) |
+| `PreToolUse`/`PostToolUse` | `tool_name`, `tool_use_id`, `tool_input` (for Bash and apply_patch, an object with `command`) |
+| `PermissionRequest` | `tool_name`, `tool_input` (optional `description`) |
 | `SessionStart`/`SubagentStart` | `source` / `agent_type`, `agent_id` |
 | `PreCompact`/`PostCompact` | `trigger` (`manual`\|`auto`) |
 | `Stop`/`SubagentStop` | `stop_hook_active`, `last_assistant_message` |
 
-## 출력 (stdout)
+## Output (stdout)
 
-공통: `continue`, `stopReason`, `systemMessage`, `suppressOutput`
+Common: `continue`, `stopReason`, `systemMessage`, `suppressOutput`
 
-| 이벤트 | 고유 출력 |
+| Event | Event-specific output |
 |---|---|
-| `PreToolUse` | `permissionDecision`(`allow`\|`deny`) + `permissionDecisionReason`, `additionalContext`, `updatedInput` |
+| `PreToolUse` | `permissionDecision` (`allow`\|`deny`) + `permissionDecisionReason`, `additionalContext`, `updatedInput` |
 | `PostToolUse` | `decision: "block"` + `reason`, `additionalContext` |
-| `UserPromptSubmit` | `decision: "block"` + `reason`; `additionalContext` 는 developer context 로 |
-| `SessionStart`/`SubagentStart` | 평문 stdout 이 developer context 가 된다. `hookSpecificOutput.additionalContext` JSON 도 동작 |
+| `UserPromptSubmit` | `decision: "block"` + `reason`; `additionalContext` becomes developer context |
+| `SessionStart`/`SubagentStart` | plain stdout becomes developer context. `hookSpecificOutput.additionalContext` JSON also works |
 
-평문 stdout 은 대부분의 이벤트에서 무시되고, `SessionStart`·`SubagentStart`·`UserPromptSubmit`
-에서만 컨텍스트로 들어간다.
+Plain stdout is ignored for most events; it becomes context only for `SessionStart`,
+`SubagentStart`, and `UserPromptSubmit`.
 
-## exit code
+## Exit codes
 
-| 코드 | 의미 |
+| Code | Meaning |
 |---|---|
-| `0` + JSON | 성공, 출력 파싱 |
-| `0` + 출력 없음 | 성공, 그대로 진행 |
-| **`2`** | **차단/거부** — 사유는 stderr 에 |
-| 그 외 non-zero | 훅 실패로 보고 |
+| `0` + JSON | success, output parsed |
+| `0` + no output | success, proceed unchanged |
+| **`2`** | **block/deny** — reason goes on stderr |
+| any other non-zero | reported as hook failure |
 
-## 설정 위치 (우선순위 순)
+## Where configuration lives (in precedence order)
 
-1. `~/.codex/hooks.json` 또는 `~/.codex/config.toml` 의 `[hooks]` (user)
-2. `<repo>/.codex/hooks.json` 또는 `<repo>/.codex/config.toml` 의 `[hooks]` (project)
-3. 플러그인 번들 `hooks/hooks.json` 또는 매니페스트가 지정한 경로
+1. `~/.codex/hooks.json`, or `[hooks]` in `~/.codex/config.toml` (user)
+2. `<repo>/.codex/hooks.json`, or `[hooks]` in `<repo>/.codex/config.toml` (project)
+3. A plugin's bundled `hooks/hooks.json`, or the path its manifest names
 
-한 레이어에 `hooks.json` 과 인라인 `[hooks]` 가 둘 다 있으면 병합하고 경고한다.
+When one layer has both a `hooks.json` and an inline `[hooks]`, they are merged with a warning.
 
-플러그인은 매니페스트에 `"hooks": "./hooks/hooks.json"` 로 등록한다(실측).
+A plugin registers via `"hooks": "./hooks/hooks.json"` in its manifest (measured).
 
-TOML 인라인 형태:
+Inline TOML form:
 
 ```toml
 [[hooks.PreToolUse]]
@@ -150,303 +155,333 @@ timeout = 30
 statusMessage = "Checking Bash command"
 ```
 
-`$(git rev-parse --show-toplevel)` 는 **문서가 쓰는 관용구**다.
+`$(git rev-parse --show-toplevel)` is **the idiom the docs themselves use**.
 
-## 신뢰(trust) — 안 하면 무음으로 건너뛴다
+## Trust — without it, hooks are skipped silently
 
-- **프로젝트 훅**(`<repo>/.codex/`): `.codex/` 레이어가 신뢰돼야 로드된다. 명시적 검토·신뢰 필요.
-  신뢰는 **훅 해시 기준**으로 기록되므로 **내용이 바뀌면 재검토**가 뜬다.
-- **user/system 훅**: 프로젝트가 미신뢰여도 자기 레이어에서 로드된다. 검토·신뢰 절차는 동일.
-- **managed 훅**(`requirements.toml`·MDM·정책): 정책상 신뢰 처리, 사용자가 못 끈다.
-- **우회**: `--dangerously-bypass-hook-trust` (검증된 훅에만).
+- **Project hooks** (`<repo>/.codex/`): load only once the `.codex/` layer is trusted, which
+  requires explicit review. Trust is recorded **against the hook's hash**, so **changing the
+  content re-triggers review**.
+- **User/system hooks**: load from their own layer even when the project is untrusted. Same
+  review and trust procedure.
+- **Managed hooks** (`requirements.toml`, MDM, policy): trusted by policy; users cannot disable them.
+- **Bypass**: `--dangerously-bypass-hook-trust` (only for hooks you have verified).
 
-⚠️ 미신뢰 훅은 **에러도 경고도 없이** 건너뛴다. 설치 성공처럼 보이므로 사용자 안내에 반드시
-포함해야 한다.
+⚠️ An untrusted hook is skipped **with no error and no warning**. The install looks successful,
+so this must be part of any user-facing instructions.
 
-### `codex exec`(비대화형) + **아직 신뢰 안 된 훅** = 무응답
+### `codex exec` (non-interactive) + a **not-yet-trusted** hook = no response
 
-신뢰는 **훅 해시 기준으로 저장**된다(위 참조). 그러니 이미 신뢰한 훅은 비대화형에서도 그냥
-돈다 — 이 저장소의 설치 플러그인 훅이 플래그 없는 `codex exec` 에서 정상 실행되는 걸 확인했다.
+Trust is **stored against the hook's hash** (above), so an already-trusted hook just runs
+non-interactively — we confirmed this repository's installed plugin hooks running under a plain
+`codex exec` with no flags.
 
-문제는 **아직 신뢰가 없는 훅**이다. 새로 만든 `.codex/hooks.json`, 또는 신뢰 이후 **내용이
-바뀐** 훅. 이때 `codex exec` 은 **출력 없이 무한정 멈춘다.** 승인 화면을 띄울 터미널이 없어서
-신뢰 대기에 걸린 것으로 보인다.
+The problem is a hook that has **no trust yet**: a newly written `.codex/hooks.json`, or a hook
+whose **content changed** after being trusted. In that case `codex exec` **hangs indefinitely
+with no output.** It appears to be waiting on trust with no terminal to render the approval
+screen.
 
-실측(2026-08-18, codex-cli 0.147.0). 같은 프롬프트로 변수 하나만 바꿨다:
+Measured 2026-08-18, codex-cli 0.147.0. Same prompt, one variable changed:
 
-| 조건 | 결과 |
+| Condition | Result |
 |---|---|
-| 빈 디렉터리 (설치 플러그인 훅만, **신뢰됨**) | 몇 초 만에 응답, 훅 실행됨 |
-| 새로 만든 `.codex/hooks.json` (**미신뢰**, 내용은 `echo` 한 줄) | 100초 넘게 출력 없음 |
-| 위 + `--dangerously-bypass-hook-trust` | 몇 초 만에 응답, 훅도 실행됨 |
+| empty directory (installed plugin hooks only, **trusted**) | responded in seconds, hooks ran |
+| freshly written `.codex/hooks.json` (**untrusted**, body is one `echo`) | no output after 100+ seconds |
+| the above + `--dangerously-bypass-hook-trust` | responded in seconds, hooks ran |
 
-훅 내용은 아무 일도 안 하는 `echo` 다. **신뢰가 없다는 것**이 조건이지 훅이 뭘 하느냐가 아니다.
+The hook body is an `echo` that does nothing. **The absence of trust** is the condition, not
+what the hook does.
 
-**"느린 것"과 구별하는 법:** 성공한 `codex exec` 은 `~/.codex/sessions/<날짜>/` 에 rollout
-로그를 남긴다. 멈춘 실행은 **로그를 하나도 안 남긴다** — 세션이 시작되기 전에 멈춘 것이다.
+**Telling this apart from "just slow":** a successful `codex exec` leaves a rollout log under
+`~/.codex/sessions/<date>/`. A hung run **leaves no log at all** — it stopped before the session
+began.
 
-**어떻게 풀 것인가 — 순서대로:**
+**How to resolve it, in order:**
 
-1. **먼저 대화형 `codex` 로 한 번 열어 훅을 신뢰한다.** 그러면 이후 비대화형 실행이 플래그
-   없이 돈다. 신뢰가 해시 기준이므로 **훅을 고칠 때마다 다시** 해야 한다.
-2. 사람이 승인할 수 없는 자동화(CI 등)에서만 `--dangerously-bypass-hook-trust` 를 쓴다.
+1. **Open interactive `codex` once and trust the hook.** Non-interactive runs then work with no
+   flags. Because trust is hash-based, this has to be **redone every time you edit the hook**.
+2. Use `--dangerously-bypass-hook-trust` only in automation where no human can approve (CI).
 
-⚠️ **이 플래그를 비대화형의 기본으로 삼지 말 것.** 훅 출처 검증을 끄는 것이고, **모르는 사이
-훅 내용이 바뀐 경우까지 통과**시킨다. 그게 신뢰 절차가 막으려는 바로 그 상황이다.
-직접 작성했거나 출처를 검증한 훅에만 쓴다.
+⚠️ **Do not make that flag the default for non-interactive runs.** It disables provenance
+verification of hooks, and it will **let through a hook whose content changed without your
+knowledge** — precisely the situation the trust procedure exists to catch. Use it only for hooks
+you wrote or whose provenance you verified.
 
-⚠️ 이걸로 훅 동작을 시험하려다 결과가 엇갈렸다 — 어떤 훅은 플래그를 줘도 안 떴고, 하나는
-그래도 멈췄다. `codex exec` 에서 프로젝트 훅이 실제로 도는 조건은 아직 모른다(이슈 #114).
-**훅이 뜨는지를 시험할 환경으로는 신뢰하지 말 것.** 이 플래그가 고쳐 주는 건 "멈춤"까지다.
+⚠️ Trying to test hook behavior with this flag gave mixed results — some hooks did not fire even
+with it, and one still hung. The conditions under which project hooks actually run under
+`codex exec` are still unknown ([#114](https://github.com/foxyberry/agent-harness/issues/114)).
+**Do not trust it as an environment for testing whether hooks fire.** What this flag fixes is
+the hang, and only that.
 
-## 시끄러운 실패 — 훅이 도구 호출을 막는다
+## Loud failure — a hook blocking tool calls
 
-훅이 실패하는 방식은 둘이다. 위의 **조용한** 쪽(미신뢰 → 무음 skip)만 알고 있으면, 시끄러운
-쪽을 만났을 때 원인을 엉뚱한 데서 찾는다.
+Hooks fail in two ways. Knowing only the **quiet** one above (untrusted → silent skip) means
+looking in the wrong place when you meet the loud one.
 
-**`command` 가 exit 2 를 내면 그 도구 호출이 차단된다.** 계약대로다(위 exit code 표). 문제는
-**의도치 않게 2 가 나오는 경로**가 있다는 것이다.
+**If `command` exits 2, that tool call is blocked.** That is the contract (see the exit code
+table). The problem is that there are **paths where 2 arrives unintentionally.**
 
 ```
-$ python3 /없는/경로.py ; echo $?
+$ python3 /nonexistent/path.py ; echo $?
 2
 ```
 
-`python3` 은 파일을 못 열면 **exit 2** 를 낸다. 훅 계약의 "차단"과 **같은 숫자**다. 그래서
-`command` 가 맨 `python3 <경로>` 이면, 파이썬의 *"그 파일 못 열어"* 가 그대로 Codex 에
-*"이 명령 거부해"* 로 전달된다.
+`python3` exits **2** when it cannot open a file — **the same number** as the hook contract's
+"block". So when `command` is a bare `python3 <path>`, Python's *"I can't open that file"*
+reaches Codex as *"deny this command."*
 
-실제로 났다(#107). 플러그인이 업데이트되면 옛 버전 캐시 디렉터리가 지워지는데, **그 전에
-시작된 세션은 그 경로를 그대로 물고 있다.** 그 세션의 셸 명령이 전부 막혔다:
+It happened ([#107](https://github.com/foxyberry/agent-harness/issues/107)). Updating a plugin
+deletes the old version's cache directory, and **a session started before the update keeps
+pointing at that path.** Every shell command in that session was blocked:
 
 ```
 ERROR Command blocked by PreToolUse hook:
   can't open file '.../agent-harness/0.7.1/hooks/memory-search.py': No such file or directory
 ```
 
-증상이 원인을 안 가리킨다 — 에러는 훅 스크립트를 지목하고, 경로에 이제 없는 버전 번호가
-박혀 있어 파일이 깨진 것처럼 읽힌다. "1분 전에 플러그인을 업데이트했다"를 떠올릴 단서가 없다.
+The symptom does not point at the cause — the error names the hook script, and the path carries
+a version number that no longer exists, so it reads like a corrupted file. Nothing suggests
+"you updated the plugin a minute ago."
 
-**대응:** `command` 를 셸 가드로 감싼다. 이 저장소는 `build.sh` 의 `hook_command()` 가
-전부 이렇게 생성한다.
+**The fix:** wrap `command` in a shell guard. In this repository `hook_command()` in `build.sh`
+generates every one of them this way.
 
 ```sh
-p="${CLAUDE_PLUGIN_ROOT}/hooks/<스크립트>"; if [ -f "$p" ]; then python3 "$p"; fi
+p="${CLAUDE_PLUGIN_ROOT}/hooks/<script>"; if [ -f "$p" ]; then python3 "$p"; fi
 ```
 
-| 경우 | exit | 결과 |
+| Case | exit | Result |
 |---|---|---|
-| 스크립트 없음 | `0` | 조용히 지나감 — 차단 안 됨 |
-| 정상 | `0` + 출력 | 그대로 |
-| 훅이 의도적으로 `exit 2` | `2` | **차단 기능 유지** |
-| 훅 버그로 `exit 1` | `1` | 실패 보고, 그대로 |
+| script missing | `0` | passes quietly — nothing blocked |
+| normal | `0` + output | unchanged |
+| hook deliberately exits 2 | `2` | **blocking still works** |
+| hook bug exits 1 | `1` | reported as failure, proceeds |
 
-⚠️ **`if` 형태여야 한다.** 흔한 `python3 "$p" || exit 0` 도 파일 없음은 막지만, 훅이
-**의도적으로 낸 exit 2 까지 삼킨다.** 지금은 차단하는 훅이 없어 티가 안 나지만, 나중에 하나
-만들면 그 차단이 조용히 무력화된다. `if` 는 1·2 를 손대지 않고 통과시킨다.
+⚠️ **It has to be the `if` form.** The common `python3 "$p" || exit 0` also handles the missing
+file, but it **swallows a deliberate exit 2 as well.** No hook blocks anything today so nothing
+would look wrong, but the first one that does would be silently disarmed. The `if` form passes 1
+and 2 through untouched.
 
-**이 위험은 실질적으로 Codex 쪽이다** — 두 툴의 캐시 정리 방식이 반대다(2026-08-17 실측).
+**In practice this risk is Codex-side** — the two tools clean up caches in opposite ways
+(measured 2026-08-17).
 
-| | 0.8.0 → 0.8.1 업데이트 후 캐시 |
+| | Cache after updating 0.8.0 → 0.8.1 |
 |---|---|
-| Claude | `0.6.0` `0.7.0` `0.7.1` `0.8.0` `0.8.1` `56a1882` — **옛 버전을 보관** |
-| Codex | `0.8.1` 하나 — **옛 버전을 삭제** |
+| Claude | `0.6.0` `0.7.0` `0.7.1` `0.8.0` `0.8.1` `56a1882` — **keeps old versions** |
+| Codex | `0.8.1` alone — **deletes old versions** |
 
-Claude 쪽은 아무것도 참조하지 않는 `0.6.0`·`0.7.1` 까지 남아 있다. 즉 참조 계수로 지우는
-것도 아니고 그냥 보관한다. 그래서 업데이트해도 **돌고 있던 세션의 경로가 계속 유효**하고,
-dangling 경로가 생기지 않는다. Codex 는 `0.8.0` 이 실제로 사라졌다.
+On the Claude side even `0.6.0` and `0.7.1`, which nothing references, are still there — so it
+is not reference counting, it simply keeps them. An update therefore leaves **a running
+session's paths still valid**, and no dangling path appears. On Codex, `0.8.0` was actually gone.
 
-가드는 **양쪽 다**에 넣는다. Claude 의 보관 동작은 문서화된 계약이 아니라 관측이고, 언제
-바뀌어도 우리가 알 방법이 없다. 가드는 비용이 없으므로 관측에 기대지 않는다.
+The guard goes in on **both sides** regardless. Claude's retention is an observation, not a
+documented contract, and we would have no way to learn if it changed. The guard costs nothing,
+so it does not lean on the observation.
 
-`tests/test_hook_wiring.py` 가 이걸 지킨다 — 등록된 `command` 문자열을 **셸에서 그대로
-실행**해서, 스크립트가 없을 때 exit 2 가 아닌지 확인한다.
+`tests/test_hook_wiring.py` enforces this — it takes the registered `command` strings and
+**runs them in a shell**, checking that a missing script does not produce exit 2.
 
-## 환경 변수
+## Environment variables
 
-**플러그인 훅:** `PLUGIN_ROOT`, `PLUGIN_DATA` (Codex 고유) + `CLAUDE_PLUGIN_ROOT`,
-`CLAUDE_PLUGIN_DATA` (**호환 별칭**)
+**Plugin hooks:** `PLUGIN_ROOT`, `PLUGIN_DATA` (Codex-specific) plus `CLAUDE_PLUGIN_ROOT`,
+`CLAUDE_PLUGIN_DATA` (**compatibility aliases**)
 
-**모든 훅:** 세션 `cwd` 가 작업 디렉터리로 설정된다.
+**All hooks:** the session `cwd` is set as the working directory.
 
-⚠️ **`CLAUDE_PROJECT_DIR` 은 주어지지 않는다**(실측). 프로젝트 경로는 입력 JSON 의 `cwd` 로
-얻는다. 프로세스 cwd 가 플러그인 루트가 아니므로 **상대경로 `command` 는 실패**한다(실측) —
-`${CLAUDE_PLUGIN_ROOT}` 기준 절대경로나 문서의 `$(git rev-parse ...)` 관용구를 쓴다.
+⚠️ **`CLAUDE_PROJECT_DIR` is not provided** (measured). Get the project path from `cwd` in the
+input JSON. The process cwd is not the plugin root, so a **relative-path `command` fails**
+(measured) — use an absolute path based on `${CLAUDE_PLUGIN_ROOT}`, or the docs'
+`$(git rev-parse ...)` idiom.
 
-이 해석 순서의 정본은 `core/scripts/hook_io.py` 의 `project_dir(data)` 다. 각 훅에서 같은
-fallback 을 다시 쓰지 말고 이 helper 를 사용한다. `build.sh` 가 `hook_io.py` 를 양쪽 어댑터의
-훅 디렉터리에 함께 복사한다.
+The canonical version of this resolution order is `project_dir(data)` in
+`core/scripts/hook_io.py`. Use that helper rather than re-implementing the fallback in each
+hook. `build.sh` copies `hook_io.py` into both adapters' hook directories.
 
-## 기타 제약
+## Other constraints
 
-- `type: "command"` 만 실행된다. `prompt`·`agent` 타입은 파싱만 하고 건너뛴다.
-- async command 훅은 파싱되나 실행되지 않는다.
-- 기본 타임아웃 600초, `timeout`(초)로 조정.
-- 같은 이벤트에 매칭된 훅 여러 개는 **동시 실행**되며 서로를 막을 수 없다.
-- `PreToolUse` 는 완전한 강제가 아니다 — 다른 도구로 우회 가능.
+- Only `type: "command"` runs. `prompt` and `agent` types are parsed and skipped.
+- Async command hooks are parsed but not executed.
+- Default timeout is 600 seconds, adjustable with `timeout` (seconds).
+- Several hooks matching the same event run **concurrently** and cannot block each other.
+- `PreToolUse` is not a complete enforcement point — it can be bypassed with another tool.
 
-## 주입 검증법 (재현용)
+## How to verify injection (reproducible)
 
-훅이 실제로 컨텍스트를 주입했는지는 **모델이 파일을 직접 읽어서 답한 것과 구별해야** 한다.
-canary 문자열을 `.claude/memory/INDEX.md` 에만 두고 훅 켬/끔 두 번 돌린다.
+Whether a hook actually injected context **must be distinguished from the model simply reading
+the file itself.** Put a canary string only in `.claude/memory/INDEX.md` and run twice, hooks off
+and on.
 
 ```bash
-export CODEX_HOME=<격리 경로>            # 실제 ~/.codex 오염 방지
+export CODEX_HOME=<isolated path>        # keep the real ~/.codex clean
 codex plugin marketplace add <repo>
 codex plugin add agent-harness@foxyberry
 
-P="세션 시작 시 주어진 컨텍스트에 canary 가 있으면 그것만 출력. 파일 읽지 마. 없으면 NONE."
-codex exec "$P"                                    # 대조군(훅 무시) → NONE
-codex exec --dangerously-bypass-hook-trust "$P"    # 실험군(훅 실행) → CANARY
+P="If the context given at session start contains a canary, print only that. Do not read files. If not, print NONE."
+codex exec "$P"                                    # control (hooks ignored) → NONE
+codex exec --dangerously-bypass-hook-trust "$P"    # treatment (hooks run)  → CANARY
 ```
 
-실측 결과가 `NONE` / `SPIKE_CANARY_12345` 로 갈렸다. **"파일을 읽지 마"를 넣지 않으면 모델이
-그냥 읽어버려서 실험이 무의미해진다.**
+The measured results split as `NONE` / `SPIKE_CANARY_12345`. **Without "do not read files" the
+model just reads it and the experiment means nothing.**
 
-⚠️ **격리 `CODEX_HOME` 에 `auth.json` 을 복사하지 마라.** refresh token 은 1회용이라 원본과
-경쟁해 양쪽 다 깨질 수 있다. 격리 홈에서는 `codex login` 을 따로 한다.
+⚠️ **Do not copy `auth.json` into the isolated `CODEX_HOME`.** The refresh token is single-use;
+it will race with the original and can break both. Run `codex login` separately in the isolated
+home.
 
-검증은 harness repo **밖** 별도 프로젝트에서 한다([[adapter-cross-project-testing]]).
+Do this in a project **outside** the harness repo ([[adapter-cross-project-testing]]).
 
-## 무음 실패 잡기 (이슈 #85 4단계)
+## Catching silent failures (issue #85, stage 4)
 
-훅이 안 돌아도 화면에는 아무 일도 안 일어난다. "안 돌았다"와 "돌았는데 할 말이 없었다"가
-바깥에서 똑같이 생겼기 때문이다. 그래서 두 겹으로 나눠 본다.
+When a hook does not run, nothing happens on screen — because "did not run" and "ran and had
+nothing to say" look identical from outside. So it is checked in two layers.
 
-### 1. 저장소 안 — 배선 테스트
+### 1. Inside the repository — wiring tests
 
-`tests/test_hook_wiring.py` 가 `plugins/*/hooks/hooks.json` 을 읽어 확인한다.
+`tests/test_hook_wiring.py` reads `plugins/*/hooks/hooks.json` and checks:
 
-| 실패 모드 | 어떻게 잡나 |
+| Failure mode | How it is caught |
 |---|---|
-| hooks.json 경로 오타 | 등록된 스크립트가 그 번들에 실제로 있나 |
-| helper cp 누락(`hook_io`·`repo_identity`) | 등록된 훅을 **번들 디렉토리에서** 실행해 exit 0 확인 |
-| matcher 불일치 | matcher 가 실측 도구 이름(`Edit`/`Write`/`MultiEdit`/`Bash`, `apply_patch`/`Bash`)을 덮나 |
-| 정규화는 되는데 훅이 안 뜸 | 편집 픽스처의 `tool_name` 을 편집 훅 matcher 가 받나 |
+| typo in a hooks.json path | is the registered script actually in that bundle |
+| missing helper copy (`hook_io`, `repo_identity`) | run the registered hook **from the bundle directory** and check exit 0 |
+| matcher mismatch | do the matchers cover the measured tool names (`Edit`/`Write`/`MultiEdit`/`Bash`, `apply_patch`/`Bash`) |
+| normalization works but the hook never fires | does the edit hook's matcher accept the edit fixture's `tool_name` |
 
-도구 이름 목록은 matcher 에서 뽑지 않는다 — 그러면 자기가 자기를 검사하는 순환이라 아무것도
-못 잡는다. 출처는 이 문서의 실측표다.
+The tool-name list is not derived from the matchers — that would be the check examining itself
+and would catch nothing. Its source is the measured table in this document.
 
-이 테스트는 생성물(`plugins/*/hooks/hooks.json`)을 읽으므로 `./build.sh` 를 안 돌리면 실패한다.
-그건 고장이 아니라 빌드 드리프트 감지다.
+These tests read generated files (`plugins/*/hooks/hooks.json`), so they fail if `./build.sh`
+was not run. That is not a breakage; it is build-drift detection.
 
-### 왜 자체 계기가 필요한가 — 툴 로그로는 안 된다
+### Why we need our own instrumentation — tool logs are not enough
 
-"훅이 돌았나"를 툴이 남기는 로그로 알 수 없나? 실측으로 확인했다(2026-08-15, `tutti-dpnc`).
+Can't we tell whether a hook ran from the logs the tools write? We measured it (2026-08-15,
+`tutti-dpnc`).
 
-**Codex rollout 로그**: 훅 실행 기록이 **아예 없다.** 훅이 주입한 텍스트는 대화의 일부로
-들어가지만, 어떤 훅이 넣었는지도 훅이 돌았다는 사실도 안 남는다.
+**Codex rollout logs**: contain **no record of hook execution at all.** Text a hook injected
+becomes part of the conversation, but neither which hook put it there nor the fact that a hook
+ran survives.
 
-**Claude 세션 `.jsonl`**: 남긴다. `type: attachment` 항목에 `hookEvent` 와 훅 stdout 원문이
-통째로 들어간다. 그런데 **일부만** 남는다 — 같은 세션의 trace 와 대조한 결과:
+**Claude session `.jsonl`**: does record them. `type: attachment` entries carry `hookEvent` and
+the hook's raw stdout. But **only some of them** — compared against a trace from the same session:
 
-| 이벤트 | 실제 발화(trace) | Claude 로그 |
+| Event | Actually fired (trace) | Claude log |
 |---|---|---|
 | SessionStart | 2 | 3 |
 | UserPromptSubmit | 3 | 0 |
 | PreToolUse | 3 | 0 |
 | PostToolUse | 3 | 1 |
 
-빠진 것들의 공통점은 **주입할 게 없어서 조용히 끝난 실행**이다. `memory-search` 는 세 번 다
-떴지만 걸리는 라우트가 없어 아무것도 안 냈고, 그래서 안 남았다. 정황상 **출력을 낸 실행만
-기록**하는 것으로 보인다(규칙 자체를 확인하진 않았다. 다만 이벤트 종류로 거르는 건 아니다 —
-PostToolUse 는 기록되는 이벤트인데도 3번 중 1번만 남았다).
+What the missing ones have in common is that they are **runs that ended quietly with nothing to
+inject.** `memory-search` fired all three times but matched no route, produced nothing, and so
+was not recorded. Circumstantially it appears **only runs that produced output** are logged (we
+did not confirm the rule itself; it is not filtering by event type, though — `PostToolUse` is a
+logged event and still only 1 of 3 survived).
 
-**결론:**
+**Conclusion:**
 
-| 알고 싶은 것 | Codex 로그 | Claude 로그 | `HARNESS_HOOK_TRACE` |
+| What you want to know | Codex log | Claude log | `HARNESS_HOOK_TRACE` |
 |---|---|---|---|
-| 돌았고 뭔가 주입했다 | 역추론 가능 | ✅ | ✅ |
-| 돌았지만 조용했다 | ❌ | ❌ | ✅ |
-| 아예 안 돌았다 | ❌ | ❌ | ✅ |
+| it ran and injected something | inferable | ✅ | ✅ |
+| it ran but stayed quiet | ❌ | ❌ | ✅ |
+| it never ran | ❌ | ❌ | ✅ |
 
-양쪽 로그 다 **"조용히 돈 것"과 "안 돈 것"을 구별해 주지 못한다.** 그게 정확히 우리가 3주간
-못 알아챈 실패 모드다. Claude 로그는 부분적 대체재는 되지만 **부재를 증명하지는 못한다.**
+Neither log **distinguishes "ran quietly" from "never ran"** — which is exactly the failure mode
+we missed for three weeks. The Claude log is a partial substitute, but it **cannot prove absence.**
 
-### 2. 저장소 밖 — 진입 추적 (`HARNESS_HOOK_TRACE`)
+### 2. Outside the repository — entry tracing (`HARNESS_HOOK_TRACE`)
 
-설치본이 미신뢰라 skip 되는 것, 실제 툴이 훅을 정말 띄우는지는 **설치 상태·런타임**이라
-이 저장소의 테스트가 볼 수 없다. 대상 프로젝트에서 관측한다.
+Whether an installed copy is skipped for being untrusted, and whether the tool really launches
+hooks, are **install-state and runtime** questions this repository's tests cannot see. Observe
+them in a target project.
 
-`HARNESS_HOOK_TRACE` 에 경로를 주면 등록된 훅이 **진입 시점에** 한 줄씩 JSONL 로 남긴다.
-`emit_context` 가 아니라 진입에 남기는 게 핵심이다 — 주입 시점에 남기면 "돌았는데 라우트에
-안 걸린" 경우와 "아예 안 돈" 경우가 또 같아져서 아무것도 못 가린다. 환경변수가 없으면
-아무 일도 안 한다(평소 비용 0).
+Point `HARNESS_HOOK_TRACE` at a path and every registered hook appends one JSONL line **on
+entry**. Writing it on entry rather than in `emit_context` is the whole point — logging at
+injection time would again collapse "ran but matched no route" and "never ran" into the same
+thing, distinguishing nothing. With the variable unset it does nothing (zero everyday cost).
 
 ```bash
 export HARNESS_HOOK_TRACE=/tmp/hook-trace.jsonl
 rm -f "$HARNESS_HOOK_TRACE"
-codex          # 또는 claude — harness repo 밖 별도 프로젝트에서
-# 세션 안에서: 셸 명령 하나(`echo hi`) + 파일 편집 하나
+codex          # or claude — in a project outside the harness repo
+# inside the session: one shell command (`echo hi`) and one file edit
 cat /tmp/hook-trace.jsonl
 ```
 
-기대 결과 — 등록된 (이벤트, 훅) 조합마다 최소 한 줄:
+Expected — at least one line per registered (event, hook) pair:
 
-| 툴 | 있어야 할 줄 |
+| Tool | Lines that must appear |
 |---|---|
-| Codex | `project-memory-index`(SessionStart), `memory-search`(PreToolUse ×2), `reflection`(PostToolUse), `pr-merge-reflect`(SessionStart·PostToolUse/Bash, 설치 smoke 대기) |
-| Claude | 앞의 세 편집/인덱스 훅 + `pr-merge-reflect`(SessionStart·UserPromptSubmit·PostToolUse) |
+| Codex | `project-memory-index` (SessionStart), `memory-search` (PreToolUse ×2), `reflection` (PostToolUse), `pr-merge-reflect` (SessionStart, PostToolUse/Bash — pending install smoke test) |
+| Claude | the three edit/index hooks above, plus `pr-merge-reflect` (SessionStart, UserPromptSubmit, PostToolUse) |
 
-줄이 **없는** 훅이 무음 실패다. 원인은 셋 중 하나다 — 플러그인 미신뢰(→ [신뢰](#신뢰trust--안-하면-무음으로-건너뛴다)),
-matcher 불일치(→ 위 배선 테스트), 설치본이 구버전(→ 설치 경로·버전 확인).
+A hook with **no** line is a silent failure. There are three causes — the plugin is untrusted
+(→ [Trust](#trust--without-it-hooks-are-skipped-silently)), a matcher mismatch (→ the wiring
+tests above), or the installed copy is an old version (→ check the install path and version).
 
-### 관측 결과 (2026-08-15, `tutti-dpnc` — harness repo 밖)
+### Observed results (2026-08-15, `tutti-dpnc` — outside the harness repo)
 
-플러그인 0.7.1. **양쪽 어댑터의 등록된 훅이 전부 실제로 떴다.**
+Plugin 0.7.1. **Every registered hook on both adapters actually fired.**
 
-| 훅 | Claude | Codex |
+| Hook | Claude | Codex |
 |---|---|---|
 | `project-memory-index` (SessionStart) | ✅ | ✅ |
-| `memory-search` (PreToolUse — 셸·편집 둘 다) | ✅ | ✅ |
-| `reflection` (PostToolUse — 편집) | ✅ | ✅ |
-| `pr-merge-reflect` | ✅ (세 이벤트) | 🟡 SessionStart·PostToolUse 등록, 설치 실측 대기 |
+| `memory-search` (PreToolUse — shell and edit) | ✅ | ✅ |
+| `reflection` (PostToolUse — edit) | ✅ | ✅ |
+| `pr-merge-reflect` | ✅ (three events) | 🟡 SessionStart and PostToolUse registered, install measurement pending |
 
-`HARNESS_HOOK_TRACE` 는 **양쪽 다 훅 서브프로세스까지 전파된다**(Codex 도 별도 설정 불필요).
+`HARNESS_HOOK_TRACE` **propagates into hook subprocesses on both sides** (Codex needs no extra
+setup).
 
-**대조군이 같이 잡혔다** — 이게 있어야 "전부 뜬다"가 증거가 된다.
+**Controls came out too** — that is what makes "everything fired" evidence rather than a claim.
 
-- Claude: Write 를 쓴 라운드에서 `pr-merge-reflect` PostToolUse 가 **안 떴다**(matcher 가 `Bash`).
-  Bash 라운드에서만 떴다.
-- Codex: 셸 호출에서 `reflection` 이 **안 떴다**(matcher 가 `apply_patch`). 편집에서만 떴다.
+- Claude: in the round that used Write, `pr-merge-reflect`'s PostToolUse **did not fire** (its
+  matcher is `Bash`). It fired only in the Bash round.
+- Codex: on a shell call, `reflection` **did not fire** (its matcher is `apply_patch`). It fired
+  only on the edit.
 
-⚠️ **추적 줄이 나온다고 버전이 확인된 건 아니다.** 줄이 나오면 "계기가 들어간 코드가
-깔려 있다"까지만 알 수 있다. 버전은 별개로 봐야 한다 — `befd775` 가 바로 **매니페스트가
-0.7.0 인 채로** `trace_entry` 를 넣은 커밋이라, 0.7.0 이라고 보고하면서 추적 코드를 가진
-빌드가 실제로 존재한다(로컬 빌드나 버전 안 올린 배포). 버전은 캐시 디렉터리 이름이나
-`plugin list` 로 따로 확인한다.
+⚠️ **A trace line does not confirm the version.** A line tells you "code with the instrumentation
+is installed" and no more. Version is a separate check — `befd775` is precisely the commit that
+added `trace_entry` **while the manifest still said 0.7.0**, so a build that reports 0.7.0 and
+carries the tracing code genuinely exists (a local build, or a release without a version bump).
+Confirm the version separately from the cache directory name or `plugin list`.
 
-### 관측하면서 밟은 함정 두 개
+### Two traps we walked into while observing
 
-1. **계기를 넣은 PR(#101)이 버전을 안 올려서, 그게 깔린 설치본이 한 군데도 없었다.**
-   그대로 관측했으면 0줄이 나오고 "훅이 안 뜬다"로 오독했을 것이다. #101 이 잡으려던 함정을
-   #101 이 밟았다. → 관측 전에 **설치 캐시에 `trace_entry` 가 있는지부터 grep 한다.**
-2. **첫 시도는 시험이 성립을 안 했다.** "파일 만들어줘"라고 하니 세션이 셸로 만들어
-   편집 도구를 한 번도 안 썼고, `reflection` 이 안 떴다. 세션 로그에 `tool=Bash` 두 번뿐인 걸
-   확인하고서야 알았다. **훅 문제가 아니라 시험 설계 문제였다** — 무음 실패를 조사할 때
-   이 오진이 제일 쉽게 난다. 편집을 시험하려면 편집 도구를 **명시적으로 강제**한다
-   (`Write 도구를 써서 ... Bash 쓰지 말고`).
+1. **The PR that added the instrumentation (#101) did not bump the version, so no installed copy
+   anywhere had it.** Observing as-is would have produced 0 lines and been misread as "hooks do
+   not fire." The trap #101 set out to catch is the one #101 fell into. → Before observing,
+   **grep the install cache for `trace_entry` first.**
+2. **The first attempt was not a valid experiment.** Asked to "create a file", the session
+   created it via the shell and never used an edit tool, so `reflection` never fired. We only
+   found out after checking the session log and seeing two `tool=Bash` calls and nothing else.
+   **It was a test-design problem, not a hook problem** — and it is the easiest misdiagnosis to
+   make while investigating a silent failure. To test edits, **explicitly force the edit tool**
+   ("use the Write tool to ..., do not use Bash").
 
-## 현재 이식 상태
+## Current porting status
 
-| 훅 | Claude | Codex | 비고 |
+| Hook | Claude | Codex | Notes |
 |---|---|---|---|
-| `project-memory-index` | ✅ | ✅ | SessionStart — 커버리지 한계와 무관 |
-| `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch`. 패치 원문에서 편집 파일 목록을 뽑아 라우팅 |
-| `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. 규칙은 **파일마다** 적용 |
-| `pr-merge-reflect` | ✅ | 🟡 | 3a: SessionStart·PostToolUse 탐지/큐만. UserPromptSubmit 주입·LLM 잡은 실측 전 미등록 |
+| `project-memory-index` | ✅ | ✅ | SessionStart — unaffected by the coverage limits |
+| `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch`. Extracts the edited file list from the raw patch to route on |
+| `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file** |
+| `pr-merge-reflect` | ✅ | 🟡 | Stage 3a: SessionStart and PostToolUse detection/queueing only. UserPromptSubmit injection and the LLM job stay unregistered until measured |
 
-Codex 3a 번들에는 의도적으로 `reflect.py`를 넣지 않는다. 따라서 머지와 세션 시작을 감지해
-공유 큐를 갱신할 수는 있지만, 진행 중 Codex rollout을 즉시 자동 회고하거나 아직 검증되지 않은
-`UserPromptSubmit`에서 큐를 비우지는 않는다. 실제 설치본에서 이벤트 발화와 컨텍스트 주입을
-둘 다 관측한 뒤 마지막 등록을 연다(#85).
+The Codex 3a bundle deliberately omits `reflect.py`. It can therefore detect merges and session
+starts and update the shared queue, but it will not immediately draft a retrospective from an
+in-progress Codex rollout, nor drain the queue from the still-unverified `UserPromptSubmit`. The
+final registration opens once both event firing and context injection are observed in a real
+installed copy ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
-입력 정규화는 `core/scripts/hook_io.py` 가 맡는다 — Claude(`file_path` + `new_string`/`content`/
-`edits`)와 Codex(`command` 에 담긴 패치 원문)를 **편집 파일 목록 + 추가된 내용**이라는 같은
-모델로 바꾼다. 훅은 `tool_name` 으로 분기하지 않는다(툴마다 이름이 다르고 새로 생긴다).
+Input normalization is `core/scripts/hook_io.py`'s job — it turns Claude's shape (`file_path`
+plus `new_string`/`content`/`edits`) and Codex's (raw patch text inside `command`) into one model:
+**the list of edited files plus the added content**. Hooks do not branch on `tool_name` (the names
+differ per tool and new ones appear).
 
-**출력 키는 두 벌 낸다** — `hookSpecificOutput.additionalContext`(중첩)와 `additionalContext`
-(최상위). Claude 는 중첩을 읽는다(실증). Codex 문서는 `PreToolUse`/`PostToolUse` 출력으로
-`additionalContext` 를 나열하지만 **중첩인지 최상위인지 쓰지 않았고**, 중첩이 동작한 걸 확인한
-건 `SessionStart` 뿐이다 — 그건 평문 stdout 도 먹는 이벤트라 중첩 경로를 시험한 적이 없다.
-주입 실패는 성공과 구별이 안 되므로(훅은 조용히 exit 0) 관측 전까지 한쪽으로 줄이지 않는다.
+**Output keys are emitted twice** — as `hookSpecificOutput.additionalContext` (nested) and as
+`additionalContext` (top level). Claude reads the nested one (demonstrated). The Codex docs list
+`additionalContext` as `PreToolUse`/`PostToolUse` output but **do not say whether it is nested or
+top level**, and the only event where we confirmed the nested form working is `SessionStart` —
+which also accepts plain stdout, so the nested path was never really exercised there. A failed
+injection is indistinguishable from a successful one (the hook just exits 0 quietly), so we do
+not narrow to one form before observing it.
