@@ -1,202 +1,221 @@
-# 사용 안내 — 언제 무엇을 쓰나
+# Usage guide — what to reach for, and when
 
-이 저장소의 다른 문서는 **무엇을 만들었나**를 설명한다. 이 문서는 **내가 언제 무엇을 쓰나**를
-설명한다. 하네스를 직접 만들지 않은 사람(또는 만들고 나서 잊어버린 사람)이 읽는 문서다.
+The other documents here explain **what was built**. This one explains **what you use, and
+when**. It is written for someone who did not build the harness — or who built it and has
+since forgotten.
 
-- 설계·구조 → [overview.html](overview.html)
-- 훅 내부 동작 → [self-improvement-hooks.md](self-improvement-hooks.md)
-- Codex 훅 제약 → [codex-hooks.md](codex-hooks.md)
-- 아직 안 지은 것의 설계 → [decision-mining.md](decision-mining.md)
-
----
-
-## 0. 한 문단 요약
-
-이 하네스는 **작업이 끊길 때 잃어버리는 것**을 줄인다. 세션이 끝나거나, 툴을 바꾸거나,
-머신이 바뀌거나, 며칠 지나 돌아왔을 때 "내가 뭘 하고 있었지"와 "이거 전에도 겪었는데"를
-매번 다시 겪지 않게 한다.
-
-두 가지를 한다.
-
-| | 무엇을 |
-|---|---|
-| **이어받기** | 하던 작업 상태를 넘긴다 (`handoff-*`, `fw`, `history`) |
-| **기억** | 배운 것을 다음 세션이 자동으로 보게 만든다 (메모리 + 훅) |
-
-이 둘에 안 들어가는 도구(브랜치 정리, 이슈 점검 같은 일반 git·GitHub 작업)는 **일부러 안
-넣는다.** 어떤 저장소에서든 쓸 수 있는 도구는 이 하네스가 아니라 개인 스킬로 둔다.
+- Design and structure → [overview.html](overview.html)
+- How the hooks work internally → [self-improvement-hooks.md](self-improvement-hooks.md)
+- Codex hook constraints → [codex-hooks.md](codex-hooks.md)
+- Design for something not built yet → [decision-mining.md](decision-mining.md)
 
 ---
 
-## 1. 상황별 — 이럴 때 이걸 쓴다
+## 0. One paragraph
 
-### 작업을 넘길 때 / 이어받을 때
+This harness reduces **what you lose when work is interrupted**. When a session ends, when
+you switch tools, when you move to another machine, or when you come back after a few days,
+you should not have to rediscover "what was I doing" and "I've hit this before" every time.
 
-| 상황 | 쓸 것 |
+It does two things.
+
+| | What |
 |---|---|
-| 오늘 여기까지, 내일 이어서 | `/handoff-save` |
-| 다른 머신·사람이 이어받아야 함 | `/handoff-save` → 커밋 |
-| 남이(또는 어제의 내가) 남긴 걸 이어받기 | `/handoff-load` |
-| **저장 안 하고 세션이 끝나버림** | `/fw` |
-| Claude·Codex 오가며 작업했음 | `/fw-both` |
-| "그때 그 작업이 어느 세션이었지?" | `/history` |
+| **Resuming** | Carries the state of in-progress work forward (`handoff-*`, `fw`, `history`) |
+| **Memory** | Makes what you learned show up on its own in the next session (memory + hooks) |
 
-**`handoff` 와 `fw` 의 차이가 핵심이다.**
-
-- `handoff-save/load` = **사람이 명시적으로 저장한** 인계 파일. 커밋되므로 **다른 머신·다른 사람**도 읽는다. 정본이다.
-- `fw` = 저장을 **안 했을 때의 구조 수단**. 세션 로그(Claude `.jsonl` / Codex rollout)에서 자동 복원한다. **같은 머신에서만** 되고, 커밋되지 않는다.
-
-즉 `fw` 는 "아 저장 안 했네" 할 때 쓰는 것이다. 평소엔 `handoff-save` 를 쓰는 게 맞다.
-
-`/history` 는 복원하지 않는다. **찾기 전용**이다 — 세션 목록을 훑고 검색해서, 고른 세션을
-`fw` 에 넘길 명령을 출력해준다.
-
-### 작업이 끝난 뒤
-
-| 상황 | 쓸 것 |
-|---|---|
-| 이번에 지적받은 걸 규칙으로 남길지 검토 | `/feedback-review` |
-| 배운 것을 메모리에 영속화 | `/memory-update` |
+Anything outside those two — branch cleanup, issue triage, ordinary git and GitHub chores —
+is **deliberately left out.** A tool that works in any repository belongs in your personal
+skills, not here.
 
 ---
 
-## 2. 스킬 7개 — 하나씩
+## 1. By situation
 
-### 자주 쓰게 되는 것
+### Handing work off, or picking it up
 
-**`/handoff-save`** — 지금 상태를 커밋 가능한 파일로 저장한다. 브랜치, 무엇을 하다 말았는지,
-다음 액션, 열린 리뷰 finding 까지 담는다.
+| Situation | Reach for |
+|---|---|
+| Stopping for today, continuing tomorrow | `/handoff-save` |
+| Another machine or person has to continue | `/handoff-save` → commit |
+| Picking up what someone (or yesterday's you) left | `/handoff-load` |
+| **The session ended and you never saved** | `/fw` |
+| You worked across both Claude and Codex | `/fw-both` |
+| "Which session was that work in?" | `/history` |
+
+**The difference between `handoff` and `fw` is the thing to understand.**
+
+- `handoff-save/load` = a handoff file **a human deliberately saved**. It is committed, so
+  **other machines and other people** can read it. This is the canonical record.
+- `fw` = the rescue path for **when you didn't save**. It reconstructs from session logs
+  (Claude `.jsonl` / Codex rollout). It works **only on the same machine**, and it is not
+  committed.
+
+So `fw` is for the "ah, I never saved" moment. Day to day, `handoff-save` is the right one.
+
+`/history` restores nothing. It is **search only** — it lists and searches sessions, then
+prints the command that hands your chosen session to `fw`.
+
+### After the work is done
+
+| Situation | Reach for |
+|---|---|
+| Decide whether this round's feedback should become a rule | `/feedback-review` |
+| Persist what you learned into memory | `/memory-update` |
+
+---
+
+## 2. The seven skills
+
+### The ones you reach for often
+
+**`/handoff-save`** — saves the current state to a committable file: the branch, what you
+stopped in the middle of, the next actions, and any open review findings.
 
 ```
-/handoff-save 실거래 클라이언트 단일화 80% 완료
+/handoff-save unified the trade client, about 80% done
 ```
 
-한 줄 요약은 선택이지만 넣는 게 좋다. 나중에 목록에서 이것만 보고 고른다.
+The one-line summary is optional, but write it. Later it is the only thing you see in a
+list when choosing.
 
-**`/handoff-load`** — 커밋된 핸드오프를 1순위로 읽고 **현재 git 상태와 대조**한다.
-핸드오프가 오래됐으면 그 사실을 알려준다. 상태 보고까지가 기본이고, 검증·빌드·git 조작은
-따로 시켜야 한다.
+**`/handoff-load`** — reads the committed handoff first and **checks it against current git
+state**. If the handoff is old, it says so. Reporting the state is where it stops by
+default; verification, builds, and git operations have to be asked for separately.
 
-**`/fw`** — 저장 안 했어도 세션 로그에서 복원한다. 기본값이 **반대 툴**이다(Claude 에서 쓰면
-Codex 로그를 본다). 현재 세션이 자기 자신을 "직전 작업"으로 고르는 걸 막기 위해서다.
+**`/fw`** — recovers from session logs even when nothing was saved. It defaults to the
+**opposite tool** (run it in Claude and it reads Codex logs). That default exists to stop
+the current session from picking *itself* as "the previous work".
 
-**`/memory-update`** — 이번 세션에서 배운 것을 메모리로 승격한다. 개인/공유 tier 를 나누고,
-공유 tier 는 커밋이 필요하다. `_pending` 초안이 있으면 같이 검토한다.
+**`/memory-update`** — promotes what this session learned into memory. It separates the
+personal and shared tiers; the shared tier needs a commit. Any waiting `_pending` drafts
+are reviewed at the same time.
 
-## 3. 안 써본 스킬이 왜 안 써졌나
+## 3. Why the unused skills went unused
 
-이유가 두 가지다.
+Two reasons.
 
-(이전 판에는 "이 저장소에서는 상황이 안 온다"는 항목이 있었다. `merge-cleanup`·`stale-scan`
-같은 도구들 얘기였는데, 그건 **여기 있을 물건이 아니었다**는 뜻이었다. 2026-08-17 에 개인
-스킬로 옮겼다.)
+(An earlier version of this document had a third: "the situation never comes up in this
+repository." That was about tools like `merge-cleanup` and `stale-scan`, and what it really
+meant was that **they did not belong here**. They moved to personal skills on 2026-08-17.)
 
-### (1) 있는 줄 몰라서
+### (1) Not knowing they exist
 
-`history`, `fw-both` 가 여기 해당한다. 상황은 여러 번 왔는데(세션을 여러 개 오갔다) 떠올리지
-못했다. **이건 도구 문제가 아니라 발견 가능성 문제다.** 이 문서가 그걸 메우려는 것이다.
+`history` and `fw-both` fall here. The situation came up repeatedly — sessions were juggled
+back and forth — and they simply did not come to mind. **That is a discoverability problem,
+not a tool problem.** This document is the attempt to close it.
 
-### (2) 자동이라 쓴 줄 모르는 것
+### (2) Automatic, so you never noticed using them
 
-훅은 **명령이 아니다.** 세션 시작·파일 편집 전후·머지 시에 알아서 돈다. 메모리 인덱스 주입,
-편집 전 관련 메모리 표시, PR 머지 후 회고 재촉이 전부 훅이다. "안 썼다"가 아니라 **이미 계속
-쓰고 있었다.**
+Hooks are **not commands.** They run on their own at session start, around file edits, and
+on merges. Injecting the memory index, surfacing relevant memory before an edit, prompting
+for a retrospective after a PR merges — all of that is hooks. It is not that you never used
+them; **you were using them the whole time.**
 
-**단, 이건 Claude 이야기다.** Claude 에서는 4개가 전부 돈다. Codex 는 네 훅을 번들하지만
-`pr-merge-reflect`는 탐지/큐만 등록하며, 모두 **훅을 신뢰해야** 실행된다 —
-신뢰 등록 전에는 에러도 경고도 없이 조용히 건너뛴다. 머지 후 회고 재촉
-(`pr-merge-reflect`)는 탐지/큐만 이식됐고 사용자 리마인더·자동 회고는 아직 검증 중이다(#85).
+**That said, this is the Claude story.** On Claude all four run. Codex bundles all four, but
+`pr-merge-reflect` registers only detection and queueing, and every one of them runs only
+once **you trust the hook** — before you do, they are skipped with no error and no warning.
+The post-merge retrospective prompt and the automatic drafting are still being verified
+([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ---
 
-## 4. 메모리 — 이게 이 하네스의 핵심이다
+## 4. Memory — this is the core of the harness
 
-### 두 층
+### Two tiers
 
-| | 위치 | 커밋 | 누가 읽나 |
+| | Location | Committed | Who reads it |
 |---|---|---|---|
-| **개인** | `~/.claude/projects/<프로젝트>/memory/` | ✗ | Claude Code, 이 머신만 |
-| **공유** | `<repo>/.claude/memory/` | ✓ | Claude + Codex 모두 |
+| **Personal** | `~/.claude/projects/<project>/memory/` | ✗ | Claude Code, this machine only |
+| **Shared** | `<repo>/.claude/memory/` | ✓ | Claude and Codex both |
 
-**개인**은 "나와 일하는 방식"이다 — 보고를 어떻게 할지, 언제 물어볼지, 커밋 서명 규칙 같은 것.
-**공유**는 "이 프로젝트의 사실·결정"이다 — 왜 이렇게 설계했는지, 무엇을 하면 안 되는지.
+**Personal** is "how to work with me" — how to report, when to ask, commit signature rules.
+**Shared** is "this project's facts and decisions" — why it was designed this way, what not
+to do.
 
-애매하면 물어봐야 한다. 개인 취향인지 팀 규칙인지가 갈림길이다.
+When it is unclear, ask. The fork is whether it is a personal preference or a team rule.
 
-### 어떻게 자동으로 뜨나
-
-```
-세션 시작  → INDEX.md 목록이 통째로 주입 (project-memory-index)   ← Claude·Codex 둘 다
-편집·명령 전 → routes.json 이 가리키는 메모리 본문이 주입 (memory-search)  ← Claude·Codex 둘 다
-파일 편집 후 → reflection-rules.json 정규식으로 품질 경고 (reflection)     ← Claude·Codex 둘 다
-PR 머지 후  → 회고 재촉 (pr-merge-reflect)                 ← Claude; Codex는 탐지/큐만
-```
-
-**Codex 는 마지막 줄의 탐지/큐만 등록된 상태다**(#85). 편집 훅은 Codex 의 `apply_patch` 에 걸리는데,
-패치 하나가 여러 파일을 건드리면 **그 파일들 전부**에 대해 규칙이 적용된다.
-
-**`routes.json` 이 없으면 두 번째가 아예 안 돈다.** 메모리를 만들어놓고 route 를 안 걸면
-"세션 시작 시 목록에 한 줄 보이는" 정도로만 존재한다. 메모리를 추가할 때 route 도 같이
-거는 이유가 이것이다.
-
-### description 이 중요한 이유
-
-`memory-search` 훅은 파일 **전문**을 주입하므로 `description` 은 안 쓴다.
-`description` 이 쓰이는 곳은 **`INDEX.md` 한 줄뿐**이고, 그게 세션 시작 때 보이는 전부다.
-
-그래서 한 줄이 격언이면 안 된다. 통과 기준은 하나다 — **"이 한 줄만 보고 내가 파일을 열까?"**
+### How it surfaces on its own
 
 ```
-❌ 복구용 기록은 복구 대상 바깥에          ← 언제 쓰는 규칙인지 안 보임
-✅ 캐시·alias 저장 위치: worktree 안에 두지 말 것, .git 공통 디렉터리에
+session start   → the INDEX.md listing is injected whole (project-memory-index)  ← Claude and Codex
+before edit/cmd → memory that routes.json points to is injected (memory-search)  ← Claude and Codex
+after an edit   → regex quality warnings from reflection-rules.json (reflection) ← Claude and Codex
+after a merge   → retrospective prompt (pr-merge-reflect)              ← Claude; Codex detect/queue only
 ```
 
-### governance
+**Codex has only the last line's detection and queueing registered** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+The edit hooks attach to Codex's `apply_patch`, and when one patch touches several files the
+rules apply to **all of them**.
 
-공유 메모리는 `_pending → 사람 승인 → committed` 를 거친다. 자동 생성된 교훈이 검토 없이
-박히지 않게 하는 장치다.
+**Without `routes.json` the second line does not run at all.** Write a memory but attach no
+route, and it exists only as one line in the session-start listing. That is why adding a
+memory means adding its route in the same breath.
 
-> 참고: `_pending` 을 채우는 자동 회고는 **기본 꺼져 있다**(`HARNESS_AUTO_REFLECT=1` opt-in).
-> 설치만으로 백그라운드 LLM 잡이 뜨지 않게 한 것이다. 그래서 지금까지 `_pending` 은 한 번도
-> 생긴 적이 없고, 메모리는 전부 `/memory-update` 로 수동 승격했다.
+### Why `description` matters
 
-사람이 **버린** 초안은 `.claude/memory/_rejected.md` 에 남아 같은 게 다시 후보로 올라오지
-않는다. 금지 목록은 아니다 — 같은 얘기가 반복돼 값어치가 생겼으면 **무엇이 달라졌는지**를
-붙여 다시 올린다.
+The `memory-search` hook injects the **whole file**, so it never reads `description`. The
+only place `description` is used is **that one line in `INDEX.md`** — and that line is all
+you see at session start.
 
-`_pending/` 과 `_rejected.md` 는 **세션 대화에서 뽑은 내용**이라 통째로 커밋되면 곤란하다.
-그래서 훅 엔진이 직접 `.git/info/exclude` 에 넣어 가린다 — `project-template/` 을 복사하지
-않은 사람도 보호받게 하기 위해서다. `.gitignore` 가 아니라 로컬 exclude 라서 남의 저장소
-설정을 건드리지 않는다.
+So the line cannot be an aphorism. There is one test: **"would this line alone make me open
+the file?"**
+
+```
+❌ Keep recovery records outside what they recover     ← no sign of when the rule applies
+✅ Cache and alias location: never inside a worktree, put it in the shared .git dir
+```
+
+### Governance
+
+Shared memory goes through `_pending → human approval → committed`. It is the mechanism that
+stops an automatically drafted lesson from landing unreviewed.
+
+> Note: the automatic retrospective that fills `_pending` is **off by default**
+> (`HARNESS_AUTO_REFLECT=1` opts in). Installing the plugin should not start a background LLM
+> job. Because of that, `_pending` has never been produced in this repository, and every
+> memory here was promoted by hand through `/memory-update`.
+
+Drafts a human **rejected** are recorded in `.claude/memory/_rejected.md` so the same one
+does not come back as a candidate. It is not a ban list — if the same point recurs until it
+earns its place, raise it again with **what changed** attached.
+
+`_pending/` and `_rejected.md` are **extracted from session conversations**, so committing
+them wholesale is a problem. The hook engine therefore hides them itself by writing to
+`.git/info/exclude` — so that someone who never copied `project-template/` is still
+protected. Being a local exclude rather than `.gitignore` means it does not touch the
+repository's own settings.
 
 ---
 
-## 5. 고칠 때 알아야 할 것
+## 5. What to know before changing it
 
-`core/` 가 정본이고 `plugins/` 는 **생성물**이다.
+`core/` is canonical and `plugins/` is **generated**.
 
 ```
-core/ 수정 → ./build.sh → plugins/harness (Claude) + plugins/codex (Codex)
+edit core/ → ./build.sh → plugins/harness (Claude) + plugins/codex (Codex)
 ```
 
-**어댑터를 직접 고치면 다음 빌드에서 덮인다.** CI 가 build 후 `git diff` 로 drift 를 검사하므로
-빌드 안 돌리고 커밋하면 실패한다.
+**Edit an adapter directly and the next build overwrites it.** CI builds and then checks
+`git diff` for drift, so committing without running the build fails.
 
-문서를 고쳐도 동작은 안 바뀐다. 예를 들어 `docs/codex-hooks.md` 는 설명일 뿐이고, Codex 에
-훅을 추가하려면 **`build.sh`** 를 고쳐야 한다.
+Editing documentation changes no behavior. `docs/codex-hooks.md`, for instance, is only a
+description — adding a hook to Codex means editing **`build.sh`**.
 
 ---
 
-## 6. 지금 상태 (2026-08-31)
+## 6. Current state (2026-08-31)
 
 | | Claude | Codex |
 |---|---|---|
-| 스킬 | 7개 | 7개 |
-| 훅 | 4개 전부 | **4개** (`pr-merge-reflect` 는 탐지/큐 단계) |
-| 호출 방식 | 슬래시 커맨드 | description 매칭 |
-| 훅 신뢰 | 불필요 | **필요** — 안 하면 무음으로 안 돎 |
+| Skills | 7 | 7 |
+| Hooks | all 4 | **4** (`pr-merge-reflect` at the detect/queue stage) |
+| How they trigger | slash commands | `description` matching |
+| Hook trust | not needed | **required** — without it they silently do nothing |
 
-Codex 머지 훅의 사용자 리마인더·자동 회고 단계는 설치 smoke test 뒤에 연다(#85).
+The user reminder and automatic drafting stages of the Codex merge hook open after the
+installed-plugin smoke test ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
-`/feedback-review` 가 현재 세션만 보던 문제(#81)는 고쳐졌다 — 이제 쌓인 `_pending` 초안은
-항상, 과거·반대 툴 세션은 **사람이 고른 것만** 후보에 들어온다.
+`/feedback-review` only looking at the current session ([#81](https://github.com/foxyberry/agent-harness/issues/81))
+is fixed — accumulated `_pending` drafts now always come in, and past or opposite-tool
+sessions come in **only when a human selects them**.
