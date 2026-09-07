@@ -79,11 +79,20 @@ PR_SCAN_MAX_PER_RUN = 3
 # 회고 산출물 PR 이 다시 회고를 요구하는 루프를 막는 기본 예외.
 # 프로젝트별로 .claude/memory/reflect-skip.json 에서 확장/override 가능.
 DEFAULT_REFLECT_SKIP = {
+    # 하네스가 **자기가 만드는** 경로만 둔다. 프로젝트의 파일(CLAUDE.md·AGENTS.md·
+    # .claude/skills/** 등)은 회고할 값어치가 프로젝트마다 다르므로 엔진이 정하지 않는다 —
+    # 이 저장소에선 AGENTS.md 변경이 큰 결정이지만(#105) 다른 팀엔 보일러플레이트다.
+    # 넓은 목록은 project-template/.claude/memory/reflect-skip.json 에 있다.
     "paths": [
         ".claude/memory/**",
         ".claude/handoff/**",
         ".agents/skills/**",
     ],
+    # 판정에서 아예 빼는 부수 파일. 이게 없으면 `.gitignore` 한 줄 때문에 all() 이 깨져
+    # 회고 루프가 다시 돈다(#130). 다만 `.gitignore` 가 **실질적** 변경일 수도 있어
+    # (추적 대상·생성물 정책·줄바꿈), 무엇을 부수로 볼지는 엔진이 정하지 않는다.
+    # 메커니즘만 두고 목록은 비운다 — 프로젝트가 채운다.
+    "ignore_paths": [],
     "labels": [
         "skip-reflect",
         "no-reflect",
@@ -323,8 +332,10 @@ def _load_reflect_skip_config(project_dir):
         if not isinstance(data, dict):
             return cfg
         if data.get("defaults") is False:
-            cfg = {"paths": [], "labels": [], "commit_messages": []}
-        for key in ("paths", "labels", "commit_messages"):
+            # 키 목록을 여기 다시 쓰지 않는다 — 기본값에 키가 늘면 이쪽이 조용히 뒤처져
+            # 나중에 KeyError 가 난다(ignore_paths 추가 때 실제로 그럴 뻔했다).
+            cfg = {k: [] for k in DEFAULT_REFLECT_SKIP}
+        for key in DEFAULT_REFLECT_SKIP:
             vals = data.get(key)
             if isinstance(vals, list):
                 cfg[key].extend(v for v in vals if isinstance(v, str) and v.strip())
@@ -404,7 +415,12 @@ def _should_skip_reflect(project_dir, num):
         if _message_matches_any(low, commit_patterns):
             return True
 
-    files = details["files"]
+    # 부수 파일은 판정에서 뺀다. `.gitignore` 한 줄이 섞였다고 회고 산출물이 작업 PR 이
+    # 되지는 않는다 — 그 한 줄 때문에 all() 이 깨져 회고의 회고 루프가 돌았다(#130).
+    ignore_patterns = cfg.get("ignore_paths") or []
+    files = [p for p in details["files"] if not _matches_any(p, ignore_patterns)]
+
+    # 부수 파일만 있는 PR 은 판단 근거가 없다 — 회고한다(fail-open).
     path_patterns = cfg["paths"]
     if files and path_patterns and all(_matches_any(path, path_patterns) for path in files):
         return True

@@ -177,27 +177,48 @@ PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조�
 회고를 저장하기 위한 PR 이 다시 "회고하라"는 리마인더를 만드는 루프를 막기 위해,
 `pr-merge-reflect` 는 회고 산출물만 변경한 PR 을 pending/자동 회고 대상에서 제외한다.
 
-기본 skip:
+기본 skip — **하네스가 자기가 만드는 것만**:
 - 변경 파일이 전부 `.claude/memory/**`
 - 변경 파일이 전부 `.claude/handoff/**`
 - 변경 파일이 전부 `.agents/skills/**`
 - PR 라벨이 `skip-reflect` 또는 `no-reflect`
 - 커밋 메시지에 `[skip reflect]`, `skip-reflect`, `no-reflect` 포함
 
+⚠️ **`CLAUDE.md`·`AGENTS.md`·`.gitignore` 는 기본값에 없다.** 회고 산출물이 거기로도
+나가지만(교훈을 규칙으로 승격하는 자리다), 그 파일들은 **프로젝트의 것**이고 회고할
+값어치가 프로젝트마다 다르다. 이 저장소에선 `AGENTS.md` 변경이 하네스 범위를 바꾼 큰
+결정이었지만(#105), 다른 팀에선 보일러플레이트다. 엔진이 알 수 없는 것을 엔진이 정하면
+루프 대신 **조용한 유실**을 얻는다 — 회고가 경고도 실패도 없이 사라진다.
+
+그래서 넓은 목록은 `project-template/.claude/memory/reflect-skip.json` 에 있다. 필요하면
+그걸 복사해서 프로젝트에 맞게 줄이거나 늘린다.
+
 프로젝트별로 `.claude/memory/reflect-skip.json` 에서 패턴을 확장할 수 있다.
 
 ```json
 {
-  "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**"],
+  "//": "project-template 판. 엔진 기본값은 앞의 세 경로만 알고, 나머지는 이 데이터가 준다.",
+  "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**",
+            "CLAUDE.md", "AGENTS.md", "**/CLAUDE.md", "**/AGENTS.md",
+            ".claude/agents/**", ".claude/skills/**"],
+  "ignore_paths": [".gitignore", "**/.gitignore", ".gitattributes", "**/.gitattributes"],
   "labels": ["skip-reflect", "no-reflect"],
   "commit_messages": ["[skip reflect]", "skip-reflect", "no-reflect"]
 }
 ```
 
 - `paths`: PR 변경 파일이 **전부** 이 패턴들에 매칭될 때 skip 한다(fnmatch).
+  fnmatch 라 `**/AGENTS.md` 는 하위 경로만 맞는다 — 루트 사본(`AGENTS.md`)은 따로 적어야
+  한다. 템플릿이 둘 다 넣어두는 이유다.
+- `ignore_paths`: **판정에서 아예 빼는** 부수 파일. 이게 없으면 `.gitignore` 한 줄 때문에
+  위의 "전부" 조건이 깨져 회고 산출물이 작업 PR 로 판정된다(#130).
+  **기본값은 비어 있다** — `.gitignore` 변경은 추적 대상·생성물 정책·줄바꿈처럼 실질적일
+  수 있어서, 무엇을 부수로 볼지는 엔진이 단정하지 않는다. 메커니즘만 엔진에 있고 목록은
+  프로젝트가 채운다.
+  뺐더니 파일이 하나도 안 남으면 판단 근거가 없는 것이라 skip 하지 않는다(fail-open).
 - `labels`: PR 라벨이 하나라도 매칭되면 skip 한다(fnmatch, 대소문자 무시).
 - `commit_messages`: 커밋 메시지에 문자열이 하나라도 포함되면 skip 한다(대소문자 무시).
-- `"defaults": false` 를 두면 내장 기본값을 비우고 프로젝트 설정만 사용한다.
+- `"defaults": false` 를 두면 내장 기본값을 **모든 키에 대해** 비우고 프로젝트 설정만 사용한다.
 
 ### reflect.py + compact_transcript.py — 자동 회고 잡
 `pr-merge-reflect` 가 스폰하는 백그라운드 잡. 세션 트랜스크립트(Claude `.jsonl` / Codex rollout 둘 다)를
