@@ -101,4 +101,4 @@ git log --grep + PR/이슈 API  ──▶  마이닝 LLM  ──▶  _pending/de
 
 - 이슈 #15 (이 설계의 근거·시장조사 전문), #14(forward-capture, PR #16 으로 머지됨)
 - `docs/self-improvement-hooks.md` (회고 루프 — 마이닝이 접속할 승격 경로)
-- `core/hooks/reflect.py` (재사용할 초안 생성기), `.claude/memory/decisions/README.md` (ADR 스키마 정본)
+- `core/hooks/reflect.py` (재사용할 초안 생성기), `core/skills/memory-update/SKILL.md` §1.6 (ADR 스키마 정본)

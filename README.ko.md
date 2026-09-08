@@ -206,7 +206,7 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 |---|---|
 | [project-template/AGENTS.md](project-template/AGENTS.md) | 내 프로젝트 규칙에 합칠 것 |
 | [project-template/.claude/memory/README.md](project-template/.claude/memory/README.md) | 메모리 구조와 개인/공유 tier 구분 |
-| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | 결정 기록(ADR) 스키마 |
+| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | 결정 기록 폴더 안내 (스키마 정본은 `memory-update` 스킬에 실려 배포된다) |
 
 **이 저장소 자체**
 
