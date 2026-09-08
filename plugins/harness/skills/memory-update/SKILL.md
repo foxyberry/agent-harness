@@ -98,6 +98,8 @@ status: active               # 저장값은 active | rejected 만
 supersedes: [<id>, ...]      # 단방향만. superseded_by 는 저장하지 않고 조회 시 계산
 keywords: [<검색어>, ...]     # 검색 표면 — 반드시 채운다
 commit: <sha>                # 이 결정을 enact 한 커밋. 없으면 생략
+artifacts:                   # (선택) 산출물 링크. 본문에 붙여넣지 말고 링크로 남긴다
+  - path: <경로>
 ---
 ```
 

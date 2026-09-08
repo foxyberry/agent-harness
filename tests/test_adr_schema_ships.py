@@ -31,8 +31,11 @@ TEMPLATE_README = (
     ROOT / "project-template" / ".claude" / "memory" / "decisions" / "README.md"
 )
 
-# 스키마를 이루는 것 — 이게 없으면 사람이 ADR 을 만들 수 없다.
-FRONTMATTER_FIELDS = ["id: adr-YYYYMMDD-NNN", "chain:", "status:", "supersedes:", "keywords:"]
+# 스키마 전체. **손으로 고른 부분집합을 쓰면 안 된다** — 옮기면서 빠뜨린 필드는 그
+# 목록에도 없으니 테스트가 통과한다. 실제로 `artifacts` 를 그렇게 놓쳤고 Codex 리뷰가
+# 잡았다. 옮길 때는 원본 필드를 전부 세어 넣는다.
+FRONTMATTER_FIELDS = ["name:", "description:", "type: decision", "id: adr-YYYYMMDD-NNN",
+                      "chain:", "status:", "supersedes:", "keywords:", "commit:", "artifacts:"]
 REQUIRED_SECTIONS = ["## Context", "## Decision", "## Alternatives", "## Consequence", "## Evidence"]
 
 
