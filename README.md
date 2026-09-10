@@ -184,7 +184,7 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.12.0`
+- Plugin version: `0.12.1`
 - Public marketplace installation verified for both Claude Code and Codex
 - 7 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
