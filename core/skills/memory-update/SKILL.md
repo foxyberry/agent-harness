@@ -81,7 +81,44 @@ Codex 가 구현하고 Claude 가 리뷰만 했으면 Claude 로그에 사용자
 
 ### 1.6 결정(ADR) 초안 승격 — `_pending/decisions/`
 
-`type: decision` 초안은 교훈과 다르게 처리한다(스키마 정본: `.claude/memory/decisions/README.md`).
+`type: decision` 초안은 교훈과 다르게 처리한다. **스키마 정본은 아래다** — 프로젝트에
+`.claude/memory/decisions/README.md` 가 있으면 그건 사람이 읽는 안내이지 정본이 아니다.
+(옛 project-template 을 복사한 프로젝트에는 그 파일이 아예 없을 수 있다. 그래도 승격은 된다.)
+
+한 ADR에는 하나의 결정만 담는다. 여러 결정을 담은 초안은 승격 전에 결정별로 나누고,
+각각의 `chain`을 확인한다. 산출물은 본문에 붙여넣지 않고 `artifacts`에 링크로 남긴다.
+
+**frontmatter**
+
+```yaml
+---
+name: <slug>                 # 파일명과 일치
+description: <한 줄 요약>      # INDEX·검색 요약에 쓰인다 — 반드시 채운다
+type: decision
+id: adr-YYYYMMDD-NNN         # 승격 시 확정, 이후 불변 (링크 대상)
+chain: <chain-slug>          # 축(topic). 같은 chain 끼리만 supersedes 로 연결
+status: active               # 저장값은 active | rejected 만
+supersedes: [<id>, ...]      # 단방향만. superseded_by 는 저장하지 않고 조회 시 계산
+keywords: [<검색어>, ...]     # 검색 표면 — 반드시 채운다
+commit: <sha>                # 이 결정을 enact 한 커밋. 없으면 생략
+artifacts:                   # (선택) 산출물 링크. 본문에 붙여넣지 말고 링크로 남긴다
+  - path: <경로>
+---
+```
+
+**본문 필수 섹션**
+
+```markdown
+## Context      — 어떤 상황·제약에서 이 결정이 필요했나
+## Decision     — 무엇을 하기로 했나 (한두 줄)
+## Alternatives — 검토했지만 안 고른 대안 + 왜 버렸나   ← 필수
+## Consequence  — 결과·영향 (좋은 것·감수한 것)         ← 필수
+## Evidence     — 근거: 세션·커밋·PR·이슈 링크
+```
+
+`supersedes` 를 단방향으로만 두는 이유: 양방향으로 적으면 옛 파일을 계속 고쳐야 하고,
+반쪽만 성공하면 그래프가 깨진다. append-only 가 안전하다. 링크는 내용 해시가 아니라
+**id** 로 문다 — 파일을 정당하게 고쳐도 체인이 안 끊기게.
 
 1. **ADR 게이트 확인**: 본문에 `## Alternatives`(안 고른 대안)와 `## Consequence`(결과)가 **둘 다** 있어야 ADR 이다. 없으면 ADR 로 승격하지 말고 일반 memory 로 돌리거나 폐기.
 2. **`proposed_*` 는 제안일 뿐 — 사람이 확정**: 초안의 `proposed_chain`·`proposed_supersedes`·`confidence` 를 사용자에게 제시하고 고르게 한다:

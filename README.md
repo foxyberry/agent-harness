@@ -212,7 +212,7 @@ without a link, so nothing goes missing.
 |---|---|
 | [project-template/AGENTS.md](project-template/AGENTS.md) | Rules to merge into your project |
 | [project-template/.claude/memory/README.md](project-template/.claude/memory/README.md) | Memory layout and the tier split |
-| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | ADR schema for decision records |
+| [project-template/.claude/memory/decisions/README.md](project-template/.claude/memory/decisions/README.md) | What the decisions folder is (the schema itself ships in the `memory-update` skill) |
 
 **This repository itself**
 

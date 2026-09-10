@@ -20,4 +20,4 @@
 ## 결정 기록 (ADR)
 
 승격된 ADR 을 한 줄씩 등록한다: `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>`.
-(스키마는 `project-template/.claude/memory/decisions/README.md`. 아직 승격된 실 ADR 없음.)
+(스키마는 `memory-update` 스킬 §1.6 — 플러그인과 함께 배포된다. 아직 승격된 실 ADR 없음.)
