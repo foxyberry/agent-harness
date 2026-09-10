@@ -40,19 +40,32 @@ REQUIRED_SECTIONS = ["## Context", "## Decision", "## Alternatives", "## Consequ
 
 
 class SchemaShipsWithThePluginTest(unittest.TestCase):
+    def assert_adr_schema(self, path):
+        text = path.read_text(encoding="utf-8")
+        section = re.search(r"^### 1\.6 .*?(?=^### |\Z)", text, re.M | re.S)
+        self.assertIsNotNone(section, f"ADR 승격 절이 없음: {path}")
+        blocks = {}
+        for language in ("yaml", "markdown"):
+            block = re.search(
+                rf"^```{language}\n(.*?)^```$", section.group(), re.M | re.S
+            )
+            self.assertIsNotNone(block, f"ADR {language} 예시가 없음: {path}")
+            blocks[language] = block.group(1)
+        # 스킬 자체의 메타데이터나 다른 메모리 예시로 누락이 가려지지 않게 한다.
+        for token in FRONTMATTER_FIELDS:
+            with self.subTest(path=str(path.relative_to(ROOT)), token=token):
+                self.assertRegex(blocks["yaml"], r"(?m)^" + re.escape(token))
+        for token in REQUIRED_SECTIONS:
+            with self.subTest(path=str(path.relative_to(ROOT)), token=token):
+                self.assertRegex(blocks["markdown"], r"(?m)^" + re.escape(token))
+
     def test_core_skill_carries_the_schema(self):
-        text = CORE_SKILL.read_text(encoding="utf-8")
-        for token in FRONTMATTER_FIELDS + REQUIRED_SECTIONS:
-            with self.subTest(token=token):
-                self.assertIn(token, text)
+        self.assert_adr_schema(CORE_SKILL)
 
     def test_both_rendered_adapters_carry_the_schema(self):
         """`build.sh` 는 스킬 폴더에서 SKILL.md 만 복사한다 — 옆에 둔 파일은 안 실린다."""
         for path in RENDERED:
-            text = path.read_text(encoding="utf-8")
-            for token in FRONTMATTER_FIELDS + REQUIRED_SECTIONS:
-                with self.subTest(adapter=path.parts[-4], token=token):
-                    self.assertIn(token, text)
+            self.assert_adr_schema(path)
 
     def test_skill_does_not_call_the_project_file_canonical(self):
         """프로젝트에 없을 수 있는 파일을 정본이라 부르면 그 프로젝트는 승격이 막힌다."""

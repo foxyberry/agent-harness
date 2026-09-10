@@ -85,6 +85,9 @@ python3 scripts/compact_transcript.py <고른 세션 경로> --require-attribute
 `.claude/memory/decisions/README.md` 가 있으면 그건 사람이 읽는 안내이지 정본이 아니다.
 (옛 project-template 을 복사한 프로젝트에는 그 파일이 아예 없을 수 있다. 그래도 승격은 된다.)
 
+한 ADR에는 하나의 결정만 담는다. 여러 결정을 담은 초안은 승격 전에 결정별로 나누고,
+각각의 `chain`을 확인한다. 산출물은 본문에 붙여넣지 않고 `artifacts`에 링크로 남긴다.
+
 **frontmatter**
 
 ```yaml
