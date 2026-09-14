@@ -1,54 +1,55 @@
 ---
 name: fw
-description: 다른 툴(Codex↔Claude)에서 하던 작업을 세션 로그에서 자동 복원해 이어받기. 저장(handoff-save) 안 했어도 복원. 요금제/쿼터 소진으로 툴 갈아탈 때 사용
+description: Resume work from the other tool (Codex or Claude) by recovering its session logs, even without handoff-save. Use when switching tools after reaching a plan or quota limit.
 context: fork
 allowed-tools: Bash, Read, Grep, Glob
-argument-hint: "선택: --from claude|codex (반대 툴이 기본) / 세션 로그 경로"
+argument-hint: "Optional: --from claude|codex (defaults to the other tool), or a session log path"
 ---
 
-# 툴 전환 이어받기 (fw — forward work)
+# Resuming across tools (fw — forward work)
 
-한 툴로 작업하다 **요금제/쿼터가 소진되면 다른 툴로 갈아타서 이어가기** 위한 명령이다.
-예: Codex 로 작업 → 다 쓰면 Claude 를 켜서 Codex 가 하던 작업을 이어받는다(그 반대도).
+Use this command to **switch tools and resume work after reaching a plan or quota limit**.
+For example, work in Codex, then open Claude to recover that work, or vice versa.
 
-**handoff 와의 차이 (역할 구분):**
-- **handoff-save/load** = 사람이 명시적으로 `save` 한 **커밋된 핸드오프 파일(정본)**. 크로스머신·크로스툴 이식의 1순위.
-- **fw** = **저장 안 했어도** 세션 로그(Claude `.jsonl` / Codex rollout)에서 **자동 복원**하는 보조 경로. 같은 머신 한정.
-- 우선순위: 커밋된 핸드오프가 있으면 `handoff-load` 가 먼저. **현재 git 상태가 로그보다 항상 우선.**
+**How this differs from handoff:**
+- **handoff-save/load** uses an explicitly saved handoff file. Once committed and pushed, it is the **canonical portable handoff**, preferred across machines and tools.
+- **fw** is a fallback that **recovers session logs without a prior save** (Claude `.jsonl` or Codex rollout files). It works only on the same machine.
+- Prefer `handoff-load` when a committed handoff is available. **Current Git state always takes precedence over logs.**
 
-## 실행 순서
+## Procedure
 
-### 1. 루트 `{{RULES_FILE}}` 를 먼저 읽는다 (프로젝트 규칙).
+### 1. Read the root `{{RULES_FILE}}` first for project rules.
 
-### 2. 세션 로그 자동 탐지 + git 사실 로드
+### 2. Detect session logs and load Git facts
 
 ```bash
 {{HANDOFF}} fw --from {{FW_FROM_DEFAULT}} --current {{AGENT}} {{PROJECT_DIR_ARG}}
 ```
 {{PATH_NOTE}}
-- `--from {{FW_FROM_DEFAULT}}` 는 **반대 툴**이 기본값이다 — 툴을 갈아탔을 때 쓰는 값이다.
-- `--current {{AGENT}}` 는 **지금 이 세션**을 후보에서 뺀다. 이게 없으면 최신 = 방금 켠 세션이라
-  자기 자신을 "직전 작업"으로 요약한다.
-- 출력에서 확인할 것:
-  - **시간순 타임라인**: 어떤 지시 다음에 무슨 도구를 돌렸는지 — "마지막에 뭐 했나"는 여기서 읽는다
-  - **세션 로그 요약**: 마지막 사용자 입력·assistant 응답·도구·task 알림
-  - **현재 git 사실**: 브랜치·origin/main 대비 커밋·변경 파일·열린 PR — 로그와 **대조**(git 우선)
+- `--from {{FW_FROM_DEFAULT}}` defaults to **the other tool**, for switching tools.
+- `--current {{AGENT}}` excludes the current tool's live session **only when its environment session ID matches a project log**. Without a positive match, it hides nothing; inspect the output to avoid treating this invocation as previous work.
+- Inspect:
+  - **Chronological timeline**: which tool calls followed each instruction; use it to identify the last action.
+  - **Session summary**: latest user input, assistant response, tools, and task notifications.
+  - **Current Git facts**: branch, commits relative to origin/main, changed files, and open PRs. Compare these with the logs; Git takes precedence.
 
-**같은 툴에서 세션이 끊겼으면**(재부팅·`/clear`·컨텍스트 소진) 반대 툴이 아니라 **이 툴**을 본다:
+**If a session ended in the same tool** (reboot, `/clear`, or context exhaustion), read **this tool's** logs:
 
 ```bash
 {{HANDOFF}} fw --from {{AGENT}} --current {{AGENT}} {{PROJECT_DIR_ARG}}
 ```
 
-`--current` 가 live 세션을 빼주므로 **직전 세션**이 나온다. 양쪽에 작업이 흩어져 있으면 `/fw-both`.
-특정 로그를 지목하려면 `--session <로그 경로>` (`/history` 로 경로를 찾을 수 있다).
+The identified live session is excluded so earlier work can be selected. Use `/fw-both` if work spans both tools.
+To select a particular log, add `--session <log-path>`; `/history` can find that path.
 
-### 3. "완료 / 남은 일 / 다음 액션" 으로 정리
-로그 요약(무엇을 하고 있었나)과 현재 git 사실(실제로 어디까지 갔나)을 대조해 정리한다.
-- 로그에 "PR 만들었다"가 있어도 git/gh 로 실제 머지·푸시 여부를 **확인**한다(이미 된 작업 중복 금지).
-- 정리한 상태를 **보고하고 멈춘다**(report-and-stop). 다음 액션은 **제안**한다 — 빌드·테스트·검증·git 조작이나 실제 작업 진행은 사용자가 명시적으로 요청할 때만. 이어받기는 상태를 복원·보고하는 것이지 대신 작업을 실행하는 게 아니다.
+### 3. Summarize completed work, remaining work, and the next action
 
-## 주의
-- 로그·핸드오프보다 **현재 git 상태가 우선**. 이미 커밋/푸시/PR/머지된 작업 중복 금지.
-- fw 는 **같은 머신 한정**(로컬 로그 필요). 다른 머신으로 넘길 땐 `handoff-save` 로 커밋된 핸드오프를 쓴다.
-- 커밋 전 `{{RULES_FILE}}` 승인 규칙, main 직접 merge 금지 규칙을 따른다.
+Compare the logs (what was being done) with current Git facts (what actually exists).
+- Even if a log says a PR was created, **verify** push and merge status with Git/gh to avoid repeating completed work.
+- **Report and stop** (report-and-stop). **Propose** the next action. Run builds, tests, further validation, Git operations, or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work.
+
+## Constraints
+
+- **Current Git state takes precedence** over logs and handoffs. Do not repeat work already committed, pushed, opened as a PR, or merged.
+- `fw` requires **local logs on the same machine**. For another machine, use `handoff-save` and commit and push the file.
+- Before committing, follow the approval rules in `{{RULES_FILE}}` and rules against merging directly into main.

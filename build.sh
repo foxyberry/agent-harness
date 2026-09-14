@@ -16,6 +16,7 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
       -e "s|{{PROJECT_DIR_ARG}}|$PROJECT_DIR_ARG|g" \
       -e "s|{{FW_FROM_DEFAULT}}|$FW_FROM_DEFAULT|g" \
+      -e 's/[[:blank:]]*$//' \
       "$1" > "$2"
 }
 
@@ -46,7 +47,7 @@ cp core/hooks/compact_transcript.py plugins/harness/bin/compact_transcript.py
 # ⚠️ chmod 는 **cp 다음**이다. 없는 파일에 chmod 하면 build.sh 가 거기서 멈춘다.
 chmod +x plugins/harness/bin/agent-handoff plugins/harness/bin/compact_transcript.py
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff; COMPACT=compact_transcript.py
-DEEP_RECOVERY='`/fw --from claude` 또는 `/fw-both`'   # 실제 존재하는 명령만 (없는 이름을 안내하면 손 탐색을 부른다 — 이슈 #95)
+DEEP_RECOVERY='`/fw --from claude` or `/fw-both`'   # 실제 존재하는 명령만 (없는 이름을 안내하면 손 탐색을 부른다 — 이슈 #95)
 PATH_NOTE=''   # Claude: bin/ 이 PATH 등록되어 cwd 무관
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory 가 개인 tier 를 자동 로드 — 주의 불필요
 PROJECT_DIR_ARG=''   # Claude: CLAUDE_PROJECT_DIR env 로 자동 해석 — 명령에 인자 불필요
@@ -96,17 +97,17 @@ AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
 COMPACT='python3 scripts/compact_transcript.py'
 # 예전 값은 "`~/.codex/sessions` 의 최근 세션 로그" 였다 — 폴더를 직접 뒤지라는 안내다.
 # 손 탐색에는 프로젝트 스코핑이 없어서 남의 프로젝트 세션을 집을 수 있다(이슈 #95).
-DEEP_RECOVERY='`/fw --from codex` 또는 `/fw-both`'
+DEEP_RECOVERY='`/fw --from codex` or `/fw-both`'
 # Codex: 위 경로는 이 SKILL.md 가 있는 스킬 폴더 기준 상대경로 — 스킬 폴더로 cd 해 실행하되,
 # 스크립트가 cwd 기준 git 루트로 프로젝트를 찾으므로(스킬 폴더=플러그인 캐시는 사용자 repo 밖일 수 있음)
 # 반드시 --project-dir 로 사용자 프로젝트를 명시하게 한다. (OpenAI 번들 스킬의 "cd to plugin root +
 # 절대경로 인자" 관례와 동일. 이 인자 없으면 핸드오프가 엉뚱한 위치에 저장되는 버그 — 이슈 #3.)
-PATH_NOTE='> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, 위 예시의 `--project-dir` 를 **지금 작업 중인 사용자 프로젝트의 실제 절대경로로 바꿔서** 넘겨라 — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.'
+PATH_NOTE='> Paths under `scripts/` are relative to **the skill directory containing this SKILL.md**. Run the commands from that directory. Replace the `--project-dir` value with **the absolute path of the user project you are working on**. The skill may be in a plugin cache outside that repository; omitting this argument can select the wrong project.'
 # Codex 명령 예시에 실제로 --project-dir 를 넣는다(각주만으론 복붙 시 누락 — 리뷰 지적). 후행 공백 유지.
-PROJECT_DIR_ARG='--project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" '
+PROJECT_DIR_ARG='--project-dir "<absolute-path-to-user-project>" '
 FW_FROM_DEFAULT='claude'   # Codex fw 는 반대 툴(claude) 로그를 복원 — 현재 Codex 세션 자기선택 방지
 # Codex: 개인 tier 경로는 Claude auto-memory — Codex 는 다음 세션에서 자동 로드하지 못함
-PERSONAL_TIER_NOTE='  > ⚠️ Codex 세션 주의: 위 개인 tier 경로는 **Claude auto-memory** 라 Claude 만 다음 세션에서 자동 로드한다. Codex 는 재로딩 메커니즘이 없으므로, Codex 에서도 필요할 항목이면 공유 tier(커밋 메모리 + INDEX.md)로 저장을 우선 검토하라.'
+PERSONAL_TIER_NOTE='  > In Codex, this personal-tier path belongs to **Claude auto-memory**; this harness does not automatically reload it into later Codex sessions. If Codex also needs an item, assess whether it belongs in shared committed memory with an INDEX.md entry. Respect the project privacy and tier rules; do not publish personal information merely to make it available across tools.'
 for s in $SKILLS; do
   mkdir -p "plugins/codex/skills/$s/scripts"
   # 남은 스킬은 전부 handoff.py 를 쓴다(예외였던 merge-cleanup·prettier-guard 는 개인 스코프로 이동).

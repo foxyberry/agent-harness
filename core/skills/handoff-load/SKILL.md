@@ -1,46 +1,46 @@
 ---
 name: handoff-load
-description: 다른 세션/툴/머신/사람이 남긴 작업을 이어받기. 커밋된 핸드오프를 1순위로 읽고 현재 git 과 대조. 작업 재개 시 사용
+description: Resume work left by another session, tool, machine, or person. Prefer a committed handoff and compare it with current Git state.
 context: fork
 allowed-tools: Bash, Read, Grep, Glob
-argument-hint: "선택: 세션 UUID 또는 transcript 경로 (깊은 복구용)"
+argument-hint: "Optional: a session UUID or transcript path for deeper recovery"
 ---
 
-# 작업 이어받기 (handoff-load)
+# Resuming from a handoff (handoff-load)
 
-다른 세션·툴(Codex↔Claude)·머신·사람이 남긴 작업을 이어받는다.
-**이식 경로(커밋된 핸드오프)를 1순위**로, 같은 머신이면 transcript 로 보강한다.
+Recover work left by another session, tool (Codex or Claude), machine, or person.
+**Prefer a committed handoff as the portable record**, supplemented by transcripts on the same machine.
 
-## 실행 순서
+## Procedure
 
-### 1. 루트 `{{RULES_FILE}}` 를 먼저 읽는다 (프로젝트 규칙).
+### 1. Read the root `{{RULES_FILE}}` first for project rules.
 
-### 2. 핸드오프 + 현재 git 사실 로드
+### 2. Load the handoff and current Git facts
 
 ```bash
 {{HANDOFF}} load --deep {{PROJECT_DIR_ARG}}
 ```
 {{PATH_NOTE}}
-출력에서 확인할 것:
-- **커밋된 핸드오프**: 요약/완료/남은것/다음액션/검증 — 이게 이식 가능한 1순위 정보
-- **현재 git 사실**: 핸드오프 작성 이후 바뀐 게 있는지 **대조** (git 이 우선)
-- **대상 프로젝트**: 어느 저장소를 봤는지. 의도한 프로젝트가 맞는지 **먼저 대조**한다 —
-  잘못 지목해도 그 저장소의 브랜치·세션이 멀쩡하게 나와서 정상 출력과 구별이 안 된다
-- **깊은 복구 힌트**: 같은 머신에 **이 프로젝트의** 로컬 transcript 가 있으면 표시됨
-- **Claude JSONL 빠른 복구** + **Codex rollout 빠른 복구**: 양쪽 툴의 최근 세션을 함께 요약한다.
-  시간순 타임라인·마지막 프롬프트/응답·task output 경로를 확인해, 방금 끊긴 작업이나
-  백그라운드 리뷰 결과를 이어받음
+Inspect:
+- **Target project**: first confirm that the selected repository is the intended one. The wrong repository can still produce valid-looking branches and sessions.
+- **Handoff file**: summary, completed work, remaining work, next actions, and verification. **Verify that the file's current contents match the version in HEAD before treating it as committed.** An untracked file, a newly staged file, or changes to a previously committed file are not committed content. The current script's saved banner and load heading can incorrectly say "committed" (#133); neither is evidence. Check push status separately before claiming availability on another machine.
+- **Current Git facts**: compare against the handoff for changes since it was written; Git takes precedence.
+- **Deep-recovery hints**: available when this machine has local transcripts belonging to **this project**.
+- **Claude JSONL and Codex rollout quick recovery**: summaries from both tools. Inspect timelines, latest prompts and responses, and task-output paths to recover interrupted work or background review results.
 
-### 3. (선택) 깊은 복구 — 같은 머신·같은 툴일 때만
-`load --deep` 요약만으로 부족하고 로컬 transcript 가 있으면 {{DEEP_RECOVERY}}
-로 .jsonl 을 직접 읽어 더 자세히 복원한다. 특정 파일을 지정해야 하면
-`{{HANDOFF}} load --deep {{PROJECT_DIR_ARG}}--transcript <path/to/session.jsonl>` 를 사용한다.
-(다른 머신이면 생략 — 파일이 없음)
+### 3. Optional deeper recovery — same machine and tool only
 
-### 4. "이미 완료 / 남은 것 / 다음 액션" 으로 정리해 **보고하고 멈춘다** (report-and-stop).
-- 저장된 핸드오프는 이미 사람이 정리해 커밋한 이식 정본이다 — 처음부터 재구성하지 말고 그대로 읽어 요약한다.
-- 다음 액션은 **제안**한다. 빌드·테스트·검증·git 조작(커밋/reset)이나 실제 작업 진행은 사용자가 명시적으로 요청할 때만 한다. 이어받기는 상태를 복원·보고하는 것이지 대신 작업을 실행하는 게 아니다.
+If `load --deep` is insufficient and a local transcript exists, use {{DEEP_RECOVERY}}
+to read the `.jsonl` directly. To select a specific file, use
+`{{HANDOFF}} load --deep {{PROJECT_DIR_ARG}}--transcript <path/to/session.jsonl>`.
+Skip this on another machine where the file is unavailable.
 
-## 주의
-- transcript·핸드오프보다 **현재 git 상태가 우선**. 이미 커밋/푸시/PR 된 작업 중복 금지.
-- 커밋 전 `{{RULES_FILE}}` 승인 규칙, main 직접 merge 금지 규칙을 따른다.
+### 4. Summarize completed work, remaining work, and the next action, then **report and stop** (report-and-stop).
+
+- Read and summarize the existing handoff rather than reconstructing everything from scratch. Treat it as the canonical portable record only after verifying its Git state; uncommitted content is a local draft.
+- **Propose** the next action. Run builds, tests, further validation, Git operations (including commit/reset), or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work.
+
+## Constraints
+
+- **Current Git state takes precedence** over transcripts and handoffs. Do not repeat work already committed, pushed, or opened as a PR.
+- Before committing, follow the approval rules in `{{RULES_FILE}}` and rules against merging directly into main.

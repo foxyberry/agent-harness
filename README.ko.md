@@ -220,7 +220,7 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 | 문서 | 용도 |
 |---|---|
-| [docs/decision-mining.md](docs/decision-mining.md) | 의사결정 마이닝 설계 — **아직 안 지음** ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
+| [docs/decision-mining.md](docs/decision-mining.md) | 커밋 메시지 마이닝 PoC 구현과 확장 설계 ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
 | [docs/public-release-audit.md](docs/public-release-audit.md) | 공개 전환 전 보안 감사 (2026-08-06) |
 
 ## 보안 · 라이선스 · 기여

@@ -70,10 +70,17 @@ class SchemaShipsWithThePluginTest(unittest.TestCase):
     def test_skill_does_not_call_the_project_file_canonical(self):
         """프로젝트에 없을 수 있는 파일을 정본이라 부르면 그 프로젝트는 승격이 막힌다."""
         text = CORE_SKILL.read_text(encoding="utf-8")
-        for m in re.finditer(r"정본[^\n]*", text):
-            line = m.group(0)
-            if "decisions/README.md" in line:
-                self.fail(f"스킬이 프로젝트 파일을 스키마 정본으로 가리킨다: {line!r}")
+        section = re.search(r"^### 1\.6 .*?(?=^### |\Z)", text, re.M | re.S)
+        self.assertIsNotNone(section)
+        self.assertIn("The canonical schema is defined below", section.group())
+        self.assertIn("not the canonical schema", section.group())
+        # Keep the negative guard across the whole skill: a correct inline schema must
+        # not hide a contradictory instruction elsewhere pointing at the project file.
+        # Sentence boundaries avoid flagging the explicit non-canonical disclaimer.
+        for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+            if "decisions/README.md" in sentence and re.search(r"\bcanonical\b|정본", sentence):
+                self.assertIn("not the canonical schema", sentence,
+                              f"Project-local guide is presented as canonical: {sentence!r}")
 
 
 class SchemaLivesInOnePlaceTest(unittest.TestCase):

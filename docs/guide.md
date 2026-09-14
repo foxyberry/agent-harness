@@ -7,7 +7,7 @@ since forgotten.
 - Design and structure → [overview.html](overview.html)
 - How the hooks work internally → [self-improvement-hooks.md](self-improvement-hooks.md)
 - Codex hook constraints → [codex-hooks.md](codex-hooks.md)
-- Design for something not built yet → [decision-mining.md](decision-mining.md)
+- Commit-message mining PoC and its broader design → [decision-mining.md](decision-mining.md)
 
 ---
 

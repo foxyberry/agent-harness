@@ -1,48 +1,50 @@
 ---
 name: handoff-save
-description: 작업을 끝내거나 툴/머신/사람을 바꾸기 전, 이식 가능한 핸드오프 상태를 커밋 파일로 저장. 세션 종료·전환 직전 사용
+description: Save a portable handoff file for committing before ending a session or passing work to another tool, machine, or person.
 context: fork
 allowed-tools: Bash, Read, Grep
-argument-hint: "선택: 한 줄 요약 — 예: 실거래 클라이언트 단일화 80% 완료"
+argument-hint: "Optional: a one-line summary, such as client consolidation 80% complete"
 ---
 
-# 작업 핸드오프 저장 (handoff-save)
+# Saving a handoff (handoff-save)
 
-세션을 끝내거나 **다른 툴(Codex↔Claude)·다른 머신·다른 사람**에게 작업을 넘기기 전에,
-지금까지의 상태를 `git 에 커밋되는` 핸드오프 파일로 남긴다.
+Before ending a session or passing work to **another tool (Codex or Claude), machine, or person**, save the current state in a handoff file intended for Git.
 
-왜: transcript(.jsonl)는 로컬·툴 종속이라 남이 못 읽는다. 커밋된 핸드오프 파일만이
-clone/pull 하는 모든 머신·사람·에이전트에게 전달된다.
+Transcripts (`.jsonl`) are local and tool-specific. A handoff becomes available to other machines, people, and agents through clone/pull **after it is committed and pushed**.
 
-## 실행 순서
+## Procedure
 
-### 1. 현재 작업을 4가지로 정리
-- **요약**: 이 작업이 뭐였는지 한두 줄
-- **완료한 것**: 이미 끝낸 항목 (불릿)
-- **남은 것 / 다음 액션**: 이어받는 쪽이 바로 할 수 있게 구체적으로 (불릿)
-- **검증 상태**: 테스트/빌드/리뷰 결과
+### 1. Summarize the work in four parts
 
-### 2. 스크립트 실행 (서술은 실제 개행 포함 마크다운)
+- **Summary**: one or two lines explaining the task.
+- **Completed work**: finished items as bullets.
+- **Remaining work / next actions**: concrete bullets the recipient can act on.
+- **Verification**: test, build, and review results.
+
+### 2. Run the script with Markdown and actual newlines
 
 ```bash
-python3 scripts/handoff.py save --project-dir "<지금 작업 중인 사용자 프로젝트 절대경로>" \
+python3 scripts/handoff.py save --project-dir "<absolute-path-to-user-project>" \
   --agent codex \
-  --summary "한두 줄 요약" \
-  --done "- 끝낸 것 1
-- 끝낸 것 2" \
-  --next "- 다음 액션 1
-- 다음 액션 2" \
-  --verify "검증 상태"
+  --summary "One- or two-line summary" \
+  --done "- Completed item 1
+- Completed item 2" \
+  --next "- Next action 1
+- Next action 2" \
+  --verify "Verification status"
 ```
-> ⚠️ 위 명령의 `scripts/handoff.py` 는 **이 SKILL.md 가 있는 스킬 디렉토리 기준 상대경로**다. 그 스킬 폴더로 cd 해서 실행하되, 위 예시의 `--project-dir` 를 **지금 작업 중인 사용자 프로젝트의 실제 절대경로로 바꿔서** 넘겨라 — 스킬 폴더는 플러그인 캐시라 사용자 repo 밖일 수 있어, 이 인자 없이는 git 루트 탐지가 빗나가 핸드오프가 엉뚱한 위치에 저장된다.
-git 사실(브랜치·origin/main 대비 커밋·변경 파일·열린 PR)은 스크립트가 **자동 수집**한다.
-파일은 `.claude/handoff/<브랜치명>.md` 에 생성/갱신된다 (브랜치당 1개).
+> Paths under `scripts/` are relative to **the skill directory containing this SKILL.md**. Run the commands from that directory. Replace the `--project-dir` value with **the absolute path of the user project you are working on**. The skill may be in a plugin cache outside that repository; omitting this argument can select the wrong project.
+The script **collects Git facts automatically**: branch, commits relative to origin/main, changed files, and open PRs.
+It creates or updates `.claude/handoff/<branch-name>.md`, with one file per branch (slashes in the branch name become hyphens, and spaces become underscores).
 
-### 3. 커밋·푸시 안내
-저장만으론 로컬에만 있다. 이어받기가 목적이면 **커밋·푸시**해야 한다.
-`AGENTS.md` 커밋 승인 규칙을 따른다 — 사용자에게 확인 후 진행.
+### 3. Explain the commit and push step
 
-## 주의
-- 서술 섹션을 비우지 말 것. 빈 핸드오프는 무용하다.
-- `--next` 는 "이어받는 사람이 git diff 없이도 뭘 할지 아는가" 기준.
-- 민감정보(키·토큰·내부 URL)는 적지 않는다 — 이 파일은 커밋된다.
+Saving creates a local file; the script **does not commit or push it**. Commit and push it to pass it to another machine.
+Follow the commit approval rules in `AGENTS.md`; obtain user confirmation before proceeding.
+The current script writes a banner claiming the file is committed even when it is not (#133). Verify the file's current contents against Git and report its actual state; do not repeat that claim based on the banner alone.
+
+## Constraints
+
+- Do not leave narrative sections empty; an empty handoff is unusable.
+- Write `--next` so the recipient knows what to do without first reading `git diff`.
+- Do not include sensitive information such as keys, tokens, or private URLs; this file is intended for committing.

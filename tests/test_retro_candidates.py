@@ -75,15 +75,15 @@ class PastSessionTest(unittest.TestCase):
             for skill in RETRO_SKILLS:
                 with self.subTest(adapter=adapter, skill=skill):
                     text = _rendered(adapter, skill)
-                    self.assertIn("자동으로 끌어오지 않는다", text)
-                    self.assertIn("사용자가 고른", text)
+                    self.assertIn("Do not import past sessions automatically", text)
+                    self.assertIn("selected by the user", text)
 
     def test_the_current_session_is_excluded(self):
         """자기 세션을 회고 재료로 쓰면 같은 얘기가 맴돈다 (fw 가 이미 쓰는 방식)."""
         for adapter in ADAPTERS:
             for skill in RETRO_SKILLS:
                 with self.subTest(adapter=adapter, skill=skill):
-                    self.assertIn("지금 이 세션은 후보에서 뺀다", _rendered(adapter, skill))
+                    self.assertIn("Exclude the current session from the candidates", _rendered(adapter, skill))
 
 
 class DedupTest(unittest.TestCase):
@@ -98,7 +98,7 @@ class DedupTest(unittest.TestCase):
     def test_it_is_not_presented_as_a_permanent_ban(self):
         for adapter in ADAPTERS:
             with self.subTest(adapter=adapter):
-                self.assertIn("금지 목록이 아니다", _rendered(adapter, "feedback-review"))
+                self.assertIn("not a ban list", _rendered(adapter, "feedback-review"))
 
 
 class BundledScriptTest(unittest.TestCase):
