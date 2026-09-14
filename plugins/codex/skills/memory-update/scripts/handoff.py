@@ -13,8 +13,11 @@ git 에 커밋되는 파일로 관리한다.
     clone/pull 하는 모든 머신·사람·에이전트가 동일하게 본다.
 
 계층:
-  - 이식 경로(1순위) = 이 커밋된 핸드오프 파일  → 누구나/어디서나/어느 툴이나
+  - 이식 경로(1순위) = 이 핸드오프 파일  → **커밋된 뒤에** 누구나/어디서나/어느 툴이나
   - 깊은 복구(보강)  = 로컬 transcript(.jsonl)  → 같은 머신·같은 툴일 때만
+
+  ⚠️ 이 스크립트는 커밋하지 않는다(저장 ≠ 커밋, tracked·staged ≠ 커밋). 커밋 상태는 본문에
+  박제하지 않고 `handoff_sync_state()` 가 조회 시점에 계산한다(#133).
 
 서브커맨드:
   save  현재 git 사실을 자동 수집해 핸드오프 파일을 생성/갱신한다.
@@ -55,6 +58,29 @@ def run(cmd, cwd=None):
         return "", False
 
 
+def probe(cmd, cwd=None):
+    """상태 판정용 실행 — `(returncode, ran)` 반환.
+
+    `run()` 은 returncode 를 bool 로 접어 "없다(1)" 와 "조회가 실패했다(128)" 를 못 가른다.
+    `ran=False` 는 "모른다" 이지 "아니다" 가 아니다.
+    """
+    try:
+        out = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=20)
+        return out.returncode, True
+    except Exception:
+        return None, False
+
+
+def head_blob(root, rel):
+    """HEAD 커밋에 든 `<rel>` 의 **바이트 내용**. 못 꺼내면 None ("모른다")."""
+    try:
+        out = subprocess.run(["git", "cat-file", "blob", "HEAD:" + rel],
+                             cwd=root, capture_output=True, timeout=20)
+    except Exception:
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
 def repo_root(explicit=None):
     """핸드오프를 저장/조회할 프로젝트 루트. 우선순위:
     1) 명시 인자(--project-dir) — cwd 무관하게 확정. Codex 처럼 스크립트를 스킬 폴더에서
@@ -84,6 +110,69 @@ def safe_name(branch):
 
 def handoff_path(root, branch):
     return os.path.join(root, HANDOFF_DIR, safe_name(branch) + ".md")
+
+
+# 파일 본문에 박제하면 커밋 전후로 반드시 거짓이 되므로(#133) 상태는 save/load 가 돌 때마다
+# 계산한다. `committed-*` 는 로컬 커밋 기준 — 푸시는 판정하지 않는다.
+HANDOFF_STATE_LABELS = {
+    "missing": "파일 없음",
+    "unknown": "확인 불가 — git 조회 실패 (커밋 여부를 단정하지 않음)",
+    "untracked": "커밋 안 됨 — git 에 추가조차 안 된 상태(untracked)",
+    "staged-new": "커밋 안 됨 — `git add` 로 staged 만 된 상태",
+    "committed-clean": "커밋됨 — HEAD 커밋 내용과 현재 파일이 동일 (로컬 커밋 기준. 푸시 여부는 별개)",
+    "committed-modified": "커밋 후 수정됨 — 현재 파일(워킹트리)이 HEAD 커밋 내용과 다름",
+    "committed-untracked": "HEAD 엔 커밋본이 있으나 현재 파일은 git 추적 밖(`git rm --cached` 등)",
+}
+
+
+def handoff_sync_state(root, path):
+    """이 핸드오프 파일 하나의 커밋 상태. index 멤버십 → HEAD 멤버십 → **내용 비교** 순.
+
+    tracked ≠ committed ≠ 내용 일치다 — `git add` 만 해도 tracked 이고, 커밋 뒤 다시 save 하면
+    HEAD 와 워킹트리가 갈린다. 판정 규칙 셋:
+
+    - 종료코드를 그대로 본다. `!= 0` 으로 뭉개면 조회 실패(128)가 '부재'(1)로 둔갑한다
+      (비저장소 → unknown, 커밋 0개 저장소 → 커밋된 것일 수 없음).
+    - 내용은 `git diff` 가 아니라 HEAD blob 을 꺼내 **바이트로** 비교한다. diff 는
+      `assume-unchanged`·`skip-worktree` 에서 조용히 "차이 없음" 을 돌려줘 HEAD 에 없는 내용을
+      '커밋됨' 이라 말하게 된다. 바이트 비교는 틀리는 방향이 반대다 — 줄끝·필터 차이로 clean 을
+      modified 라 할 수는 있어도, HEAD 에 없는 내용을 clean 이라 하진 못한다.
+    - 푸시 여부는 판정하지 않고, 이 파일 외 index 상태도 말하지 않는다.
+    """
+    if not os.path.isfile(path):
+        return "missing"
+    rel = os.path.relpath(path, root).replace(os.sep, "/")
+    if rel.startswith("../"):
+        return "unknown"
+
+    idx_code, idx_ran = probe(["git", "ls-files", "--error-unmatch", "--", rel], cwd=root)
+    if not idx_ran or idx_code not in (0, 1):
+        return "unknown"
+    in_index = idx_code == 0
+
+    head_code, head_ran = probe(
+        ["git", "rev-parse", "--verify", "--quiet", "HEAD:" + rel], cwd=root
+    )
+    if not head_ran or head_code not in (0, 1):
+        return "unknown"
+    if head_code == 1:
+        return "staged-new" if in_index else "untracked"
+    if not in_index:
+        return "committed-untracked"
+
+    committed = head_blob(root, rel)
+    if committed is None:
+        return "unknown"
+    try:
+        with open(path, "rb") as f:
+            current = f.read()
+    except OSError:
+        return "unknown"
+    return "committed-clean" if committed == current else "committed-modified"
+
+
+def handoff_state_label(state):
+    return HANDOFF_STATE_LABELS.get(state, HANDOFF_STATE_LABELS["unknown"])
 
 
 def now_iso():
@@ -816,7 +905,10 @@ def cmd_save(args):
     body = f"""# 작업 핸드오프 — {branch}
 
 > 갱신: {now_iso()} · 에이전트: {args.agent} · 머신: {machine_name()}
-> ⚠️ 이 파일은 **커밋됨**. 이어받는 사람/툴은 먼저 이걸 읽고 **현재 git 상태와 대조**한 뒤 진행하세요.
+> ⚠️ 이 파일은 이어받기용 **핸드오프 정본**이다 — 커밋·푸시해야 다른 머신/사람/툴에 전달된다.
+> 이 파일이 지금 커밋돼 있는지는 **본문이 아니라 git 에서** 확인하세요 (저장 시점에 적어둔
+> 상태는 커밋 직후 바로 낡습니다 — `load` 가 조회 시점 상태를 다시 계산해 알려줍니다).
+> 이어받는 사람/툴은 먼저 이걸 읽고 **현재 git 상태와 대조**한 뒤 진행하세요.
 > transcript 만 믿지 말 것 — git 사실이 우선입니다.
 
 ## 요약
@@ -859,9 +951,18 @@ def cmd_save(args):
     os.makedirs(os.path.dirname(target), exist_ok=True)
     with open(target, "w", encoding="utf-8") as f:
         f.write(body)
-    rel = os.path.relpath(target, root)
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
     print(f"✅ 핸드오프 저장: {rel}")
-    print("   → 커밋·푸시해야 다른 머신/사람/툴이 이어받습니다.")
+    print(f"   현재 git 상태: {handoff_state_label(handoff_sync_state(root, target))}")
+    # 문구는 어떤 상태에서도 참이어야 한다 — 바로 위 상태 줄이 `커밋됨` 일 때 모순되면 안 된다.
+    print("   → 커밋하고 push 해야 다른 머신/사람/툴에 전달됩니다:")
+    # `-C <root>` 를 항상 붙인다. `--project-dir`·스킬 폴더 실행이면 cwd ≠ 대상 저장소라
+    # `git add <rel>` 만 안내하면 엉뚱한 저장소에서 돈다. 절대경로는 stdout 에만 — 커밋될
+    # 본문에 넣으면 머신마다 달라 이식 정본을 오염시킨다.
+    at = f"git -C {shlex.quote(root)}"
+    print(f"      {at} add -- {shlex.quote(rel)}")
+    print(f"      {at} commit    # 커밋 메시지·승인 규칙은 프로젝트 규칙을 따르세요")
+    print("   (push 명령은 원격·업스트림 설정에 따라 달라서 안내하지 않습니다 — 프로젝트 방식대로.)")
     return 0
 
 
@@ -873,14 +974,23 @@ def cmd_load(args):
     out.append(f"# 작업 이어받기 — 브랜치 `{branch}`")
     out.append("")
     out.extend(_target_lines(root, getattr(args, "project_dir", None)))
-    if os.path.isfile(target):
-        out.append(f"## 📄 커밋된 핸드오프 ({os.path.relpath(target, root)})")
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    state = handoff_sync_state(root, target)
+    if state != "missing":
+        # 상태는 본문 **위**에 둔다. 예전 버전이 박아둔 "이 파일은 커밋됨" 배너가 남은 파일이
+        # 있어서, 읽는 쪽이 그 문장을 만나기 전에 실제 상태를 봐야 한다(#133).
+        out.append(f"## 📄 핸드오프 파일 ({rel})")
+        out.append("")
+        out.append(f"- git 상태: {handoff_state_label(state)}")
+        # 출처만 밝힌다. HEAD 와 같은지는 위 상태 줄이 말한다 — 여기서 "HEAD 가 아님" 을
+        # 단정하면 committed-clean 일 때 그 줄과 모순된다.
+        out.append("- 아래 본문은 **워킹트리 파일을 읽은 내용**입니다 (HEAD 에서 꺼낸 것이 아님).")
         out.append("")
         with open(target, encoding="utf-8") as f:
             out.append(f.read().rstrip())
     else:
-        out.append("## 📄 커밋된 핸드오프: 없음")
-        out.append(f"   (이 브랜치엔 `{os.path.relpath(target, root)}` 가 아직 없음)")
+        out.append("## 📄 핸드오프 파일: 없음")
+        out.append(f"   (이 브랜치엔 `{rel}` 가 아직 없음)")
     out.append("")
     out.append("---")
     out.extend(_facts_lines(git_facts(root), "## 🔎 현재 git 사실 (핸드오프와 대조용)"))
@@ -891,7 +1001,9 @@ def cmd_load(args):
         for h in hints:
             out.append(f"- {h}")
     else:
-        out.append("## 🧩 깊은 복구: 이 머신엔 로컬 transcript 없음 — 커밋된 핸드오프로만 진행")
+        # "커밋된 핸드오프로만 진행" 이라 쓰면 위에서 `커밋 안 됨` 이라 보고한 그 파일을 같은
+        # 출력에서 커밋된 것으로 단정하게 된다(#133). 가리키는 건 채널이지 커밋 상태가 아니다.
+        out.append("## 🧩 깊은 복구: 이 머신엔 로컬 transcript 없음 — 저장된 핸드오프 파일로만 진행")
     if args.deep or args.transcript:
         out.append("")
         out.extend(_format_claude_deep_recovery(root, transcript=args.transcript))

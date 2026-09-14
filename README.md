@@ -94,7 +94,7 @@ smoke test; prompt injection and background LLM paths remain disabled until that
 | Skill | What it does |
 |---|---|
 | `handoff-save` | Save the current state to a committable file before handing off |
-| `handoff-load` | Resume by reading the committed handoff and diffing it against current Git state |
+| `handoff-load` | Resume by reading the saved handoff, reporting whether it is committed, and diffing it against current Git state |
 | `fw` | Recover unsaved work from the other tool's local session log |
 | `fw-both` | Read Claude and Codex session logs together |
 | `history` | Browse and search local sessions by time |

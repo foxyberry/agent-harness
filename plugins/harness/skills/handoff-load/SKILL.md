@@ -23,7 +23,7 @@ agent-handoff load --deep
 
 Inspect:
 - **Target project**: first confirm that the selected repository is the intended one. The wrong repository can still produce valid-looking branches and sessions.
-- **Handoff file**: summary, completed work, remaining work, next actions, and verification. **Verify that the file's current contents match the version in HEAD before treating it as committed.** An untracked file, a newly staged file, or changes to a previously committed file are not committed content. The current script's saved banner and load heading can incorrectly say "committed" (#133); neither is evidence. Check push status separately before claiming availability on another machine.
+- **Handoff file**: summary, completed work, remaining work, next actions, and verification — the primary portable record. Read the **Git-state line** printed just above the body first; it, not any sentence inside the body, is the file's real state. It reports one of: not committed (the handoff exists only on this machine, whether or not it is staged); committed but since modified (the printed body is working-tree content that is not in HEAD); committed and identical to HEAD; or not determinable, meaning Git could not be queried and nothing should be assumed. Even a committed result is a **local commit only** — push status is not checked, so confirm it separately before claiming the handoff is available elsewhere. The comparison is byte-for-byte against the HEAD blob, so line-ending or filter differences can report "modified"; it judges this one file's content, not the state of the rest of the index.
 - **Current Git facts**: compare against the handoff for changes since it was written; Git takes precedence.
 - **Deep-recovery hints**: available when this machine has local transcripts belonging to **this project**.
 - **Claude JSONL and Codex rollout quick recovery**: summaries from both tools. Inspect timelines, latest prompts and responses, and task-output paths to recover interrupted work or background review results.
@@ -37,7 +37,7 @@ Skip this on another machine where the file is unavailable.
 
 ### 4. Summarize completed work, remaining work, and the next action, then **report and stop** (report-and-stop).
 
-- Read and summarize the existing handoff rather than reconstructing everything from scratch. Treat it as the canonical portable record only after verifying its Git state; uncommitted content is a local draft.
+- Read and summarize the existing handoff rather than reconstructing everything from scratch. Do not assume it is committed: if the Git-state line reports uncommitted, modified, or unverifiable, say so in the report — the content may not be shared yet, or may diverge from HEAD.
 - **Propose** the next action. Run builds, tests, further validation, Git operations (including commit/reset), or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work.
 
 ## Constraints

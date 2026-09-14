@@ -40,8 +40,9 @@ It creates or updates `.claude/handoff/<branch-name>.md`, with one file per bran
 ### 3. Explain the commit and push step
 
 Saving creates a local file; the script **does not commit or push it**. Commit and push it to pass it to another machine.
+The script prints the file's current Git state and the `git -C <project root> add -- <path>` and `commit` commands for it. **Use the printed commands verbatim** — the target repository may differ from the current working directory.
 Follow the commit approval rules in `{{RULES_FILE}}`; obtain user confirmation before proceeding.
-The current script writes a banner claiming the file is committed even when it is not (#133). Verify the file's current contents against Git and report its actual state; do not repeat that claim based on the banner alone.
+**Do not report "saved" as "committed."** If you have not committed it, say that it is saved and not committed; the saved file deliberately records no commit state, because that would go stale the moment it is committed.
 
 ## Constraints
 
