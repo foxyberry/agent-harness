@@ -1,48 +1,44 @@
 ---
 name: fw-both
-description: Claude·Codex 양쪽 세션 로그를 한 번에 확인해 이어받기. fw 가 한 툴만 보는 것과 달리 두 툴 로그를 함께 대조. 여러 툴을 오가며 작업했을 때 사용
+description: Resume work by comparing Claude and Codex session logs together. Use when work is spread across both tools; fw normally reads only the other tool.
 context: fork
 allowed-tools: Bash, Read, Grep, Glob
-argument-hint: "선택: 세션 수 --limit N / 프로젝트 경로"
+argument-hint: "Optional: --limit N sessions per tool, or a project path"
 ---
 
-# 양쪽 툴 이어받기 (fw-both — forward work, both tools)
+# Resuming across both tools (fw-both — forward work, both tools)
 
-`fw` 는 **한 툴**(반대 툴)의 로그만 본다. 이 명령은 **Claude·Codex 양쪽 세션 로그를 한 번에**
-확인해, 두 툴을 오가며 하던 작업을 하나로 모아 이어받는다.
+`fw` normally reads **one tool's** logs, defaulting to the other tool. This command reads **Claude and Codex logs together** to reconstruct work spread across both.
 
-**언제 쓰나:** Codex 로 조금 하다 Claude 로 넘어가 또 조금 하다… 처럼 **여러 툴에 작업이 흩어졌을 때**.
-한쪽만 보면 절반을 놓친다.
+**Use it when** you have moved back and forth between tools and either tool's logs alone would miss part of the work.
 
-**핵심 안전장치:** 지금 이 명령을 부른 **현재 툴의 live 세션(방금 켠 이 세션)** 은 자동으로 배제된다
-(`--current claude`). 그래서 "직전 작업" 자리에 방금 실행한 fw 호출이 잡히지 않는다. 반대 툴은
-실행 중이 아니므로 그 최신 로그가 진짜 직전 작업이다.
+**Live-session handling:** `--current claude` excludes the **current tool's live session only when its environment session ID matches a project log**. Without a positive match, it hides nothing. The other tool's latest log remains eligible; do not assume that tool has stopped running. Check the output for this invocation before treating it as prior work.
 
-## 실행 순서
+## Procedure
 
-### 1. 루트 `CLAUDE.md` 를 먼저 읽는다 (프로젝트 규칙).
+### 1. Read the root `CLAUDE.md` first for project rules.
 
-### 2. 양쪽 세션 로그 + git 사실 로드
+### 2. Load both tools' session logs and Git facts
 
 ```bash
-agent-handoff fw --from both --current claude 
+agent-handoff fw --from both --current claude
 ```
 
-- `--from both` = Claude·Codex 양쪽 로그를 함께 출력. `--current claude` 로 현재 세션 배제.
-- `--limit N` 으로 각 툴에서 요약할 최근 세션 수를 늘릴 수 있다(기본 1).
-- 출력에서 확인할 것:
-  - **시간순 타임라인**: 각 툴 요약 안에 있다. 어떤 지시 다음에 무슨 도구를 돌렸는지 —
-    "마지막에 뭐 했나"는 여기서 읽는다
-  - **Codex rollout 요약** + **Claude JSONL 요약**: 각 툴의 최근 세션에서 마지막 입력·응답·도구
-  - **현재 git 사실**: 브랜치·origin/main 대비 커밋·변경 파일·열린 PR — 로그와 **대조**(git 우선)
+- `--from both` includes Claude and Codex logs. `--current claude` enables the matching-based exclusion described above.
+- `--limit N` increases the number of recent sessions summarized **per tool** (default: 1).
+- Inspect:
+  - **Chronological timeline** in each tool's summary: which tool calls followed each instruction and what happened last.
+  - **Codex rollout summary** and **Claude JSONL summary**: latest inputs, responses, and tools from recent sessions.
+  - **Current Git facts**: branch, commits relative to origin/main, changed files, and open PRs. Compare with the logs; Git takes precedence.
 
-### 3. 두 툴 로그를 합쳐 "완료 / 남은 일 / 다음 액션" 으로 정리
-Claude 쪽과 Codex 쪽에서 각각 무엇을 하고 있었나를 **시간순으로 합쳐** 하나의 그림으로 만든다.
-그다음 현재 git 사실과 대조해 실제로 어디까지 갔는지 확정한다(이미 된 작업 중복 금지).
-- 정리한 상태를 **보고하고 멈춘다**(report-and-stop). 다음 액션은 **제안**한다 — 빌드·테스트·검증·git 조작이나 실제 작업 진행은 사용자가 명시적으로 요청할 때만. 이어받기는 상태를 복원·보고하는 것이지 대신 작업을 실행하는 게 아니다.
+### 3. Combine the logs into completed work, remaining work, and the next action
 
-## 주의
-- 로그보다 **현재 git 상태가 우선**. 이미 커밋/푸시/PR/머지된 작업 중복 금지.
-- `fw-both` 는 **같은 머신 한정**(로컬 로그 필요). 다른 머신으로 넘길 땐 `handoff-save` 로 커밋된 핸드오프를 쓴다.
-- 커밋된 핸드오프가 있으면 `handoff-load` 가 먼저(정본). fw 계열은 저장 안 했을 때의 보조 경로다.
-- 커밋 전 `CLAUDE.md` 승인 규칙, main 직접 merge 금지 규칙을 따른다.
+Merge Claude and Codex activity **chronologically**, then compare it with current Git facts to establish actual progress. Do not repeat completed work.
+- **Report and stop** (report-and-stop). **Propose** the next action. Run builds, tests, further validation, Git operations, or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work.
+
+## Constraints
+
+- **Current Git state takes precedence** over logs. Do not repeat work already committed, pushed, opened as a PR, or merged.
+- `fw-both` requires **local logs on the same machine**. For another machine, use `handoff-save` and commit and push the file.
+- Prefer `handoff-load` when a committed handoff is available; it is the canonical portable record. The `fw` commands are fallbacks when no handoff was saved.
+- Before committing, follow the approval rules in `CLAUDE.md` and rules against merging directly into main.

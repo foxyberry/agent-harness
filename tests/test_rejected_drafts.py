@@ -119,7 +119,7 @@ class RenderedSkillTest(unittest.TestCase):
             text = self._rendered(adapter)
             with self.subTest(adapter=adapter, path="읽기"):
                 self.assertIn("_rejected.md", text)
-                self.assertIn("후보에서 뺀다", text,
+                self.assertIn("exclude it from the candidates", text,
                               "dedup 단계에서 폐기 목록을 쓰라는 지시가 없다")
             with self.subTest(adapter=adapter, path="쓰기"):
                 self.assertIn("append", text,
@@ -128,7 +128,7 @@ class RenderedSkillTest(unittest.TestCase):
     def test_it_is_not_presented_as_a_permanent_ban(self):
         for adapter in self.ADAPTERS:
             with self.subTest(adapter=adapter):
-                self.assertIn("금지 목록이 아니다", self._rendered(adapter))
+                self.assertIn("not a ban list", self._rendered(adapter))
 
 
 class PromptWiringTest(unittest.TestCase):

@@ -1,104 +1,191 @@
-# 의사결정 소급 마이닝 (Decision mining) — 설계
+# Decision mining — implementation and design
 
-> 상태: **설계 (탐색)**. 구현 확정 아님. 이슈 [#15](https://github.com/foxyberry/agent-harness/issues/15) 방향 검증용.
+**Status:** a limited commit-message mining CLI is implemented in
+[`core/hooks/mine.py`](../core/hooks/mine.py) and shipped in the **Claude adapter**. The broader
+combination of PR discussions, issues, and session logs remains a design direction, not an
+implemented end-to-end feature. The original exploration is in
+[issue #15](https://github.com/foxyberry/agent-harness/issues/15); the implementation followed in
+[issue #21](https://github.com/foxyberry/agent-harness/issues/21).
 
-## 한 줄
+## Purpose
 
-`decisions/`(ADR)가 **앞으로**의 결정을 회고 때 기록(forward-capture)한다면, 이 문서는
-**과거** git 히스토리에서 이미 내려진 결정을 **소급 복원**(backward-mine)하는 층을 설계한다.
-둘이 합쳐지면: 과거는 마이닝으로 씨앗을 깔고, 이후는 회고로 이어 붙이는 **하나의 결정 계보**.
+Retrospectives record decisions **as work happens** in `decisions/` ADRs: forward capture.
+Decision mining recovers decisions **already made** from historical evidence: backward mining.
+Both feed the same decision history, so mining can seed older decisions and retrospectives can
+continue the record from there.
 
-```
-과거 (backward-mine)          현재 이후 (forward-capture)
-git log·PR·이슈  ──▶ decisions/  ◀── 회고 루프 (reflect → /memory-update)
-     소급 씨앗            ADR 체인              직접 기록
-```
+```text
+Past: backward mining                    Ongoing work: forward capture
+commit messages → ADR drafts → decisions/ ← retrospective drafts
+                                 ↑
+                       human review and promotion
 
-## 왜 (동기)
-
-- AI(또는 신규 입사자)는 "지난 N개월 개발 맥락"을 통째로 못 먹는다 — 컨텍스트 한계 = firehose.
-- 필요한 건 "더 큰 뷰어"가 아니라 **firehose 를 '왜'의 계보로 압축**하는 층.
-- 커밋·PR엔 "무엇"은 풍부해도 "왜"는 드물게 적힌다 → 단순 통계·시각화로는 계보가 안 나온다.
-
-## 시장 포지션 (조사 완료 — #15 결론 요약)
-
-판별 축: **(a)** git 이력에서 rationale("왜")을 뽑아 학습·설명 vs **(b)** 진화 통계·시각화·현재코드 Q&A.
-
-| 부류 | 대표 | 우리와의 차이 |
-|------|------|---------------|
-| (b) 진화 통계·시각화 | CodeScene, code-maat, git-of-theseus, Hercules | "무엇이 얼마나 바뀌었나"만. "왜" 없음 |
-| repo→설명 AI (스냅샷) | DeepWiki, Cody, Continue @codebase, Aider | 현재 코드 기반. 결정 계보 아님 |
-| (a) 근접 — 상용 | **Unblocked** (유일하게 "왜"를 코어로 판매) | PR+**Slack+Jira** 융합 — 순수 git 아님 |
-| (a) 근접 — 학술 | **CoMRAT** (MSR 2025, 커밋→Decision/Rationale 분류, 오픈툴) | 상용 아님. 커밋 메시지 단독 최충실 |
-| (a) 근접 — 신생 | **repowise** ("decision archaeology", ADR 계보 겨냥) | 순수 git 아닌 8소스 병용 |
-
-**핵심 결론 (정직하게):**
-- "순수 git 단독으로 결정 계보를 학습·설명"하는 완성 제품은 사실상 없다. 하지만 **빈 gap 도 아니다** —
-  2025~2026 여러 팀이 진입 중인 활발한 영역.
-- 순수 git 제품이 없는 건 시장 부재가 아니라 **기술적 한계**: git 은 개발자가 커밋에 이유를
-  **적었을 때만** rationale 을 담는다. AI 는 안 적힌 WHY 를 발명 못 한다.
-- 그래서 실제 차별화는 "순수 git 고집"이 아니라 **git + PR + 세션로그/회고 다중소스 융합**.
-  ← 이 지점이 우리 하네스(git 우선 + `fw` 세션로그 + 회고 memory) 설계와 정확히 맞닿는다.
-
-**우리의 방어 가능한 자리**: "git 단독"이 아니라 **"git + 세션로그 + 회고를 한 하네스에서 결정 계보로 융합"**.
-Unblocked(Slack/Jira 종속)·CoMRAT(커밋 단독·비상용)·repowise(8소스)와 달리, 우리는
-이미 세션로그(`fw`)와 회고(`reflect`)를 한 파이프라인에 갖고 있어 **마이닝 산출물을 같은
-`decisions/` 스키마의 씨앗으로 바로 흘려보낼 수 있다.**
-
-## 마이닝 소스 후보 (신호 강도순)
-
-| 소스 | 신호 | 강도 | 한계 |
-|------|------|------|------|
-| PR 본문·리뷰 토론 | "왜 이 안으로 갔나", 기각된 대안 | **강** | PR 없이 직접 push 한 이력엔 없음 |
-| 이슈 본문·코멘트 | 문제 정의, 대안 논의, `Closes #` 링크 | **강** | 이슈 안 쓰는 팀엔 없음 |
-| 커밋 메시지 (본문) | rationale, "대신 ~", "되돌림" 마커 | 중 | 한 줄 요약만 쓰면 빈약 |
-| 세션로그 (`fw`) | 실제 판단 과정·기각 근거 (우리 고유 자산) | **강** | 같은 머신·로컬 종속 |
-| 커밋↔파일 churn | "어디가 자주 바뀌나" = 결정 압력 지점 | 약 | "왜"는 아님. 후보 지목용 |
-| revert·`supersedes` 흔적 | 방향 전환 = ADR 후보 | 중 | 탐지 규칙 필요 |
-
-핵심: **PR·이슈·세션로그가 "왜"의 주 광맥**이고, 커밋 churn 은 "어디를 파볼지" 지목하는 보조.
-
-## 하네스 접점 (설계)
-
-마이닝 산출물은 **새 스키마를 만들지 않고** 기존 `decisions/` ADR 스키마의 **초안**으로 떨군다 —
-즉 forward-capture 와 **같은 승격 경로**(`_pending/decisions/` → `/memory-update` 1.6)를 탄다.
-
-```
-git log --grep + PR/이슈 API  ──▶  마이닝 LLM  ──▶  _pending/decisions/*.md
-                                    (rationale 추출)     (proposed_chain/supersedes/confidence)
-                                                              │
-                                                     사람이 /memory-update 로 승격
-                                                     (엉뚱한 계보 = 최악 실패 → 자동 확정 금지)
+Planned additional mining inputs: PR discussions, issues, and session logs
 ```
 
-- **재사용**: `reflect.py` 의 초안 emit 계약(`proposed_*`·게이트)·`_decisions_index`(기존 체인 주입)·
-  1.6 승격 절차를 그대로 재사용. 마이닝은 "트랜스크립트" 대신 "git 히스토리 슬라이스"를 입력으로 주는
-  **또 다른 초안 생성기**일 뿐이다.
-- **엔진↔데이터 원칙 준수**: 마이닝 규칙(어떤 커밋 패턴이 결정 신호인가)은 core 하드코딩 X →
-  프로젝트 데이터(예: `decision-mining-rules.json`)로 뺀다. `reflection-rules.json` 선례를 따른다.
-- **`fw` 와의 관계**: `fw` 는 세션로그를 **이어받기**용으로 읽는다. 마이닝은 같은 로그를 **결정 추출**용으로
-  읽는다 — 리더는 공유 가능, 소비 목적만 다르다.
+A long development history is too large to put directly into an agent's context. A larger viewer
+alone does not solve that problem: the useful output is a compact record of **why** choices were
+made. Commits and PRs often describe what changed, but contain little rationale. Statistics and
+visualizations cannot recover reasons that were never recorded.
 
-## 한계 직시 (설계에 못 박을 것)
+## What is implemented
 
-1. **커밋에 "왜"가 없으면 마이닝도 못 뽑는다.** AI 는 안 적힌 rationale 을 발명하면 안 된다 —
-   그건 가짜 역사다. 신호 없는 커밋은 **조용히 건너뛴다**(빈 초안 강제 생성 금지).
-2. **엉뚱한 계보가 최악의 실패.** 마이닝이 chain·supersedes 를 **확정하면 안 된다** — forward-capture 와
-   똑같이 `proposed_*` 로만 제안하고 사람이 승격. 자동 확정 절대 금지.
-3. **우리 강점과 상호보완**: 마이닝(과거·불완전) × 회고 forward-capture(현재 이후·"왜"를 즉시 기록)는
-   경쟁이 아니라 보완. 과거의 빈 곳은 마이닝이 씨앗만 깔고, 앞으로는 회고가 채운다.
-4. **positive-only 정신 계승**: 확신 없는 결정 신호는 **주입 안 함**(억지 ADR 생성 X).
-   [[verify-other-tool-runtime-ids]] 의 "매칭될 때만 작동" 설계와 같은 결.
+`mine.py` accepts an explicit Git revision range, reads commit subjects and bodies with
+`git log --no-merges`, and sends that slice to an LLM. It does **not** fetch PR or issue text,
+read session logs, or include diffs. The prompt asks for significant decisions only when the
+messages actually contain rationale, and asks for the supporting commit hash in Evidence.
 
-## 다음 (구현 승격 시)
+It reuses `reflect.py`'s backend implementations, `ADR_DRAFT_CONTRACT`, existing-decision index,
+draft parsing, and decision classification. Only decision drafts are written, under
+`.claude/memory/_pending/decisions/`. An existing slug is preserved; a new draft gets a numeric
+suffix. An empty Git slice exits without invoking the backend. A nonempty slice can legitimately
+produce no ADR drafts.
 
-- [ ] PoC: `git log --grep` + PR/이슈 본문 → 마이닝 LLM → `_pending/decisions/` 초안 (이 repo 히스토리로 dogfood)
-- [ ] `decision-mining-rules.json` 데이터 스키마 (결정 신호 패턴)
-- [ ] `reflect.py` 초안 생성기와의 코드 공유 지점 확정 (입력만 다른 같은 파이프라인)
-- [ ] 벤치마크: 이 repo 의 실제 PR(#6·#13·#16)에서 소급 ADR 이 나오는지 정성 평가
+### Run the CLI
 
-## 관련
+From the **target repository root**, use the installed Claude plugin's bundled script. Replace
+`<installed-plugin-root>` with the actual installation path, and choose a small revision range
+that exists in that repository:
 
-- 이슈 #15 (이 설계의 근거·시장조사 전문), #14(forward-capture, PR #16 으로 머지됨)
-- `docs/self-improvement-hooks.md` (회고 루프 — 마이닝이 접속할 승격 경로)
-- `core/hooks/reflect.py` (재사용할 초안 생성기), `core/skills/memory-update/SKILL.md` §1.6 (ADR 스키마 정본)
+```bash
+python3 "<installed-plugin-root>/hooks/mine.py" origin/main~20..origin/main --backend claude
+```
+
+The target directory is `CLAUDE_PROJECT_DIR` when set, otherwise the process working directory.
+If that variable is already set, verify it points to the intended target repository.
+
+To mine one squash-merge commit, replace `<squash-commit>` below with its hash:
+
+```bash
+python3 "<installed-plugin-root>/hooks/mine.py" '<squash-commit>^..<squash-commit>' --backend claude
+```
+
+Because the reader uses `--no-merges`, a range containing only a true merge commit is empty.
+Choose a range containing the relevant non-merge commits instead. The input is bounded by your
+chosen revision range; there is no separate input-size budget, so avoid sending the entire
+history at once.
+
+Supported `--backend` values are `claude`, `deepseek`, and `ollama`. The mining CLI defaults to
+`claude`; unlike the retrospective CLI, it does **not** use `REFLECT_BACKEND` to choose that
+default. Running `mine.py` explicitly invokes the selected backend and does not require
+`HARNESS_AUTO_REFLECT=1`, which gates automatic hook jobs.
+
+Review resulting drafts with `/memory-update`. This is a script, **not a slash-command skill**.
+`build.sh` copies it and its LLM helpers into `plugins/harness/hooks/`; the Codex hook bundle
+omits them. Both tools have `/memory-update` and can review the resulting shared-project drafts.
+
+The output remains a proposal. The prompt forbids invented rationale, but the code does not
+independently prove every LLM claim: validate it against the cited commits during review.
+
+## Research context and positioning
+
+The following summarizes the **historical exploration in issue #15**, not a fresh assessment of
+current third-party capabilities. Its comparison axis was (a) extracting decision rationale
+from history, versus (b) showing change statistics or explaining a current code snapshot.
+
+| Category considered in #15 | Examples examined | Distinction used in that exploration |
+|---|---|---|
+| Evolution statistics and visualization | CodeScene, code-maat, git-of-theseus, Hercules | Primarily examined for where and how much code changed |
+| Repository-to-explanation tools | DeepWiki, Cody, Continue `@codebase`, Aider | Examined as current-code explanation rather than a decision history |
+| Adjacent commercial approach | Unblocked | Considered for combining PRs with Slack/Jira context |
+| Adjacent research | CoMRAT (MSR 2025) | Considered for decision/rationale classification from commit messages |
+| Adjacent emerging approach | repowise | Considered for decision archaeology using multiple sources |
+
+The investigation did not establish an empty market or justify claiming a unique product.
+It pointed to an evidence limitation: **Git contains rationale only when someone wrote it down**.
+An LLM must not fill gaps with invented reasons.
+
+The proposed position for this harness is therefore to connect **Git, session logs, and
+retrospectives into a reviewed decision history**. The existing `fw` log readers and `reflect`
+draft pipeline make that a plausible extension, but their existence does not mean the
+multi-source mining pipeline is already connected. Reassess external product comparisons before
+using them as current positioning claims.
+
+## Candidate sources for future mining
+
+These are design candidates. Only commit messages are currently consumed by `mine.py`.
+
+| Source | Potential signal | Expected strength | Limitation |
+|---|---|---|---|
+| PR descriptions and review discussions | Why an option was chosen; rejected alternatives | Strong | Missing from histories built through direct pushes |
+| Issue descriptions and comments | Problem definitions, alternatives, `Closes #` links | Strong | Unavailable when a team does not use issues |
+| Commit message bodies | Rationale, alternatives, reversals | Medium | One-line summaries often contain little reasoning |
+| Session logs used by `fw` | Deliberation and reasons for rejecting options | Strong | Local to the machine where the logs remain |
+| Commit/file churn | Areas under repeated decision pressure | Weak | Helps select where to investigate; does not explain why |
+| Reverts and `supersedes` evidence | Changes in direction that may warrant an ADR | Medium | Needs explicit detection and interpretation rules |
+
+PRs, issues, and session logs are candidates for richer rationale. Churn is a way to choose
+where to look, not evidence of a reason on its own.
+
+## How mining joins the harness
+
+Mining uses the **existing ADR draft contract**, not a new schema, and follows the same
+promotion path as forward capture: `_pending/decisions/` → `/memory-update` §1.6 → shared
+`decisions/` and its index.
+
+```text
+Implemented: git commit-message slice ─┐
+                                      ├→ LLM → _pending/decisions/*.md
+Planned: PR/issue/session evidence ────┘          proposed_chain
+                                                proposed_supersedes
+                                                confidence
+                                                     ↓
+                                        human review with /memory-update
+                                                     ↓
+                                          decisions/ + INDEX.md
+```
+
+- **Shared implementation:** `mine.py` already reuses `reflect.py`'s draft contract, backends,
+  parser, classifier, and `_decisions_index`. It is another draft generator whose input is a
+  Git slice instead of a transcript.
+- **Canonical schema:** the full ADR schema is inline in
+  [`core/skills/memory-update/SKILL.md`](../core/skills/memory-update/SKILL.md), §1.6, and is
+  rendered into both plugins. Shipping that schema was completed in
+  [PR #137](https://github.com/foxyberry/agent-harness/pull/137). Existing projects may still need
+  template updates; do not confuse that rollout issue with a missing plugin schema.
+- **Engine/data separation for future selection rules:** project-specific choices about which
+  commit patterns indicate decisions should live in project data, such as a proposed
+  `decision-mining-rules.json`. That file and its schema are **not implemented**; the current
+  CLI takes a user-selected revision range and uses a generic extraction prompt.
+- **Relationship to `fw`:** `fw` reads session logs to resume work. Future mining could reuse
+  those readers to extract decisions, but the consumer's purpose and provenance requirements
+  differ. No session-log input is wired into the current mining CLI.
+
+## Constraints
+
+1. **No recorded rationale, no justified decision draft.** Mining must not invent why a choice
+   was made. The prompt tells the model to skip commits without evidence instead of forcing an
+   ADR from every change; human review must enforce that expectation.
+2. **Incorrect decision relationships are a serious failure.** Chain membership and supersession
+   are proposed through `proposed_*` fields. As with forward capture, a person must confirm them
+   during promotion; mining cannot establish the canonical history automatically.
+3. **Mining and retrospectives complement each other.** Mining can seed an incomplete past;
+   forward capture records rationale while it is still available. Neither makes the other
+   unnecessary.
+4. **Require positive evidence.** Uncertain decision signals should not be promoted into context
+   as facts. An empty result is preferable to a fabricated ADR.
+
+## Remaining work
+
+- [ ] Extend the commit-message CLI with PR and issue evidence, then evaluate session-log inputs.
+- [ ] Define a project-owned `decision-mining-rules.json` schema if configurable signal selection
+  is added.
+- [ ] Evaluate mined drafts against known decisions in this repository, including the original
+  proposed benchmark PRs #6, #13, and #16.
+- [ ] Validate multi-source provenance and proposed chain/supersession relationships before
+  expanding automatic behavior.
+
+The commit-message CLI and reuse of the retrospective draft machinery are already implemented;
+these checkboxes describe the remaining expansion, not an entirely unbuilt feature.
+
+## Related material
+
+- [Issue #15](https://github.com/foxyberry/agent-harness/issues/15): original exploration and
+  historical market notes.
+- [Issue #14](https://github.com/foxyberry/agent-harness/issues/14) and
+  [PR #16](https://github.com/foxyberry/agent-harness/pull/16): forward capture.
+- [Self-improvement hooks](self-improvement-hooks.md): the retrospective loop and promotion path.
+- [`mine.py`](../core/hooks/mine.py) and [`reflect.py`](../core/hooks/reflect.py): current mining
+  implementation and shared draft machinery.
+- [`memory-update` §1.6](../core/skills/memory-update/SKILL.md): canonical ADR schema and promotion
+  procedure.

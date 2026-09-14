@@ -1,91 +1,109 @@
-# 자기개선 훅 (Self-improvement hooks)
+# Self-improvement hooks
 
-이 하네스의 차별점은 스킬 위의 **자기개선 루프**다. 작업이 진행되는 동안 관련 지식을
-자동으로 꺼내 보여주고(주입), 방금 쓴 코드에 대해 경고하고(회고), 머지될 때 교훈을
-남겨(반영) 다음 세션이 더 잘하게 만든다.
+The harness adds a **self-improvement loop** around its skills. During work, hooks bring
+relevant knowledge into context, flag patterns in newly written code, and queue a retrospective
+after a merge. Reviewed lessons then become memory for future sessions.
 
+```text
+project-memory-index  →  memory-search  →  reflection  →  pr-merge-reflect  →  /memory-update
+session-start index     before-action    after-edit      merge retrospective   promote and
+                        context          warnings                              persist
 ```
-project-memory-index  ──▶  memory-search  ──▶  reflection  ──▶  pr-merge-reflect  ──▶  /memory-update
-(세션 시작 인덱스)        (편집 전 주입)      (편집 후 경고)      (머지 시 회고)         (승격·영속화)
-```
 
-훅은 **양쪽에 배포된다** — Claude 는 4개 전부(`plugins/harness/hooks/`), Codex 도 4개
-(`plugins/codex/hooks/`). `pr-merge-reflect` 는 SessionStart·PostToolUse 탐지/큐 단계만
-이식됐고, UserPromptSubmit 리마인더와 자동 LLM 회고는 실측 전까지 보류한다(#85). Codex 는 **훅을
-신뢰해야** 실행된다 — 신뢰 전에는 에러도 경고도 없이 조용히 건너뛴다(`docs/codex-hooks.md`).
+Both adapters bundle **four hooks**: Claude in `plugins/harness/hooks/`, Codex in
+`plugins/codex/hooks/`. Their capabilities differ. Claude registers the full loop. Codex's
+`pr-merge-reflect` registers only **SessionStart and PostToolUse detection/queueing**;
+UserPromptSubmit reminders and automatic LLM retrospectives remain deferred pending installed
+runtime measurements ([#85](https://github.com/foxyberry/agent-harness/issues/85)). Codex hooks
+also require **trust**: an untrusted hook is silently skipped, without an error or warning.
+See [the Codex hook contract and measured behavior](codex-hooks.md).
 
----
+## Design: engine in core, data in the project
 
-## 설계 원칙: 엔진(core) ↔ 데이터(프로젝트)
+Hook scripts are generic engines, reusable across tools and projects. Project-specific choices
+about **what** to inject or warn about belong in the project's `.claude/memory/` data files,
+not in core.
 
-훅 스크립트는 **툴·프로젝트 무관 generic 엔진**이다. "무엇을" 주입·경고할지는
-core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이터 파일**이 정한다.
-
-| | 엔진 (core) | 데이터 (프로젝트) |
+| Hook | Engine (core) | Data (project) |
 |---|---|---|
-| project-memory-index | INDEX.md 읽기 → 공유 메모리 목록 주입 | `INDEX.md`, 선택: `index-load.json` |
-| memory-search | 파일 경로·셸 명령 매칭 → 메모리 주입 | `routes.json` (파일·명령→메모리 매핑) |
-| reflection | 정규식 규칙 적용 → 경고 | `reflection-rules.json` (패턴→경고문) |
+| `project-memory-index` | Read the index and inject the shared memory list | `INDEX.md`, optional `index-load.json` |
+| `memory-search` | Match file paths or shell commands and inject relevant memory | `routes.json` |
+| `reflection` | Apply regular expressions and emit warnings | `reflection-rules.json` |
+| `pr-merge-reflect` | Detect merges, apply exclusions, and manage the retrospective queue | Optional `reflect-skip.json` |
 
-데이터 파일이 없으면 훅은 **조용히 no-op** 한다(reflection 은 내장 TODO/FIXME 규칙만).
-예시 데이터는 `project-template/.claude/memory/` 에 있다(Kotlin/Spring 기준 — 네 프로젝트에 맞게 고쳐라).
+Missing index or route data makes the corresponding hook a quiet no-op. Without custom rules,
+`reflection` retains its built-in TODO/FIXME warning. `pr-merge-reflect` requires a
+`.claude/memory/` directory and otherwise does nothing; within a participating project it uses
+built-in skip rules when no skip configuration exists. Example data lives in
+`project-template/.claude/memory/`. Its Kotlin/Spring examples should be adapted to your project.
 
-### 경로 규약 (중요)
+### Path conventions
 
-플러그인에선 **스크립트 위치와 데이터 위치가 갈린다**:
+In an installed plugin, **scripts and project data live in different places**:
 
-- **스크립트** → `${CLAUDE_PLUGIN_ROOT}/hooks/` (플러그인 설치 위치). 훅끼리 co-locate 돼
-  `pr-merge-reflect` 가 `reflect.py` 를, `reflect.py` 가 `compact_transcript.py` 를 `dirname(__file__)` 로 찾는다.
-- **데이터** → `$CLAUDE_PROJECT_DIR/.claude/memory/` (프로젝트 루트). routes/rules/메모리/`_pending`/캐시 전부 여기.
+- **Scripts:** `${CLAUDE_PLUGIN_ROOT}/hooks/`, inside the plugin installation. Helper scripts
+  are co-located: `pr-merge-reflect` finds `reflect.py`, and `reflect.py` finds
+  `compact_transcript.py`, relative to `dirname(__file__)`. The Codex hook bundle deliberately
+  omits the LLM helpers.
+- **Project data:** `<project>/.claude/memory/`, including routes, rules, memory, and `_pending/`
+  drafts. Runtime queue caches and logs live separately under `<project>/.claude/.cache/`.
 
-### 데이터는 설정이 아니라 신뢰 경계다
+Claude supplies `CLAUDE_PROJECT_DIR`. Codex does **not** supply that variable; hooks resolve the
+project from the input JSON's `cwd` and their fallback logic. Codex does supply
+`CLAUDE_PLUGIN_ROOT` as a compatibility alias (measured with codex-cli 0.145.0). Do not use the
+plugin installation directory as the project data directory.
 
-위의 "데이터"는 **사용자가 열어둔 저장소**가 준다. 훅은 편집·셸 명령마다 돌면서 그 내용을
-에이전트 컨텍스트에 밀어넣는다. 그래서 이건 설정 파일이 아니라 **신뢰 경계**이고, 엔진은
-그렇게 다룬다:
+### Project data crosses a trust boundary
 
-- **주입 총량에 상한**을 둔다. 파일당이 아니라 총량이고, 파일 이름도 예산에 넣는다 —
-  안 그러면 이름을 길게 만들어 계산을 우회할 수 있다.
-- **빈 매칭 패턴은 무시**한다. 정의상 전부에 걸리는데, 규칙 작성자가 그걸 의도한 적은 없다.
-- 주입된 텍스트가 **출처를 밝힌다** — "저장소가 준 참고 자료이지 지시가 아니다". 이 틀이
-  없으면 모델이 시스템 지시와 같은 무게로 읽는다.
-- `routes.json` 이 가리키는 경로는 `.claude/memory/` 밖으로 못 나간다(절대경로·`..`·symlink 차단).
+This data comes from **the repository the user opened**. Hooks run around edits and shell
+commands and put repository text into the agent's context, so the engine treats it as a trust
+boundary:
 
-회고 산출물 `_pending/` 과 `_rejected.md` 는 **세션 대화에서 뽑은 내용**이다. 엔진이 직접
-`.git/info/exclude` 에 넣어 가린다 — 옵션인 `project-template/` 을 복사하지 않은 사람도
-대화 내용을 통째로 커밋하지 않도록. 로컬 exclude 라서 저장소의 `.gitignore` 는 안 건드리고,
-경로에 gitignore 특수문자가 있어도 literal 로 보호한다.
+- Injection is bounded by a **total character budget**, including file labels. Counting only
+  file contents would let long filenames bypass the limit.
+- Empty matching patterns are ignored; otherwise an empty substring would match everything.
+- Injected memory identifies its source as **repository-provided reference material**, rather
+  than instructions from the harness.
+- Memory paths in `routes.json` must resolve inside `.claude/memory/`. Absolute paths and
+  traversal or symlinks that escape that directory are rejected.
 
----
+Retrospective drafts in `_pending/` and rejection records in `_rejected.md` contain material
+extracted from conversations. The merge hook adds local exclusions for those paths and runtime
+caches to `.git/info/exclude`, even if the optional project template was never copied. It does
+not modify the repository's `.gitignore`, and it escapes gitignore metacharacters so the
+exclusions protect the intended literal paths. These exclusions do not untrack files that have
+already been committed.
 
-## 훅별 상세
+## Hook details
 
-### project-memory-index — 세션 시작 시 공유 메모리 목록 주입
-- **이벤트**: SessionStart
-- **동작**: `.claude/memory/INDEX.md` 를 읽어 `additionalContext` 로 주입한다. 목적은 메모리 본문 전체를
-  자동으로 넣는 것이 아니라, 어떤 공유 규칙·결정·회고가 있는지 세션 초반에 발견하게 하는 것이다.
-  실제 상세 파일은 현재 작업에 관련될 때 읽는다.
-- **크기 제한**: 기본 12,000자까지만 주입하고 넘치면 잘림 표시를 붙인다.
-- **옵션**: `.claude/memory/index-load.json` 으로 끄거나 크기 제한을 조정할 수 있다.
+### project-memory-index — shared memory discovery at session start
 
-`index-load.json` 형식:
+- **Event:** SessionStart.
+- **Behavior:** read `.claude/memory/INDEX.md` and inject it as `additionalContext`. This makes
+  shared rules, decisions, and retrospectives discoverable early in the session; it does not
+  automatically load every memory file. Read individual files when relevant to the task.
+- **Size limit:** 12,000 characters by default, with a truncation notice when needed.
+- **Configuration:** `.claude/memory/index-load.json` can disable injection or change the limit.
+
 ```json
 {
   "enabled": true,
   "max_chars": 12000
 }
 ```
-- `enabled: false` 면 INDEX 자동 주입을 끈다.
-- `max_chars` 는 1,000~50,000 사이로 clamp 된다.
 
-### memory-search — 행동 직전 관련 메모리 주입
-- **이벤트**: PreToolUse `Edit|Write|MultiEdit|Bash` (Codex: `apply_patch|Bash`)
-- **동작**: 편집하려는 **파일 경로** 또는 실행하려는 **셸 명령**을 `routes.json` 규칙과 매칭 →
-  매칭된 메모리 파일을 읽어 `additionalContext` 로 주입. "이걸 하기 전에 이 규칙을 기억하라."
-- **보안**: routes.json 은 프로젝트 제어 데이터라, 경로 탈출(절대경로·`..`·symlink)로 `.claude/memory`
-  밖 파일을 주입하려는 시도를 차단한다(untrusted repo 유출 방지).
+`enabled: false` disables automatic index injection. `max_chars` is clamped to 1,000–50,000.
 
-`routes.json` 형식:
+### memory-search — relevant memory before an action
+
+- **Event:** PreToolUse with `Edit|Write|MultiEdit|Bash` on Claude, `apply_patch|Bash` on Codex.
+- **Behavior:** match the edited file paths or shell command against `routes.json`, then read
+  matching memory files and inject them as `additionalContext` before the action.
+- **Path safety:** project-controlled routes cannot inject arbitrary local files by escaping
+  `.claude/memory/` through absolute paths, traversal, or symlinks.
+
+Example `routes.json`:
+
 ```json
 {
   "rules": [
@@ -96,38 +114,48 @@ core 에 하드코딩하지 않고, **프로젝트의 `.claude/memory/` 데이�
   ]
 }
 ```
-- `glob`: 파일 경로에 fnmatch. `contains`: 부분문자열(대소문자 무시) 중 하나라도 포함.
-- `match_empty`: 경로 없는 편집도 매칭. `memory`: `.claude/memory/` 기준 상대경로.
-- `command_contains`: **셸 명령 원문**에 부분문자열 포함.
 
-⚠️ **경로 키와 명령 키는 넘나들지 않는다.** `glob`·`contains`·`match_empty` 는 파일 편집일 때만,
-`command_contains` 는 셸 명령일 때만 본다. 섞으면 `{"contains": ["hook"]}` 같은 규칙이
-`grep -rn hook ...` 에도 걸려서 읽기 전용 명령마다 메모리가 쏟아진다.
+- `glob`: match file paths with Python `fnmatch`.
+- `contains`: match any listed substring in a file path, case-insensitively.
+- `match_empty`: also match an edit whose path could not be extracted.
+- `memory`: paths relative to `.claude/memory/`.
+- `command_contains`: match a substring in the **raw shell command**, case-insensitively.
 
-**왜 셸 명령에도 거나 (이슈 #90):** 파일 편집과 무관한 규칙이 있다 — 예를 들어 "PR 을 만들기
-전에 리뷰 결과를 댓글로 남겨라". 이런 규칙을 편집 시점에만 띄우면 **정작 필요한 순간에
-닿지 않는다.** 실제로 이 저장소에서 같은 규칙이 세 번 빠졌다. 규칙을 아는 것과 그 순간에
-떠올리는 것은 다르다.
+**Path and command keys are separate.** `glob`, `contains`, and `match_empty` apply only to
+edits; `command_contains` applies only to shell commands. Otherwise a path rule such as
+`{"contains": ["hook"]}` would also inject memory on every read-only `grep -rn hook ...` call.
 
-### reflection — 편집 후 품질 경고
-- **이벤트**: PostToolUse `Edit|Write|MultiEdit` (MultiEdit 은 `edits[*].new_string` 을 합쳐 검사)
-- **동작**: 방금 쓴 코드에 `reflection-rules.json` 정규식 규칙을 적용 → 경고를 tool result 옆에 주입.
-- **내장 규칙**: TODO/FIXME 잔존 경고(모든 파일, 언어 무관). 끄려면 `"builtins": {"todo_fixme": false}`.
+Command matching exists because some rules matter **when a command runs**, not when a file is
+edited. For example, a project may require review evidence on the target thread before opening
+a PR. Showing that rule only during edits misses the moment it is needed. This repository
+missed the same rule three times before adding command routing
+([#90](https://github.com/foxyberry/agent-harness/issues/90)). Knowing a rule and recalling it at
+the right time are separate problems.
 
-`reflection-rules.json` 형식:
+### reflection — quality warnings after edits
+
+- **Event:** PostToolUse with `Edit|Write|MultiEdit` on Claude, `apply_patch` on Codex.
+- **Behavior:** apply `reflection-rules.json` regular expressions to newly written content and
+  inject warnings alongside the tool result. MultiEdit combines `edits[*].new_string`; Codex
+  patches are normalized and checked per file.
+- **Built-in rule:** warn about remaining TODO/FIXME markers in any language. Disable it with
+  `"builtins": {"todo_fixme": false}`.
+
+Example `reflection-rules.json`:
+
 ```json
 {
   "rules": [
     { "glob": "*.kt", "regex": "!!",
-      "message": "`!!` 사용 {count}곳 — requireNotNull 또는 ?: return 검토" },
+      "message": "{count} uses of `!!` — consider requireNotNull or ?: return" },
     { "glob": "*.kt", "regex": "(?m)^\\s*var ", "min_count": 3,
-      "message": "var 선언 다수({count}) — fold/associate/sumOf 검토" }
+      "message": "Many var declarations ({count}) — consider fold/associate/sumOf" }
   ]
 }
 ```
 
-규칙 묶음은 `packs` 로 opt-in 할 수 있다. 엔진은 pack 내용을 모르고, `enabled: true` 인
-pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
+Rule packs are opt-in. The engine does not know what a pack means: it appends the `rules` of
+packs with `enabled: true` after the ordinary rules.
 
 ```json
 {
@@ -145,59 +173,74 @@ pack의 `rules`를 일반 규칙 뒤에 붙여 실행한다:
 }
 ```
 
-`project-template`의 `react-async-timing` 스타터 팩은 기본 꺼짐이다. React 프로젝트에서
-`enabled`를 `true`로 바꾸면 state updater 안 부수효과, catch 완료 신호 누락 후보,
-렌더 중 `ref.current` 분기, effect 첫 동작의 컬렉션 초기화를 경고한다. 정규식은 AST나
-실행 순서를 확정하지 못하므로 경고를 버그 판정으로 취급하지 않는다. 실제 scope를 확인하고
-`renderHook` + `rerender`로 pending/reject, 계정 전환, unmount/remount 순서를 재현한다.
-- `glob`: 적용 파일. `globs`: 여러 파일 패턴 배열(둘 다 생략 시 전체). 지정한 값이
-  문자열/문자열 배열이 아니거나 배열이 비어 있으면 범위를 넓히지 않고 해당 규칙을 건너뛴다.
-- `regex`: Python re 패턴. `enabled: false`: 해당 규칙만 비활성.
-- `min_count`: 이 수 이상일 때만(기본 1).
-- `message`: `{count}` 는 매칭 수로 치환.
+The template's `react-async-timing` starter pack is **disabled by default**. In a React project,
+enabling it flags possible side effects inside state updaters, missing completion signals in
+catch blocks, render-time branches on `ref.current`, and collection resets at the beginning of
+effects. Regular expressions cannot establish the AST or execution order, so a warning is a
+candidate for investigation, not a bug verdict. Check the actual scope and reproduce pending
+and rejection flows, account switches, and unmount/remount sequences with `renderHook` and
+`rerender`.
 
-PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조각만 검사한다. 여러 줄 구조가
-조각 밖에 걸쳐 있으면 경고를 놓치거나 문맥 부족으로 후보를 넓게 잡을 수 있다. `Write`는 파일
-전체를 검사하지만, 두 경우 모두 경고는 확인을 위한 신호이며 정적 분석 결과가 아니다. 스타터
-팩의 bounded regex는 중첩 블록을 따라가지 않으므로 경고가 없다고 안전이 보장되는 것도 아니다.
+- `glob`: one file pattern. `globs`: an array of patterns. Omitting both applies the rule to all
+  files. Invalid types or an empty pattern array skip the rule instead of broadening its scope.
+- `regex`: a Python `re` pattern. `enabled: false` disables that rule.
+- `min_count`: emit only at or above this count; default 1.
+- `message`: `{count}` is replaced with the match count.
 
-### pr-merge-reflect — 머지 회고 루프 (핵심)
-- **이벤트**: PostToolUse `Bash`, SessionStart, UserPromptSubmit
-- **두 역할**:
+An `Edit` checks only the replacement `new_string`, not the whole file. Multiline structures
+that extend outside that fragment can be missed or flagged too broadly because of missing
+context. `Write` checks the whole file. Neither is static analysis: these are prompts to verify
+a concern. The starter pack's bounded regular expressions do not follow nested blocks, so the
+absence of a warning does not establish safety.
 
-  **A) 리마인더 (항상 켜짐, LLM 안 씀)** — 머지됐는데 회고 안 한 PR 을 큐에 쌓고, 다음 발화 때
-  "회고부터 하라(`/feedback-review`·`/memory-update`)" 지시를 주입한다. 감지 경로:
-  - SessionStart 폴링(외부 머지 포함) · PostToolUse(`gh pr merge` — **실제 MERGED 확인 후에만**) ·
-    UserPromptSubmit("머지했어" 발화)
+### pr-merge-reflect — the merge retrospective loop
 
-  **B) 자동 회고 잡 (opt-in, 기본 꺼짐)** — 아래 참조.
+**Claude events:** PostToolUse `Bash`, SessionStart, and UserPromptSubmit.
+**Codex events:** SessionStart and PostToolUse `Bash` only; detection and queueing are registered,
+with installed-runtime verification still pending. Codex can also announce existing draft files
+at SessionStart; this is separate from the deferred UserPromptSubmit merge reminder.
 
-#### 회고 skip rule
+The hook has two roles:
 
-회고를 저장하기 위한 PR 이 다시 "회고하라"는 리마인더를 만드는 루프를 막기 위해,
-`pr-merge-reflect` 는 회고 산출물만 변경한 PR 을 pending/자동 회고 대상에서 제외한다.
+**A. Reminders, without an LLM.** Queue merged PRs that need a retrospective. On Claude, the
+next user prompt receives a reminder to use `/feedback-review` and `/memory-update`. This role
+does not depend on automatic retrospective opt-in. Detection paths are SessionStart polling
+(including external merges), PostToolUse after `gh pr merge` (**only after verifying MERGED
+state**), and, on Claude, user statements indicating a merge during UserPromptSubmit. The first
+SessionStart seeds the already-merged PRs rather than queuing the entire existing backlog.
 
-기본 skip — **하네스가 자기가 만드는 것만**:
-- 변경 파일이 전부 `.claude/memory/**`
-- 변경 파일이 전부 `.claude/handoff/**`
-- 변경 파일이 전부 `.agents/skills/**`
-- PR 라벨이 `skip-reflect` 또는 `no-reflect`
-- 커밋 메시지에 `[skip reflect]`, `skip-reflect`, `no-reflect` 포함
+**B. Automatic retrospective jobs, opt-in and disabled by default.** See below. Codex's hook
+bundle omits `reflect.py`, so enabling the environment variable does not enable automatic LLM
+jobs in that adapter.
 
-⚠️ **`CLAUDE.md`·`AGENTS.md`·`.gitignore` 는 기본값에 없다.** 회고 산출물이 거기로도
-나가지만(교훈을 규칙으로 승격하는 자리다), 그 파일들은 **프로젝트의 것**이고 회고할
-값어치가 프로젝트마다 다르다. 이 저장소에선 `AGENTS.md` 변경이 하네스 범위를 바꾼 큰
-결정이었지만(#105), 다른 팀에선 보일러플레이트다. 엔진이 알 수 없는 것을 엔진이 정하면
-루프 대신 **조용한 유실**을 얻는다 — 회고가 경고도 실패도 없이 사라진다.
+#### Retrospective skip rules
 
-그래서 넓은 목록은 `project-template/.claude/memory/reflect-skip.json` 에 있다. 필요하면
-그걸 복사해서 프로젝트에 맞게 줄이거나 늘린다.
+To avoid a PR containing retrospective artifacts immediately creating another retrospective,
+`pr-merge-reflect` excludes matching PRs from the pending queue and automatic PR retrospective
+jobs.
 
-프로젝트별로 `.claude/memory/reflect-skip.json` 에서 패턴을 확장할 수 있다.
+The built-in path list covers artifacts the harness itself creates. A PR is skipped if all
+relevant changed files match any of these patterns:
+
+- `.claude/memory/**`
+- `.claude/handoff/**`
+- `.agents/skills/**`
+
+It is also skipped if a PR label matches `skip-reflect` or `no-reflect`, or a commit message
+contains `[skip reflect]`, `skip-reflect`, or `no-reflect`.
+
+**`CLAUDE.md`, `AGENTS.md`, and `.gitignore` are not built-in exclusions.** Lessons can be
+promoted into those files, but they belong to the project, and the significance of a change
+varies. In this repository, an `AGENTS.md` change redefined the harness's scope (#105); elsewhere
+it might be boilerplate. Hardcoding the broader list could silently discard a meaningful
+retrospective.
+
+The broader example is therefore project data in
+`project-template/.claude/memory/reflect-skip.json`. Copy and adjust it as needed:
 
 ```json
 {
-  "//": "project-template 판. 엔진 기본값은 앞의 세 경로만 알고, 나머지는 이 데이터가 준다.",
+  "//": "Template example: only the first three path patterns are engine defaults.",
   "paths": [".claude/memory/**", ".claude/handoff/**", ".agents/skills/**",
             "CLAUDE.md", "AGENTS.md", "**/CLAUDE.md", "**/AGENTS.md",
             ".claude/agents/**", ".claude/skills/**"],
@@ -207,98 +250,123 @@ PostToolUse의 `Edit`는 파일 전체가 아니라 교체된 `new_string` 조�
 }
 ```
 
-- `paths`: PR 변경 파일이 **전부** 이 패턴들에 매칭될 때 skip 한다(fnmatch).
-  fnmatch 라 `**/AGENTS.md` 는 하위 경로만 맞는다 — 루트 사본(`AGENTS.md`)은 따로 적어야
-  한다. 템플릿이 둘 다 넣어두는 이유다.
-- `ignore_paths`: **판정에서 아예 빼는** 부수 파일. 이게 없으면 `.gitignore` 한 줄 때문에
-  위의 "전부" 조건이 깨져 회고 산출물이 작업 PR 로 판정된다(#130).
-  **기본값은 비어 있다** — `.gitignore` 변경은 추적 대상·생성물 정책·줄바꿈처럼 실질적일
-  수 있어서, 무엇을 부수로 볼지는 엔진이 단정하지 않는다. 메커니즘만 엔진에 있고 목록은
-  프로젝트가 채운다.
-  뺐더니 파일이 하나도 안 남으면 판단 근거가 없는 것이라 skip 하지 않는다(fail-open).
-- `labels`: PR 라벨이 하나라도 매칭되면 skip 한다(fnmatch, 대소문자 무시).
-- `commit_messages`: 커밋 메시지에 문자열이 하나라도 포함되면 skip 한다(대소문자 무시).
-- `"defaults": false` 를 두면 내장 기본값을 **모든 키에 대해** 비우고 프로젝트 설정만 사용한다.
+- `paths`: skip when **all** relevant changed files match these `fnmatch` patterns.
+  `**/AGENTS.md` matches nested paths, so list root `AGENTS.md` separately.
+- `ignore_paths`: remove incidental files from the path-based decision. Otherwise one
+  `.gitignore` change can break the “all files” condition and make an artifact-only PR look like
+  ordinary work (#130). This list is **empty by default**: ignore and attributes changes can
+  affect substantive tracking or line-ending policies, so the project must decide what is
+  incidental. If removing these files leaves none, the path test does not skip the PR; there
+  is no remaining evidence for that decision.
+- `labels`: skip if any label matches, using case-insensitive `fnmatch`.
+- `commit_messages`: skip if any listed substring occurs, case-insensitively.
+- `"defaults": false`: clear the built-in defaults for **all keys**, using only project data.
 
-### reflect.py + compact_transcript.py — 자동 회고 잡
-`pr-merge-reflect` 가 스폰하는 백그라운드 잡. 세션 트랜스크립트(Claude `.jsonl` / Codex rollout 둘 다)를
-압축 → LLM 으로 분석 → 영속할 교훈을 `.claude/memory/_pending/*.md` 에 **초안**으로 저장.
-detached 라 세션을 닫아도 완료된다. 같은 slug 초안은 덮어쓰지 않고 suffix 로 보존한다.
+These mechanisms already exist. Broader questions about which retrospective-generated rules
+and documentation should be excluded remain tracked in
+[#130](https://github.com/foxyberry/agent-harness/issues/130).
 
-회고 후보는 **출처 근거가 있는 사용자 턴에서 시작한 구간만** 사용한다. Claude 로그는
-레코드별 `promptSource`(`typed`·`queued`·`suggestion_accepted`) 또는 `origin.kind=human`을
-양성 귀속 근거로 쓴다. 근거가 없는 옛 user 턴은 해당 구간에서 제외한다. 단순 알림·메타
-주입은 그 레코드만 버리지만, `sdk`·`system`·비인간 `origin`처럼 자동화 출처가 명시된 턴은
-뒤 assistant 응답도 자동화의 산물일 수 있어 구간 신뢰를 끊는다. 양성 귀속 user 턴이 하나도
-없으면 자동 회고는 후보를 거부하고, strict CLI는 경고와 exit 3으로 끝난다. 일부만 유지한
-경우 stderr에 귀속·제외 턴 수를 표시한다. Codex 로그에는 동등한 귀속 필드가 없어,
-`event_msg.user_message`라는 채널 구분을 신뢰하고 주입 컨텍스트가 섞인 `response_item`의
-`role=user`는 버린다. 따라서 Codex쪽은 Claude와 같은 레코드별 양성 귀속을 보장하지는 않는다.
-`/feedback-review`·`/memory-update`의 과거 세션 압축도 같은 strict 모드를 쓴다.
-옵션 없는 `compact_transcript.py` CLI는 기존 사용과 호환되도록 best-effort fallback을 유지한다.
+### reflect.py and compact_transcript.py — automatic retrospective jobs
 
----
+In the Claude adapter, `pr-merge-reflect` can spawn a detached job that compresses a session
+transcript, asks an LLM to analyze it, and writes durable lessons as **drafts** under
+`.claude/memory/_pending/`. It can read both Claude `.jsonl` and Codex rollout files. It continues
+running after the initiating session closes, and preserves duplicate slugs with numeric suffixes
+rather than overwriting pending drafts. ADR drafts go in `_pending/decisions/`.
 
-## ⚠️ 자동 회고는 opt-in (기본 꺼짐)
+The Claude hook can also sweep eligible local Codex sessions at SessionStart when automatic
+retrospectives are enabled. That is distinct from running an LLM job through Codex's own hook
+adapter, which remains deferred.
 
-자동 회고 잡은 `claude -p`(또는 deepseek/ollama) **백그라운드 LLM 프로세스**를 띄운다.
-플러그인 설치만으로 모든 프로젝트의 머지마다 조용히 LLM 잡이 뜨는 걸 막기 위해, **기본 꺼짐**이다.
+Retrospective candidates use only segments beginning with a **user turn whose provenance is
+accepted**. For Claude logs, positive evidence is a per-record `promptSource` of `typed`,
+`queued`, or `suggestion_accepted`, or `origin.kind=human`. Older user turns without evidence
+are excluded from the segment. Notifications and metadata injections are discarded individually;
+explicit automation origins such as `sdk`, `system`, or a nonhuman `origin` also break trust in
+the following assistant segment because it may be automation output.
+
+If no positively attributed user turn remains, automatic retrospectives reject the candidate;
+the strict compression CLI warns and exits with status 3. When only part of the transcript is
+retained, stderr reports attributed and excluded turn counts. Codex logs lack equivalent
+per-record provenance fields: the compactor trusts the `event_msg.user_message` channel and
+discards `response_item` records with `role=user`, which can include injected context. This does
+**not** provide the same per-record positive attribution guarantee as Claude.
+
+Historical-session compression in `/feedback-review` and `/memory-update` uses this strict
+mode too. The standalone `compact_transcript.py` CLI retains a best-effort fallback when run
+without strict options, for compatibility.
+
+## Automatic retrospectives are opt-in
+
+Automatic retrospectives launch a **background LLM process or request** through `claude -p`,
+DeepSeek, or Ollama. They are disabled by default so installing the plugin does not silently
+start LLM work after every merge in every project.
 
 ```bash
-export HARNESS_AUTO_REFLECT=1          # 켜기 — 머지 시 회고 초안 자동 생성
-export REFLECT_BACKEND=claude          # claude(기본) | deepseek | ollama
+export HARNESS_AUTO_REFLECT=1          # Claude hook: generate retrospective drafts automatically
+export REFLECT_BACKEND=claude          # claude (default) | deepseek | ollama
 ```
-켜도 **리마인더(역할 A)는 무관하게 항상 동작**한다. 끄면 회고를 사람이 직접 `/memory-update` 로 하면 된다.
 
-`_pending/` 초안은 `/memory-update` 로 검토 → **승격 / 병합 / 폐기**. governance:
-초안은 자동으로 메모리에 박히지 않고 사람 승인을 거친다(`_pending → 승인 → committed`).
+Claude's reminders remain active regardless of this setting. With automatic jobs disabled,
+use `/feedback-review` and `/memory-update` manually. Codex's deferred merge reminders and LLM
+jobs are not enabled by these variables.
 
-폐기한 초안은 `.claude/memory/_rejected.md` 에 기록돼 다음 회고가 같은 걸 다시 올리지
-않는다. **금지 목록은 아니다** — 같은 얘기가 반복돼 값어치가 생겼으면 무엇이 달라졌는지를
-붙여 다시 제안한다.
+Review `_pending/` drafts with `/memory-update`, then **promote, merge, or reject** them.
+Governance is explicit: `_pending → human approval → committed`. Draft generation never
+establishes a committed memory or decision on its own.
 
----
+Rejected drafts are recorded in `.claude/memory/_rejected.md` and supplied to future
+retrospectives to discourage duplicate proposals. This is **not a ban list**: if repetition or
+new evidence changes a lesson's value, it can be proposed again with an explanation of what
+changed. It is prompt guidance rather than a guarantee that an LLM will never repeat a draft.
 
-## 설정 요약
+## Configuration summary
 
-| 무엇 | 어디 | 없으면 |
-|------|------|--------|
-| 공유 메모리 인덱스 | `$CLAUDE_PROJECT_DIR/.claude/memory/INDEX.md` | project-memory-index no-op |
-| INDEX 자동 주입 옵션 | `$CLAUDE_PROJECT_DIR/.claude/memory/index-load.json` | enabled=true, max_chars=12000 |
-| 파일·명령→메모리 매핑 | `$CLAUDE_PROJECT_DIR/.claude/memory/routes.json` | memory-search no-op |
-| 코드 품질 규칙 | `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` | 내장 TODO/FIXME 만 |
-| 회고 skip rule | `$CLAUDE_PROJECT_DIR/.claude/memory/reflect-skip.json` | 기본 회고 산출물 경로·라벨·커밋 메시지 skip |
-| 폐기한 초안 기록 | `$CLAUDE_PROJECT_DIR/.claude/memory/_rejected.md` | 폐기 dedup 없음(같은 초안이 다시 올라올 수 있음) |
-| 자동 회고 on | env `HARNESS_AUTO_REFLECT=1` | 리마인더만(회고 수동) |
-| 회고 백엔드 | env `REFLECT_BACKEND` | `claude` |
-| 훅 진입 추적 | env `HARNESS_HOOK_TRACE=<파일>` | 추적 안 남김 — "돌았는데 할 말이 없었다"와 "아예 안 돌았다"를 구별 못 함 |
+Here `<project>` means the resolved project directory, not the plugin cache.
 
-전부 fail-open — `.claude/memory/` 가 없는 프로젝트에서도 훅은 조용히 통과하며 세션을 막지 않는다.
+| Purpose | Location | When absent |
+|---|---|---|
+| Shared memory index | `<project>/.claude/memory/INDEX.md` | Index hook does nothing |
+| Index injection options | `<project>/.claude/memory/index-load.json` | `enabled=true`, `max_chars=12000` |
+| File/command-to-memory routes | `<project>/.claude/memory/routes.json` | Memory search does nothing |
+| Code quality rules | `<project>/.claude/memory/reflection-rules.json` | Built-in TODO/FIXME warning only |
+| Retrospective skip rules | `<project>/.claude/memory/reflect-skip.json` | Built-in artifact paths, labels, and message markers |
+| Rejected draft history | `<project>/.claude/memory/_rejected.md` | No rejection history supplied for deduplication |
+| Automatic retrospective opt-in | Environment: `HARNESS_AUTO_REFLECT=1` | Claude reminders only; retrospective work is manual |
+| Retrospective backend | Environment: `REFLECT_BACKEND` | `claude` |
+| Hook entry tracing | Environment: `HARNESS_HOOK_TRACE=<file>` | No trace to distinguish a quiet run from no run |
 
----
+The hooks fail open: missing project data or a recoverable hook error does not block the
+session. The built-in TODO/FIXME warning can still run without custom project data.
 
-## 알려진 한계 (auto-reflect 켤 때만)
+## Known limitation of automatic jobs
 
-자동 회고(`HARNESS_AUTO_REFLECT=1`)를 켰을 때만 해당되는 한계다. 기본 off 라 일상 사용엔 영향 없다.
+When automatic retrospectives are enabled, the **Codex-session sweep records a successful
+spawn as seen**, without waiting for job completion. If the detached `reflect.py` process or
+its backend later fails because of PATH, timeout, or a nonzero exit, that session will not be
+retried by the next sweep even if no draft was produced. Failure details go to
+`.claude/.cache/reflect.log`. Recording completion through a callback remains follow-up work.
+A failure to spawn at all does not mark the session seen, so the next sweep can retry it.
 
-- **회고 잡은 "스폰 성공 = seen" 으로 처리한다.** `reflect.py` 는 detached 로 뜨고, 그 안의
-  `claude -p`(또는 API 백엔드)가 스폰 후 실패(PATH 없음·타임아웃·비정상 종료)하면 초안이 0개여도
-  그 세션은 이미 seen 이라 **다음 스윕에서 재시도되지 않는다** → 그 머지/세션 회고가 유실될 수 있다.
-  실패는 `.claude/.cache/reflect.log` 에 남는다. (완료-확인 후 seen 처리 = 상태 콜백은 후속 과제.)
-  스폰 자체가 실패한 경우는 seen 으로 안 치고 다음 스윕에서 재시도한다.
+The earlier nested-code-fence truncation problem is fixed. ADR drafts can quote code as
+evidence, so identical three-backtick inner and outer fences were ambiguous. The parser now
+requires a closing fence at least as long as the opening fence, and the prompt uses four
+backticks for outer draft fences.
 
-초안이 중첩 코드펜스에서 잘리던 문제는 고쳐졌다. ADR 초안은 근거로 코드 인용을 요구하는데
-바깥 펜스와 안쪽 인용이 둘 다 백틱 3개면 구별할 수 없었다. 이제 닫는 펜스가 여는 것보다
-짧지 않도록 요구하고, 프롬프트가 4개짜리 바깥 펜스를 쓴다.
+## Validation status
 
-## 검증 상태
-
-- **구현 + 스모크테스트 완료** — 각 훅의 no-op·매핑 주입·규칙 적용·MultiEdit·경로탈출 차단·suffix 보존 검증됨.
-  high-effort 코드리뷰(finder 4각 + 위치별 독립 검증) 반영: SessionStart gh 폴링을 `.claude/memory` 있을
-  때만 실행, 머지 감지 정규식·명령 매칭 강건화, CLI IndexError·트랜스크립트 메모리·경로 fallback 정리.
-- **live-fire 검증 완료** (이슈 #3, #103) — 설치된 세션에서 훅이 실제로 발화하는지를 확인했다.
-  훅이 **시작될 때** 기록을 남기는 장치(`HARNESS_HOOK_TRACE`)를 넣고, 이 저장소 **밖의 실제
-  프로젝트**에서 Claude·Codex 각각 확인했다. 이 장치가 필요했던 이유는 툴이 남기는 로그로는
-  "돌았는데 할 말이 없었다"와 "아예 안 돌았다"가 구별되지 않기 때문이다.
-  주입 도달은 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을 직접 읽어 답한 경우를
-  배제하는 방식으로 확인했다.
+- **Implementation and repository tests:** cover no-op behavior, route injection, regex rules,
+  MultiEdit, path escape protection, duplicate-slug preservation, normalized Codex patches, and
+  generated hook wiring. Review-driven fixes also gate SessionStart GitHub polling on the
+  presence of `.claude/memory/`, strengthen merge detection and command matching, and handle
+  malformed CLI input, transcript size, and path fallbacks.
+- **Installed runtime measurements:** issues #3 and #103 recorded hook firing in a real project
+  outside this repository. Hook-entry instrumentation (`HARNESS_HOOK_TRACE`) distinguishes
+  “ran and had nothing to inject” from “never ran,” which tool logs alone cannot reliably do.
+  Injection experiments compared the same question with hooks disabled and enabled while
+  preventing the model from directly reading the canary file.
+- **Scope of that evidence:** the historical measurements cover Claude's four hooks and Codex's
+  index and edit hooks. They do **not** establish installed runtime behavior for the later
+  Codex `pr-merge-reflect` detection/queue registration. That smoke test, UserPromptSubmit
+  injection, and automatic LLM integration remain follow-up work under #85. See
+  [current porting status](codex-hooks.md#current-porting-status).

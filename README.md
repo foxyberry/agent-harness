@@ -226,7 +226,7 @@ without a link, so nothing goes missing.
 
 | Document | For |
 |---|---|
-| [docs/decision-mining.md](docs/decision-mining.md) | Design for decision mining — **not built yet** ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
+| [docs/decision-mining.md](docs/decision-mining.md) | Implemented commit-message mining PoC and the broader design ([#21](https://github.com/foxyberry/agent-harness/issues/21)) |
 | [docs/public-release-audit.md](docs/public-release-audit.md) | Security audit taken before going public (2026-08-06) |
 
 ## Security, license, contributing
