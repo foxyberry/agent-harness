@@ -73,8 +73,14 @@ class SchemaShipsWithThePluginTest(unittest.TestCase):
         section = re.search(r"^### 1\.6 .*?(?=^### |\Z)", text, re.M | re.S)
         self.assertIsNotNone(section)
         self.assertIn("The canonical schema is defined below", section.group())
-        # Test the affirmative source contract in English as well as the schema itself.
-        # A Korean-only negative search becomes vacuous after translation.
+        self.assertIn("not the canonical schema", section.group())
+        # Keep the negative guard across the whole skill: a correct inline schema must
+        # not hide a contradictory instruction elsewhere pointing at the project file.
+        # Sentence boundaries avoid flagging the explicit non-canonical disclaimer.
+        for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+            if "decisions/README.md" in sentence and re.search(r"\bcanonical\b|정본", sentence):
+                self.assertIn("not the canonical schema", sentence,
+                              f"Project-local guide is presented as canonical: {sentence!r}")
 
 
 class SchemaLivesInOnePlaceTest(unittest.TestCase):
