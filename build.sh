@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # Replace {{PLACEHOLDER}} in SKILL.md with the per-adapter value (sed delimiter | — values may contain /)
-render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE PERSONAL_TIER_NOTE PROJECT_DIR_ARG)
+render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE PERSONAL_TIER_NOTE PROJECT_DIR_ARG PROJECT_ROOT PROJECT_ROOT_NOTE)
   sed -e "s|{{AGENT}}|$AGENT|g" \
       -e "s|{{RULES_FILE}}|$RULES_FILE|g" \
       -e "s|{{HANDOFF}}|$HANDOFF|g" \
@@ -15,6 +15,8 @@ render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_
       -e "s|{{DEEP_RECOVERY}}|$DEEP_RECOVERY|g" \
       -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
+      -e "s|{{PROJECT_ROOT}}|$PROJECT_ROOT|g" \
+      -e "s|{{PROJECT_ROOT_NOTE}}|$PROJECT_ROOT_NOTE|g" \
       -e "s|{{PROJECT_DIR_ARG}}|$PROJECT_DIR_ARG|g" \
       -e "s|{{FW_FROM_DEFAULT}}|$FW_FROM_DEFAULT|g" \
       -e 's/[[:blank:]]*$//' \
@@ -55,6 +57,9 @@ DEEP_RECOVERY='`/fw --from claude` or `/fw-both`'   # only commands that really 
 PATH_NOTE=''   # Claude: bin/ is on PATH, so the cwd does not matter
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory loads the personal tier by itself — no note needed
 PROJECT_DIR_ARG=''   # Claude: resolved automatically from the CLAUDE_PROJECT_DIR env var — no argument needed
+# Claude sets CLAUDE_PROJECT_DIR, so memory paths can anchor on it directly and need no note.
+PROJECT_ROOT='$CLAUDE_PROJECT_DIR'
+PROJECT_ROOT_NOTE=''
 FW_FROM_DEFAULT='codex'   # Claude fw restores the other tool's (codex) logs — prevents the current Claude session from selecting itself
 for s in $SKILLS; do
   mkdir -p "plugins/harness/skills/$s"
@@ -117,6 +122,12 @@ PATH_NOTE='> Paths under `scripts/` are relative to **the skill directory contai
 # Put --project-dir into the Codex command examples themselves (a footnote alone gets lost
 # when the command is copy-pasted — raised in review). Keep the trailing space.
 PROJECT_DIR_ARG='--project-dir "<absolute-path-to-user-project>" '
+# Codex has no CLAUDE_PROJECT_DIR (measured 0.145.0), and PATH_NOTE moves the cwd into the
+# skill folder — a plugin cache outside the user repository. So every project read/write in
+# the memory skills anchors on the same literal token the --project-dir example uses, and
+# PROJECT_ROOT_NOTE says once where that value comes from. Same path, one name (#3, #142).
+PROJECT_ROOT='<absolute-path-to-user-project>'
+PROJECT_ROOT_NOTE='> **Project root.** Before anything else, resolve `<absolute-path-to-user-project>` to the absolute path of the user project this request is about, from the user request or the session working directory (for example `/home/me/src/my-app`). Resolve it **before** any `cd` into the skill directory, and retain that same value for every **project-file** read, write and delete below, and for the `--project-dir` argument in the command examples. It is the root for project files only: the Claude personal-memory directory and the bundled `scripts/` have their own separate roots. Never derive it from the plugin cache path, and do not substitute a sibling worktree or primary checkout that merely shares the same Git remote. Do not rely on a shell variable to carry it across tool calls; write the absolute path literally in each command and path.'
 FW_FROM_DEFAULT='claude'   # Codex fw restores the other tool's (claude) logs — prevents the current Codex session from selecting itself
 # Codex: the personal-tier path belongs to Claude auto-memory — Codex cannot load it automatically in a later session
 PERSONAL_TIER_NOTE='  > In Codex, this personal-tier path belongs to **Claude auto-memory**; this harness does not automatically reload it into later Codex sessions. If Codex also needs an item, assess whether it belongs in shared committed memory with an INDEX.md entry. Respect the project privacy and tier rules; do not publish personal information merely to make it available across tools.'
