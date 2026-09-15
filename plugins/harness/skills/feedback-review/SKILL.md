@@ -10,6 +10,8 @@ argument-hint: "Optional: specific feedback to review"
 
 After finishing branch work, summarize the user's feedback and corrections from this session. Consider whether rules or skills could prevent the same mistakes.
 
+
+
 ## Review scope
 
 $ARGUMENTS
@@ -63,11 +65,11 @@ Past sessions can reintroduce lessons that were already promoted or rejected. Ch
 
 | Evidence | Location | Action |
 |---|---|---|
-| Already promoted | `.claude/memory/*.md` and the personal tier | Propose strengthening the existing file rather than creating another |
-| Already rejected | `.claude/memory/_rejected.md` | Exclude the candidate; skip this check if the file is absent |
+| Already promoted | `$CLAUDE_PROJECT_DIR/.claude/memory/*.md` and the personal tier | Propose strengthening the existing file rather than creating another |
+| Already rejected | `$CLAUDE_PROJECT_DIR/.claude/memory/_rejected.md` | Exclude the candidate; skip this check if the file is absent |
 | Being handled now | Other candidates in this run | Merge into one candidate |
 
-`_rejected.md` is **not a ban list**. If repetition has made a lesson worth keeping, propose it again and explain **what changed**, such as additional occurrences or their cost, so the user can decide.
+That rejected ledger is **not a ban list**. If repetition has made a lesson worth keeping, propose it again and explain **what changed**, such as additional occurrences or their cost, so the user can decide.
 
 ### 2. Classify feedback
 
@@ -81,13 +83,13 @@ Past sessions can reintroduce lessons that were already promoted or rejected. Ch
 ### 3. Consider prevention
 
 For each item:
-1. **Does a rule already exist?** Check `CLAUDE.md`.
+1. **Does a rule already exist?** Check `$CLAUDE_PROJECT_DIR/CLAUDE.md`.
 2. **Could an existing skill prevent it?** Check installed skills.
 3. **Is a new rule or skill needed?**
 
 ### 4. Propose additions
 
-Propose adding a rule to `CLAUDE.md`, creating a skill, or updating an existing skill.
+Propose adding a rule to `$CLAUDE_PROJECT_DIR/CLAUDE.md`, creating a skill, or updating an existing skill.
 
 ## Output format
 
