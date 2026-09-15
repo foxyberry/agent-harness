@@ -41,9 +41,10 @@ an edit) → pr-merge-reflect (retrospective on merge) → `/memory-update` prom
   default**. It is gated behind a `HARNESS_AUTO_REFLECT=1` opt-in so that merely installing
   the plugin never starts a background LLM job. The reminder is always on where it is
   registered — that is Claude's UserPromptSubmit hook; Codex does not register that event yet.
-- Path conventions — **scripts** resolve from `${CLAUDE_PLUGIN_ROOT}` (the plugin root, where
-  they are co-located); **project data** resolves from the project root. The two differ inside
-  a plugin; do not confuse them. How the project root is obtained differs per tool:
+- Path conventions — **bundled scripts** stay inside the plugin: hooks on both adapters use
+  `${CLAUDE_PLUGIN_ROOT}`, Claude skills call commands from `bin/` on PATH, and Codex skills
+  use their own `scripts/` directory. **Project data** resolves from the project root, which
+  differs from the plugin root. How the project root is obtained differs per tool:
   - **Claude**: read it from the `CLAUDE_PROJECT_DIR` environment variable.
   - **Codex**: there is no such variable (measured on 0.145.0), and the skills' path note moves
     the working directory into the skill folder, which sits in a plugin cache outside the user's
@@ -117,8 +118,9 @@ the line blurs again.
 ## Rules
 
 - Change core → run `build.sh` → commit the regenerated adapter output together with it.
-- Keep script references inside the adapter: Claude skills and both adapters' hooks use
-  `${CLAUDE_PLUGIN_ROOT}`; Codex skills use `scripts/` relative to their own skill directory.
+- Keep script references inside the adapter: hooks on both adapters use `${CLAUDE_PLUGIN_ROOT}`;
+  Claude skills call commands such as `agent-handoff` from `bin/` on PATH; Codex skills use
+  `scripts/` relative to their own skill directory.
   Never reach outside the adapter with `../`.
 - Committed shared memory requires governance: `_pending → human approval → committed`.
   No sensitive information.
