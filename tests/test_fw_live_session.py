@@ -1,12 +1,18 @@
-"""fw 가 **지금 이 세션**을 "직전 작업"으로 고르지 않는지 고정한다 (이슈 #96).
+"""Pins that fw never picks **this very session** as "the most recent work" (issue #96).
 
-`--current` 로 live 세션을 배제하는 계산은 있었는데 `--from both` 분기에서만 썼다.
-그래서 같은 툴에서 세션이 끊겼을 때(재부팅·컨텍스트 소진) `--from claude` 로 찾으면
-최신 = 방금 켠 세션이라 **자기 자신을 요약**했다.
+The calculation that excludes the live session via `--current` existed, but was only used
+in the `--from both` branch. So when a session broke within the same tool (reboot, context
+exhaustion), searching with `--from claude` found the newest = the session just started and
+**summarized itself**.
 
-배제가 못 걸리는 상황(env 부재·불일치)에서는 **아무것도 숨기지 않는다.** 잘못 숨기면
-복원해야 할 직전 작업이 사라지는데, 안 숨기면 최악이라도 목록에 한 줄 더 보일 뿐이다.
-이어받기는 현재 git 이 우선이라 그 편이 안전하다 — 이 fail-open 을 테스트로 고정한다.
+When the exclusion cannot be established (env missing or not matching), **nothing is
+hidden**. Hiding wrongly makes the previous work that needed restoring disappear; not
+hiding costs, at worst, one extra line in the list. Pickup is safe because current git
+wins — this fail-open is what the tests below pin.
+
+The Korean message bodies in the fixtures are deliberate: they stand in for real user
+input, and neither the exclusion nor the injected-block filtering may depend on the
+language of the conversation.
 """
 import importlib.util
 import json
@@ -59,8 +65,8 @@ class _Fixture(unittest.TestCase):
         self.cdir = self.home / ".claude" / "projects" / key
         self.cdir.mkdir(parents=True)
 
-        # 직전 세션 (오래됨) / live 세션 (최신) — mtime 정렬이면 live 가 이긴다.
-        # 상대 시각으로 — 고정 epoch 은 최근성 창(cutoff)이 지나면 스스로 깨진다.
+        # Previous session (older) / live session (newest) — a mtime sort lets live win.
+        # Relative times only — a fixed epoch breaks itself once the recency cutoff passes.
         base = time.time() - 86400.0
         self._write(PREV, "직전 작업이다", base)
         self._write(LIVE, "방금 켠 세션이다", base + 3600)
@@ -97,8 +103,8 @@ class LiveSessionExcludedTest(_Fixture):
     def test_from_claude_returns_previous_session_not_the_live_one(self):
         out = self._fw("--from", "claude", "--current", "claude")
 
-        self.assertIn(PREV, out, "같은 툴 직전 세션이 나와야 한다")
-        self.assertNotIn(LIVE, out, "지금 이 세션을 '직전 작업'으로 고르면 안 된다")
+        self.assertIn(PREV, out, "the previous session of the same tool has to show up")
+        self.assertNotIn(LIVE, out, "this very session must not be picked as 'the most recent work'")
 
     def test_auto_also_excludes_the_live_session(self):
         out = self._fw("--from", "auto", "--current", "claude")
@@ -107,13 +113,14 @@ class LiveSessionExcludedTest(_Fixture):
         self.assertNotIn(LIVE, out)
 
     def test_auto_does_not_go_empty_when_the_newest_is_live(self):
-        """배제 후 후보가 비면 '로그 없음'으로 떨어진다 — 멀쩡한 직전 세션을 두고도."""
+        """If exclusion empties the candidate list it falls through to 'no logs' — even
+        though a perfectly good previous session exists."""
         out = self._fw("--from", "auto", "--current", "claude")
 
-        self.assertNotIn("최근 세션 로그 없음", out)
+        self.assertNotIn("No recent session log for this project", out)
 
     def test_explicit_session_is_never_excluded(self):
-        """`--session` 은 '이걸 보라'는 명시적 지시다. live 여도 그대로 보여준다."""
+        """`--session` is an explicit "look at this one". It is shown even when live."""
         out = self._fw("--session", str(self.cdir / f"{LIVE}.jsonl"), "--current", "claude")
 
         self.assertIn(LIVE, out)
@@ -123,7 +130,8 @@ class FailOpenTest(_Fixture):
     def test_nothing_is_hidden_when_env_is_absent(self):
         out = self._fw("--from", "claude", "--current", "claude", session_id=None)
 
-        self.assertIn(LIVE, out, "배제 근거가 없으면 숨기지 않는다 — 잘못 숨기는 게 더 나쁘다")
+        self.assertIn(LIVE, out,
+                      "with no grounds for exclusion, hide nothing — hiding wrongly is worse")
 
     def test_nothing_is_hidden_when_env_matches_no_transcript(self):
         out = self._fw("--from", "claude", "--current", "claude",
@@ -157,11 +165,11 @@ class TimelineTest(unittest.TestCase):
 
         self.assertEqual(
             ["USER", "AGENT", "TOOL"], [kind for _ts, kind, _t in s["timeline"]],
-            "종류별로 나누지 말고 일어난 순서대로 이어져야 한다",
+            "entries must follow the order they happened in, not be split by kind",
         )
 
     def test_tool_results_are_not_labelled_as_user_input(self):
-        """Claude JSONL 은 tool_result 를 role=user 로 담는다 — 사람이 친 말이 아니다."""
+        """Claude JSONL carries tool_result under role=user — that is not human speech."""
         s = self._summarize([
             _claude_line("user", "빌드해줘", "2026-08-12T01:00:00.000Z"),
             _claude_line("user", "빌드 완료: 0 errors", "2026-08-12T01:01:00.000Z",
@@ -175,9 +183,11 @@ class TimelineTest(unittest.TestCase):
         self.assertNotIn("빌드 완료: 0 errors", s["last_users"])
 
     def test_mixed_tool_result_and_text_is_not_user_input(self):
-        """도구 결과 뒤에 system-reminder 가 붙는 혼합 메시지 — 가장 흔한 형태다.
+        """A mixed message with a system-reminder after the tool result — the most common
+        shape.
 
-        "전부 tool_result 인가"로 판정하면 이 경우를 놓친다. 사람 발화만 골라 담아야 한다.
+        Deciding by "is everything a tool_result?" misses this case. Only human speech may
+        be collected.
         """
         mixed = json.dumps({
             "type": "user", "timestamp": "2026-08-12T01:01:00.000Z",

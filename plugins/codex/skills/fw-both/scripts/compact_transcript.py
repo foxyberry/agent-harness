@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-세션 트랜스크립트(.jsonl) → 회고 입력용 압축 마크다운.
-Claude Code 와 Codex rollout(`~/.codex/sessions/.../rollout-*.jsonl`) 두 포맷 모두 자동 감지·지원.
+Session transcript (.jsonl) -> compact markdown for retrospection input.
+Auto-detects and supports both formats: Claude Code and Codex rollout
+(`~/.codex/sessions/.../rollout-*.jsonl`).
 
-회고에 필요한 신호만 남긴다:
-  - user 발화 전체 (지적·결정·피드백 — 가장 중요)
-  - assistant 텍스트 (결론/판단, 길면 절단)
-  - 도구 사용은 한 줄 요약만 (Edit/Write 대상 파일, Bash 명령 첫 줄)
-도구 결과(tool_result) 본문은 버린다 — 여기가 용량의 대부분(수 MB~수십 MB).
+Keeps only the signal a retrospective needs:
+  - every user utterance (corrections, decisions, feedback -- the most important part)
+  - assistant text (conclusions/judgements, truncated when long)
+  - tool use as a one-line summary only (Edit/Write target file, first line of a Bash command)
+Tool result bodies are dropped -- that is where most of the volume lives (several MB to tens of MB).
 
-사용:
-  python3 compact_transcript.py <transcript.jsonl>        # stdout 으로 출력
+Usage:
+  python3 compact_transcript.py <transcript.jsonl>        # write to stdout
   python3 compact_transcript.py <transcript.jsonl> -o out.md
-  python3 compact_transcript.py <transcript.jsonl> --require-attributed-user  # 회고용 strict
+  python3 compact_transcript.py <transcript.jsonl> --require-attributed-user  # strict, for retrospection
 """
 import argparse
 import json
@@ -20,11 +21,11 @@ import os
 import sys
 from collections import namedtuple
 
-ASSIST_MAX = 600  # assistant 텍스트 1개 절단 길이
+ASSIST_MAX = 600  # truncation length for a single assistant text block
 
 
 def _text_blocks(content):
-    """content(str|list) 에서 (kind, text) 리스트 추출."""
+    """Extract a list of (kind, text) from content (str|list)."""
     out = []
     if isinstance(content, str):
         out.append(("text", content))
@@ -48,20 +49,24 @@ def _text_blocks(content):
     return out
 
 
-# 사용자가 친 것으로 인정하는 origin. 이 밖은 도구·시스템이 넣은 것이다.
+# Origins we accept as "a human typed this". Anything else was inserted by a tool or the system.
 HUMAN_PROMPT_SOURCES = {"typed", "queued", "suggestion_accepted"}
 
-# origin 신호가 없는 옛 트랜스크립트용 폴백. 주입된 턴은 이걸로 **시작**한다.
-# 시작 여부만 보므로, 이 마커를 본문에서 얘기하는 정상 발화는 안 죽는다.
+# Fallback for old transcripts that carry no origin signal. An injected turn **starts** with one
+# of these. We only look at the start, so a normal utterance that merely *mentions* a marker survives.
 #
-# ⚠️ 개별 태그가 아니라 **계열 접두사**다. 처음엔 태그를 하나씩 적었는데 `<command-message>`
-# 를 빠뜨렸다(실측 corpus 에 6건). 같은 계열은 변형이 계속 생긴다 — command-name/message/args,
-# local-command-stdout/stderr/caveat, bash-input/stdout/stderr. 계열로 잡으면 새 변형도 덮는다.
-# 사람이 친 메시지가 이런 태그로 **시작**하는 일은 사실상 없다.
+# WARNING: these are **family prefixes**, not individual tags. The first version listed tags one by
+# one and missed `<command-message>` (6 occurrences in the measured corpus). New variants of the same
+# family keep appearing -- command-name/message/args, local-command-stdout/stderr/caveat,
+# bash-input/stdout/stderr. Matching the family covers the new variants too.
+# A human-typed message practically never **starts** with one of these tags.
+#
+# NOTE: these entries are **matchers against historical transcript data**, not output. Do not reword
+# them -- the plain-text entry below is the literal prefix Claude injects for skill bodies.
 _INJECTED_HEADS = (
     "<command-", "<local-command-", "<bash-",
     "<task-notification>", "<system-reminder>",
-    "Base directory for this skill",   # 스킬 본문 주입 — 태그가 아니라 평문으로 시작한다
+    "Base directory for this skill",   # skill-body injection — starts with plain text, not a tag
 )
 
 
@@ -69,30 +74,32 @@ Turn = namedtuple("Turn", "role blocks provenance evidence")
 
 
 def _claude_user_provenance(d, text):
-    """이 user 턴이 **사람이 친 것**인가.
+    """Did a **human type** this user turn?
 
-    Claude 트랜스크립트의 `role: "user"` 에는 사람 입력만 오지 않는다. 도구 알림
-    (`<task-notification>`), 슬래시 명령 확장(`<command-name>`·`<local-command-stdout>`),
-    시스템 리마인더, 그리고 **스킬 본문**이 같은 자리에 온다.
+    `role: "user"` in a Claude transcript is not only human input. Tool notifications
+    (`<task-notification>`), slash-command expansions (`<command-name>`, `<local-command-stdout>`),
+    system reminders, and **skill bodies** all land in the same slot.
 
-    회고 재료로는 치명적이다 — 스킬 본문이 "사용자가 한 말" 로 들어가면, 회고가 **하네스
-    자신의 규칙**을 새 교훈으로 뽑아 승격 후보로 올린다. 이미 우리 문체라 진짜 교훈보다
-    더 그럴듯해 보인다. 실측: 한 트랜스크립트에서 USER 블록 9개 중 6개가 주입이었다.
+    As retrospection material that is fatal -- if a skill body enters as "what the user said", the
+    retrospective extracts **the harness's own rules** as a new lesson and files it as a promotion
+    candidate. It is already written in our voice, so it looks more plausible than a real lesson.
+    Measured: 6 of 9 USER blocks in one transcript were injections.
 
-    ## 왜 양성 선택 하나로 안 끝나는가
+    ## Why positive selection alone is not enough
 
-    최근 트랜스크립트는 `origin: {kind: "human", promptSource: "typed"}` 를 달고 온다.
-    그걸로 고르면 깨끗하다. 그런데 이 프로젝트 46개 중 **40개에 그 필드가 아예 없다** —
-    필드가 생기기 전 파일들이다. 엄격하게 걸면 그 40개에서 사용자 발화가 **0건**이 되고,
-    "회고할 게 없었다" 와 구별이 안 된다. 이 저장소가 계속 걸리는 실패 모드다.
+    Recent transcripts carry `origin: {kind: "human", promptSource: "typed"}`. Selecting on that is
+    clean. But **40 of this project's 46 files do not have the field at all** -- they predate it.
+    Filtering strictly yields **zero** user utterances in those 40, which is indistinguishable from
+    "there was nothing to reflect on". That is a failure mode this repo keeps hitting.
 
-    그래서 **파일이 아니라 레코드 단위로** 판단한다 — origin 이 붙어 있으면 그걸 믿고,
-    없으면 마커로 거른다. 폴백을 썼다는 건 호출자가 알린다(compact 참조).
+    So we judge **per record, not per file** -- trust origin when it is attached, and fall back to
+    markers when it is not. The caller announces that the fallback was used (see compact).
     """
-    # ⚠️ promptSource 는 **레코드 최상위**에 있다. origin 안이 아니다(실측: origin.promptSource
-    # 는 2616건 전부 None — 거기서 읽으면 죽은 조건이다). 그리고 이게 가장 정확한 신호다:
-    # sdk 40건·system 22건이 origin.kind 없이 오므로, origin 만 보면 그것들이 마커 폴백으로
-    # 떨어지고 평문이라 사람 입력으로 통과한다. 자동화가 넣은 프롬프트가 회고 재료가 된다.
+    # WARNING: promptSource lives at the **record top level**, not inside origin (measured:
+    # origin.promptSource was None in all 2616 records -- reading it there is a dead condition).
+    # It is also the most accurate signal: 40 sdk and 22 system records arrive without origin.kind,
+    # so looking only at origin drops them into the marker fallback, and since they are plain text
+    # they pass as human input. Automation-injected prompts would become retrospection material.
     src = d.get("promptSource")
     if src is not None:
         return ("attributed" if src in HUMAN_PROMPT_SOURCES else "nonhuman",
@@ -103,8 +110,8 @@ def _claude_user_provenance(d, text):
                 "origin", False)
     if d.get("isMeta"):
         return "nonhuman", "isMeta", False
-    # `in` 이 아니라 `startswith` 다. 주입된 턴은 마커로 **시작**한다. `in` 으로 보면
-    # 마커를 얘기하는 정상 발화("압축기가 <task-notification> 을 왜 거르지?")까지 죽는다.
+    # `startswith`, not `in`. An injected turn **starts** with a marker. With `in` we would also
+    # kill a normal utterance that talks about one ("why does the compactor filter <task-notification>?").
     head = text.lstrip()
     if head.startswith(_INJECTED_HEADS):
         return "nonhuman", "marker", True
@@ -112,10 +119,11 @@ def _claude_user_provenance(d, text):
 
 
 def _claude_msg(d):
-    """Claude Code 레코드 → Turn 또는 None.
+    """Claude Code record -> Turn, or None.
 
-    provenance 는 user 레코드에만 attributed/unattributed/nonhuman 중 하나다. strict 회고가
-    파일 전체가 아니라 레코드 구간 단위로 선택할 수 있게 분류를 이 경계에서 버리지 않는다.
+    provenance is one of attributed/unattributed/nonhuman, and only on user records. We do not throw
+    the classification away at this boundary so that strict retrospection can select per record
+    segment rather than per whole file.
     """
     m = d.get("message")
     if not isinstance(m, dict):
@@ -125,9 +133,9 @@ def _claude_msg(d):
         role = m.get("role")
         return Turn(role, blocks, None, None) if role == "assistant" else None
     user_texts = [t for k, t in blocks if k == "text" and t.strip()]
-    # tool_result 도 Claude JSONL 에서는 role=user 다. 회고 텍스트가 없고 아래 출력에서도
-    # 버리는 레코드이므로 provenance 판정 대상이 아니다. 이걸 fallback 으로 세면 거의 모든
-    # 도구 사용 세션이 strict 회고에서 거부된다.
+    # tool_result records are also role=user in Claude JSONL. They carry no retrospection text and
+    # are dropped by the renderer below, so they are not subject to a provenance verdict. Counting
+    # them as a fallback would make strict retrospection reject almost every tool-using session.
     if not user_texts:
         return None
     text = " ".join(user_texts)
@@ -136,17 +144,17 @@ def _claude_msg(d):
 
 
 def _codex_user_message(d):
-    """Codex rollout 의 **실제 사용자 발화** — `event_msg.user_message` 의 `message`.
+    """The **real user utterance** in a Codex rollout -- `message` inside `event_msg.user_message`.
 
-    ⚠️ `response_item` 의 `role: "user"` 를 사용자 발화로 읽으면 안 된다. Codex 는 주입한
-    컨텍스트도 거기에 `role: "user"` 로 넣는다 — `<user_action>` 래퍼, 환경 정보, 프로젝트의
-    AGENTS.md 본문 같은 것들. 8개 세션을 실측하니 그 17건 중 **8건이 주입**이었다.
+    WARNING: never read `role: "user"` on a `response_item` as a user utterance. Codex puts injected
+    context there with `role: "user"` too -- `<user_action>` wrappers, environment info, the
+    project's AGENTS.md body. Measured across 8 sessions, **8 of those 17 items were injections**.
 
-    회고 재료로는 치명적이다. AGENTS.md 전문이 "사용자가 한 말" 로 들어가면, 회고가 그걸
-    새 교훈으로 뽑아 메모리 승격 후보로 올린다 — 프로젝트의 기존 규칙이 사용자 피드백으로
-    둔갑해 규칙이 자기복제한다.
+    As retrospection material that is fatal. If the whole of AGENTS.md enters as "what the user
+    said", the retrospective extracts it as a new lesson and files it as a memory promotion
+    candidate -- the project's existing rules disguise themselves as user feedback and self-replicate.
 
-    Codex 는 둘을 구분해 준다. 실제 입력은 `event_msg.user_message` 에만 온다.
+    Codex distinguishes the two for us. Real input only ever arrives via `event_msg.user_message`.
     """
     if d.get("type") != "event_msg":
         return None
@@ -161,15 +169,15 @@ def _codex_user_message(d):
 
 def _codex_msg(d):
     """Codex rollout .jsonl: {"type":"response_item","payload":{"type":"message",
-    "role","content":[{"type":"input_text"|"output_text","text"}]}} → (role, blocks).
-    tool(function_call) 항목은 v1 에서 생략 — user/assistant 텍스트만 추출."""
+    "role","content":[{"type":"input_text"|"output_text","text"}]}} -> (role, blocks).
+    tool(function_call) entries are omitted in v1 -- only user/assistant text is extracted."""
     if d.get("type") != "response_item":
         return None
     p = d.get("payload") or {}
     if p.get("type") != "message":
         return None
-    # assistant 만 본다. role="user" 는 주입이 섞이므로 _codex_user_message 가 따로 맡고,
-    # role="developer" 는 시스템 지시라 회고 재료가 아니다.
+    # Only assistant. role="user" mixes in injections, so _codex_user_message handles it separately,
+    # and role="developer" is a system instruction, not retrospection material.
     if p.get("role") != "assistant":
         return None
     blocks = [
@@ -181,10 +189,11 @@ def _codex_msg(d):
 
 
 def iter_turns(path, stats=None):
-    """JSONL 을 정책과 무관한 Turn 스트림으로 파싱한다.
+    """Parse JSONL into a policy-agnostic stream of Turns.
 
-    nonhuman 턴도 버리지 않는다. 해당 턴을 숨길지, 신뢰 구간을 끊을지는 소비 정책의
-    책임이다. ``stats`` 는 전체 줄 수와 marker fallback 사용 여부를 호출자에게 돌려준다.
+    nonhuman turns are not dropped either. Whether to hide such a turn or to revoke the trusted
+    segment is the consuming policy's responsibility. ``stats`` reports the total line count and
+    whether the marker fallback was used back to the caller.
     """
     if stats is None:
         stats = {}
@@ -209,17 +218,18 @@ def iter_turns(path, stats=None):
 
 
 def select_recovery(turns, stats=None):
-    """일반 CLI 용 best-effort 정책: 주입만 빼고 출처 불명 사용자 턴은 보존한다."""
+    """Best-effort policy for the ordinary CLI: drop injections only, keep unattributed user turns."""
     for turn in turns:
         if turn.provenance != "nonhuman":
             yield turn
 
 
 def select_attributed(turns, stats=None):
-    """회고용 fail-closed 정책: 확인된 사용자 턴에서 시작한 구간만 보존한다.
+    """Fail-closed policy for retrospection: keep only segments that start at a confirmed user turn.
 
-    단순 알림·메타 nonhuman 턴은 투명하지만, 출처가 명시된 자동화 턴과 출처 불명 사용자
-    턴은 뒤 assistant 응답도 신뢰할 수 없으므로 구간 신뢰를 해제한다.
+    Plain notification/meta nonhuman turns are transparent, but an explicitly attributed automation
+    turn and an unattributed user turn both make the assistant replies that follow untrustworthy,
+    so they revoke segment trust.
     """
     if stats is None:
         stats = {}
@@ -244,7 +254,7 @@ def select_attributed(turns, stats=None):
 
 
 def render(turns):
-    """선택된 Turn 스트림을 기존 압축 마크다운 형식으로 렌더한다."""
+    """Render the selected Turn stream into the compact markdown format."""
     md = []
     for turn in turns:
         role, blocks = turn.role, turn.blocks
@@ -258,19 +268,20 @@ def render(turns):
             if texts:
                 joined = "\n".join(texts).strip()
                 if len(joined) > ASSIST_MAX:
-                    joined = joined[:ASSIST_MAX] + " …(절단)"
+                    joined = joined[:ASSIST_MAX] + " …(truncated)"
                 md.append(f"\n**🤖 ASSISTANT:** {joined}")
             if tools:
-                md.append(f"  ↳ 도구: {', '.join(tools[:8])}" + (" …" if len(tools) > 8 else ""))
+                md.append(f"  ↳ tools: {', '.join(tools[:8])}" + (" …" if len(tools) > 8 else ""))
     return "\n".join(md)
 
 
 def compact(path, require_attributed_user=False):
-    """트랜스크립트를 압축한다.
+    """Compact a transcript.
 
-    `require_attributed_user=True` 는 메모리 회고용 fail-closed 모드다. 출처 불명 user 턴과
-    그 뒤 assistant 구간만 버리고, 양성 귀속 user 턴에서 시작한 구간은 유지한다. 양성 귀속
-    user 턴이 하나도 없으면 전체를 비운다. 기본값 False 는 일반 CLI 호환 모드다.
+    `require_attributed_user=True` is the fail-closed mode used for memory retrospection. It drops
+    only unattributed user turns and the assistant segments that follow them, keeping segments that
+    start at a positively attributed user turn. If there is no positively attributed user turn at
+    all, the whole output is emptied. The default, False, is the compatible mode for the general CLI.
     """
     parse_stats = {}
     policy_stats = {}
@@ -281,19 +292,20 @@ def compact(path, require_attributed_user=False):
         selected = select_recovery(turns, policy_stats)
     out = render(selected)
     if parse_stats["used_fallback"] and not require_attributed_user:
-        # 조용히 퇴화하지 않는다. 마커 폴백은 origin 기반 선택보다 약하므로, 이 압축본으로
-        # 회고하는 쪽이 "덜 걸러졌을 수 있다" 를 알아야 한다.
+        # Do not degrade silently. The marker fallback is weaker than origin-based selection, so
+        # whoever reflects on this compaction must know it "may be less filtered".
         sys.stderr.write(
-            "[compact] origin 없는 옛 레코드가 있어 마커 기반으로 걸렀다 — 주입이 남았을 수 있다\n")
+            "[compact] some old records have no origin, so filtering fell back to markers "
+            "— injections may remain\n")
     if require_attributed_user and policy_stats["attributed_users"] == 0:
-        sys.stderr.write("[compact] 회고 거부: 출처가 확실한 user 턴이 없다\n")
+        sys.stderr.write("[compact] retrospection refused: no user turn with a confirmed origin\n")
         return "", parse_stats["lines"]
     if require_attributed_user:
         sys.stderr.write(
-            "[compact] strict user 턴: "
-            f"귀속 {policy_stats['attributed_users']}, "
-            f"출처 불명 제외 {policy_stats['unattributed_users']}, "
-            f"주입 제외 {policy_stats['nonhuman_users']}\n")
+            "[compact] strict user turns: "
+            f"attributed {policy_stats['attributed_users']}, "
+            f"dropped as unattributed {policy_stats['unattributed_users']}, "
+            f"dropped as injected {policy_stats['nonhuman_users']}\n")
     return out, parse_stats["lines"]
 
 
@@ -302,8 +314,8 @@ def main():
     parser.add_argument("transcript")
     parser.add_argument("-o", "--output")
     parser.add_argument("--require-attributed-user", action="store_true")
-    # 기존 실행성 계약: 무인자 호출은 훅의 "차단" 의미로도 쓰이는 exit 2를 피한다.
-    # 알 수 없는 옵션은 아래 parse_args 가 exit 2로 fail-closed 처리한다.
+    # Existing runnability contract: a no-argument call avoids exit 2, which also means "block"
+    # in the hook contract. Unknown options are handled fail-closed by parse_args below (exit 2).
     if len(sys.argv) == 1:
         parser.print_usage(sys.stderr)
         sys.exit(1)
@@ -315,10 +327,11 @@ def main():
         sys.exit(3)
     if args.output:
         open(args.output, "w", encoding="utf-8").write(out)
-        sys.stderr.write(f"[compact] {n} 줄 → {args.output} ({len(out)}자 ~{len(out)//4} 토큰)\n")
+        sys.stderr.write(
+            f"[compact] {n} lines → {args.output} ({len(out)} chars, ~{len(out)//4} tokens)\n")
     else:
         print(out)
-        sys.stderr.write(f"[compact] {n} 줄 → {len(out)}자 (~{len(out)//4} 토큰)\n")
+        sys.stderr.write(f"[compact] {n} lines → {len(out)} chars (~{len(out)//4} tokens)\n")
 
 
 if __name__ == "__main__":

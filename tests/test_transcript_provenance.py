@@ -1,4 +1,4 @@
-"""트랜스크립트 파싱과 목적별 선택 정책의 경계를 검증한다."""
+"""Verifies the boundary between transcript parsing and the per-purpose selection policies."""
 import importlib.util
 import json
 import pathlib
@@ -100,16 +100,24 @@ class SelectionPolicyTest(unittest.TestCase):
             compact.Turn("assistant", [("text", "x" * (compact.ASSIST_MAX + 1)), *tools],
                          None, None),
         ])
-        self.assertIn(" …(절단)", out)
+        self.assertIn(" …(truncated)", out)
         self.assertIn("tool-7", out)
         self.assertNotIn("tool-8", out)
         self.assertTrue(out.endswith(" …"))
 
     def test_recovery_output_is_locked_by_golden_fixture(self):
+        """Deliberate legacy coverage: the fixture body is Korean.
+
+        The renderer's own markers are English, but a historical transcript's **content** must round
+        trip byte-for-byte. Keeping a Korean fixture here is what proves the translation of the
+        harness's output did not start rewriting the data it carries.
+        """
         fixture = ROOT / "tests" / "fixtures" / "transcript-recovery.jsonl"
         golden = ROOT / "tests" / "fixtures" / "transcript-recovery.md"
-        self.assertEqual(golden.read_text(encoding="utf-8").rstrip("\n"),
-                         compact.compact(fixture)[0])
+        rendered = compact.compact(fixture)[0]
+        self.assertEqual(golden.read_text(encoding="utf-8").rstrip("\n"), rendered)
+        self.assertIn("옛 사용자 발화", rendered,
+                      "a historical Korean utterance was altered on the way through")
 
 
 if __name__ == "__main__":

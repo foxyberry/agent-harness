@@ -1,14 +1,14 @@
-"""세션 로그 탐색이 **현재 프로젝트**로 스코프되는지 고정한다 (이슈 #95).
+"""Pins that session-log discovery is scoped to the **current project** (issue #95).
 
-사고 재현: 프로젝트 A 에서 이어받기를 했는데, 전역 mtime 이 더 최신인 프로젝트 B 의
-세션이 "직전 작업"으로 보고됐다. 원인은 스코핑 부재가 아니라 **스코핑된 선택기에
-도달하지 못한 것**이었다 —
-  - `load --deep` 이 Codex 쪽 요약을 아예 호출하지 않았고,
-  - 힌트는 `~/.codex/sessions` 를 전역으로 훑어 "존재함"만 알렸다.
-그래서 사람·모델이 로그를 직접 뒤졌고, 손 탐색에는 스코핑이 없었다.
+What happened: a pickup in project A reported a session from project B — globally newer by
+mtime — as "the most recent work". The cause was not a missing scoped selector but
+**never reaching** it:
+  - `load --deep` never called the Codex summary at all, and
+  - the hint scanned all of `~/.codex/sessions` and only said "they exist".
+So people and models dug through the logs by hand, and hand-digging has no scoping.
 
-여기서 고정하는 것은 "여러 프로젝트 로그가 섞여 있어도 내 프로젝트 것만 고른다" 와
-"못 찾으면 없다고 분명히 말한다" 두 가지다.
+Two things are pinned here: "pick only my project's logs even when several projects'
+logs are mixed together", and "say so plainly when nothing is found".
 """
 import importlib.util
 import json
@@ -34,7 +34,11 @@ def _git_init(path):
 
 
 def _write_rollout(home, name, sid, cwd, mtime):
-    """~/.codex/sessions/<날짜 트리>/rollout-*.jsonl 하나를 만든다."""
+    """Create one ~/.codex/sessions/<date tree>/rollout-*.jsonl.
+
+    The message body stays Korean on purpose: these fixtures stand in for real user input,
+    and scoping must not depend on the language of the conversation.
+    """
     p = pathlib.Path(home, ".codex", "sessions", "2026", "08", "11", name)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
@@ -59,7 +63,7 @@ def _write_claude_transcript(home, project_dir, stem, mtime):
 
 
 class _TwoProjects(unittest.TestCase):
-    """프로젝트 A(내 것)와 B(남의 것). B 로그가 항상 더 최신이다."""
+    """Project A (mine) and B (someone else's). B's log is always the newer one."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -68,9 +72,10 @@ class _TwoProjects(unittest.TestCase):
         self.home.mkdir()
         self.a = _git_init(base / "proj-a")
         self.b = _git_init(base / "proj-b")
-        # B 를 더 최신으로 — 전역 mtime 정렬이면 B 가 이긴다.
-        # 고정 epoch 을 쓰면 안 된다: rollout 탐색은 mtime 이 30일 안인 것만 읽으므로
-        # 박아둔 값은 그 날짜가 지나는 순간 코드 변경 없이 CI 를 깨뜨린다(실제로 깨졌다).
+        # Make B newer — a global mtime sort would let B win.
+        # A fixed epoch must not be used: rollout discovery only reads files whose mtime is
+        # within 30 days, so a hard-coded value breaks CI the moment that date passes,
+        # without any code change (this actually happened).
         self.now = time.time() - 86400.0
         self._env = dict(os.environ)
         os.environ["HOME"] = str(self.home)
@@ -90,7 +95,7 @@ class CodexRolloutScopeTest(_TwoProjects):
 
         self.assertEqual(
             ["rollout-a.jsonl"], [os.path.basename(r[2]) for r in rows],
-            "전역 mtime 이 더 최신인 다른 프로젝트 rollout 이 섞이면 안 된다",
+            "another project's rollout must not slip in just by being globally newer",
         )
 
     def test_subdirectory_cwd_still_belongs_to_project(self):
@@ -111,7 +116,7 @@ class TranscriptHintTest(_TwoProjects):
 
         self.assertEqual(
             [], [h for h in hints if "Codex" in h],
-            "다른 프로젝트 rollout 만 있을 때 '존재함' 힌트를 내면 손 탐색을 부른다",
+            "an 'exists' hint when only another project has rollouts invites hand-digging",
         )
 
     def test_codex_hint_present_for_own_rollout(self):
@@ -119,15 +124,15 @@ class TranscriptHintTest(_TwoProjects):
 
         hints = handoff.transcript_hint(self.a)
 
-        self.assertTrue([h for h in hints if "Codex rollout 있음" in h])
+        self.assertTrue([h for h in hints if "Codex rollout present" in h])
 
     def test_hint_stops_reading_once_a_match_is_found(self):
-        """힌트는 평범한 `load` 마다 돈다. 전체 스캔을 물리면 안 된다.
+        """The hint runs on every ordinary `load`. It must not force a full scan.
 
-        내 프로젝트 세션이 최신이면 그 하나만 읽고 끝나야 한다 — 뒤에 남의 프로젝트
-        rollout 이 아무리 많아도 열지 않는다.
+        When my project's session is the newest, it should read that one and stop — no
+        matter how many other-project rollouts sit behind it.
         """
-        # A 가 가장 최신이어야 한다 — 아래 "1개만 열었다" 단언이 이 순서에 기댄다.
+        # A has to be the newest — the "opened only one" assertion below relies on that order.
         _write_rollout(self.home, "rollout-a.jsonl", "sid-a", self.a, self.now)
         for i in range(20):
             _write_rollout(self.home, f"rollout-b{i}.jsonl", f"sid-b{i}", self.b, self.now - 100 - i)
@@ -147,7 +152,7 @@ class TranscriptHintTest(_TwoProjects):
 
         self.assertEqual(
             1, len(opened),
-            f"최신 매칭 하나에서 멈춰야 하는데 {len(opened)}개를 열었다",
+            f"should stop at the newest match, but opened {len(opened)} files",
         )
 
     def test_hint_names_only_commands_that_exist(self):
@@ -156,7 +161,8 @@ class TranscriptHintTest(_TwoProjects):
 
         joined = "\n".join(handoff.transcript_hint(self.a))
 
-        # 없는 명령을 안내하면 사용자가 쳐도 아무 일이 안 일어나고, 결국 손으로 찾게 된다.
+        # Naming a command that does not exist means the user types it, nothing happens,
+        # and they end up searching by hand.
         for dead in ("/fw-claude", "/continue-claude"):
             self.assertNotIn(dead, joined)
         self.assertIn("/fw-both", joined)
@@ -179,7 +185,7 @@ class LoadDeepTest(_TwoProjects):
 
         out = self._run_load_deep(self.a)
 
-        # Codex 요약 자체가 나와야 한다 — 예전엔 Claude 만 요약하고 여기서 끝났다.
+        # The Codex summary itself has to appear — it used to summarize Claude and stop here.
         self.assertIn("Codex rollout", out)
         self.assertIn("rollout-a.jsonl", out)
         self.assertNotIn("rollout-b.jsonl", out)
@@ -189,16 +195,17 @@ class LoadDeepTest(_TwoProjects):
 
         out = self._run_load_deep(self.a)
 
-        self.assertIn("이 프로젝트의 최근 세션 로그 없음", out)
+        self.assertIn("no recent session log for this project", out)
         self.assertNotIn("rollout-b.jsonl", out)
 
 
 class TargetDisclosureTest(_TwoProjects):
-    """어느 프로젝트를 봤는지 출력에 드러나야 한다.
+    """The output has to reveal which project was inspected.
 
-    대상을 잘못 지목하는 것 자체는 툴의 결함이 아니다 — 시킨 대로 한 것이다. 결함은
-    **틀렸다는 걸 알아챌 방법이 없는 것**이다. 지금까지 출력에는 브랜치명만 있어서,
-    엉뚱한 저장소를 가리켜도 그 저장소의 브랜치와 세션이 멀쩡하게 나왔다.
+    Pointing at the wrong target is not itself a defect of the tool — it did what it was
+    told. The defect is **having no way to notice it was wrong**. The output used to carry
+    only a branch name, so aiming at the wrong repository still produced that repository's
+    branch and sessions, looking perfectly normal.
     """
 
     def _run(self, *argv):
@@ -215,8 +222,9 @@ class TargetDisclosureTest(_TwoProjects):
     def test_load_shows_resolved_root_and_why(self):
         out = self._run("load", "--project-dir", self.b)
 
-        self.assertIn(self.b, out, "지목한 프로젝트 루트가 출력에 없으면 오지목을 못 알아챈다")
-        self.assertIn("--project-dir", out, "왜 그 루트로 정했는지도 밝혀야 한다")
+        self.assertIn(self.b, out,
+                      "without the chosen project root in the output, a mis-aim goes unnoticed")
+        self.assertIn("--project-dir", out, "the reason for that root has to be stated too")
 
     def test_fw_shows_resolved_root(self):
         out = self._run("fw", "--from", "claude", "--project-dir", self.b)
@@ -227,10 +235,11 @@ class TargetDisclosureTest(_TwoProjects):
         out = self._run("load")
 
         self.assertIn(self.a, out)
-        self.assertIn("현재 디렉터리", out)
+        self.assertIn("current directory", out)
 
     def test_history_names_project_even_with_no_results(self):
-        # 결과가 없을 때야말로 "대상을 잘못 골랐나" 와 "정말 없나" 가 구분돼야 한다.
+        # With no results, "did I pick the wrong target" and "is there really nothing" must
+        # stay distinguishable.
         out = self._run("history", "--project-dir", self.b)
 
         self.assertIn(self.b, out)

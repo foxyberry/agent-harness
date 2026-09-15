@@ -1,9 +1,11 @@
-"""편집 훅이 Codex `apply_patch` 입력에도 도는지 (이슈 #85 2단계).
+"""Do the edit hooks run on Codex `apply_patch` input too (issue #85, step 2)?
 
-훅을 **실제로 실행**해서 stdout 을 본다. 함수 단위로만 보면 "정규화는 되는데 훅이 안 쓴다"
-같은 배선 누락을 놓친다 — 이번 주에 두 번 그랬다.
+The hooks are **actually executed** and their stdout inspected. Testing at function level alone
+misses wiring gaps like "normalisation works but the hook never uses it" -- which happened twice this
+week.
 
-Claude 입력도 같은 단언으로 함께 돌린다. 이식이 기존 동작을 깨지 않았는지가 완료 조건이다.
+Claude input runs through the same assertions. Not breaking the existing behaviour during the port
+is the completion condition.
 """
 import json
 import os
@@ -18,7 +20,7 @@ MEMORY_SEARCH = ROOT / "core" / "hooks" / "memory-search.py"
 REFLECTION = ROOT / "core" / "hooks" / "reflection.py"
 PROJECT_INDEX = ROOT / "core" / "hooks" / "project-memory-index.py"
 
-# 이슈 #85 본문의 실측 입력 (codex-cli 0.145.0).
+# Measured input from the body of issue #85 (codex-cli 0.145.0).
 CODEX_PATCH = ("*** Begin Patch\n"
                "*** Add File: /tmp/x/test.txt\n"
                "+world\n"
@@ -48,7 +50,7 @@ class _HookRun(unittest.TestCase):
 
     def run_hook(self, script, payload, *, use_env=True, cwd=None):
         env = dict(os.environ)
-        # 상위 프로세스가 회고 잡이어도 이 테스트는 훅 자체를 검증해야 한다.
+        # Even if the parent process is a retrospection job, this test must exercise the hook itself.
         env.pop("REFLECT_JOB", None)
         if use_env:
             env["CLAUDE_PROJECT_DIR"] = str(self.project)
@@ -62,14 +64,16 @@ class _HookRun(unittest.TestCase):
         return proc.stdout.strip()
 
     def context_of(self, stdout):
-        """훅이 주입한 텍스트. 아무것도 안 냈으면 None."""
+        """The text the hook injected. None when it emitted nothing."""
         if not stdout:
             return None
         payload = json.loads(stdout)
         nested = (payload.get("hookSpecificOutput") or {}).get("additionalContext")
         top = payload.get("additionalContext")
-        # 두 키가 서로 다르면 어느 쪽을 읽는 툴이냐에 따라 결과가 갈린다 — 같아야 한다.
-        self.assertEqual(nested, top, "중첩/최상위 additionalContext 가 어긋났다")
+        # If the two keys differ, the outcome depends on which one a given tool reads -- they have
+        # to match.
+        self.assertEqual(nested, top,
+                         "the nested and top-level additionalContext values diverged")
         return nested
 
 
@@ -82,13 +86,15 @@ class MemorySearchTest(_HookRun):
                 {"contains": ["service"], "memory": ["service-rule.md"]},
             ]
         }), encoding="utf-8")
+        # Korean memory bodies on purpose: these are project-supplied content that the hook must
+        # carry through byte-for-byte.
         (self.memory / "txt-rule.md").write_text("텍스트 파일 규칙", encoding="utf-8")
         (self.memory / "service-rule.md").write_text("서비스 규칙", encoding="utf-8")
 
     def test_codex_patch_triggers_the_matching_rule(self):
         out = self.context_of(self.run_hook(MEMORY_SEARCH, _codex(CODEX_PATCH)))
 
-        self.assertIsNotNone(out, "Codex 패치 입력에서 아무것도 주입하지 않았다")
+        self.assertIsNotNone(out, "nothing was injected for Codex patch input")
         self.assertIn("텍스트 파일 규칙", out)
 
     def test_codex_payload_cwd_wins_when_process_runs_elsewhere(self):
@@ -120,7 +126,8 @@ class MemorySearchTest(_HookRun):
         out = self.context_of(self.run_hook(MEMORY_SEARCH, _codex(patch)))
 
         self.assertIn("텍스트 파일 규칙", out)
-        self.assertIn("서비스 규칙", out, "패치의 두 번째 파일이 라우팅에서 빠졌다")
+        self.assertIn("서비스 규칙", out,
+                      "the patch's second file was left out of the routing")
 
     def test_deleted_file_is_still_routed(self):
         patch = "*** Begin Patch\n*** Delete File: notes.txt\n*** End Patch"
@@ -140,7 +147,8 @@ class ReflectionTest(_HookRun):
         super().setUp()
         (self.memory / "reflection-rules.json").write_text(json.dumps({
             "rules": [
-                {"glob": "*.py", "regex": "print\\(", "message": "print {count}개 — 로거 사용 검토"},
+                {"glob": "*.py", "regex": "print\\(",
+                 "message": "print used {count} time(s) — consider a logger"},
             ]
         }), encoding="utf-8")
 
@@ -151,7 +159,9 @@ class ReflectionTest(_HookRun):
         out = self.context_of(self.run_hook(REFLECTION, _codex(patch, "PostToolUse")))
 
         self.assertIn("TODO/FIXME", out)
-        self.assertIn("print 1개", out)
+        self.assertIn("remove it once the work is done", out,
+                      "the built-in TODO warning text is missing")
+        self.assertIn("print used 1 time(s)", out)
 
     def test_codex_payload_cwd_loads_rules_when_process_runs_elsewhere(self):
         patch = "*** Begin Patch\n*** Add File: a.py\n+print('x')\n*** End Patch"
@@ -163,16 +173,17 @@ class ReflectionTest(_HookRun):
                 REFLECTION, payload, use_env=False, cwd=elsewhere
             ))
 
-        self.assertIn("print 1개", out)
+        self.assertIn("print used 1 time(s)", out)
 
     def test_claude_edit_still_works(self):
         out = self.context_of(self.run_hook(
             REFLECTION, _claude("a.py", "print('x')", "PostToolUse")))
 
-        self.assertIn("print 1개", out)
+        self.assertIn("print used 1 time(s)", out)
 
     def test_glob_rule_does_not_see_another_files_content(self):
-        """규칙을 파일마다 적용하지 않고 내용을 합치면 *.py 규칙이 .md 내용을 본다."""
+        """Merging content instead of applying rules per file would let a *.py rule see .md
+        content."""
         patch = "\n".join([
             "*** Begin Patch",
             "*** Add File: notes.md",

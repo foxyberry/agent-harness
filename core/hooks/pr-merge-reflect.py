@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 """
-PR 머지 회고 hook — 머지가 일어났을 때 회고를 놓치지 않게 한다. 두 역할:
+PR merge retrospection hook -- makes sure a retrospective is not missed when a merge happens. Two
+roles:
 
-A) 리마인더 (미회고 PR 큐 'pending') — LLM 안 씀, 항상 켜짐:
-   감지(조용히 적재): SessionStart 폴링(외부 머지 포함) · PostToolUse(직접 머지)
-                      · UserPromptSubmit("머지했어" 발화)
-   전달: 다음 발화 때 pending 있으면 "회고부터 하라" 지시 주입 후 큐 비움.
+A) Reminder (the 'pending' queue of un-reflected PRs) -- uses no LLM, always on:
+   Detection (queued silently): SessionStart polling (including merges done elsewhere) ·
+                                PostToolUse (a merge done here) ·
+                                UserPromptSubmit (the user saying "I merged it")
+   Delivery: on the next prompt, if anything is pending, inject a "reflect first" instruction and
+   clear the queue.
 
-B) 자동 회고 잡 (co-located reflect.py) — **opt-in, 기본 꺼짐**:
-   ⚠️ 이 잡은 `claude -p` 백그라운드 프로세스를 띄운다. 플러그인 설치만으로 모든
-   프로젝트의 머지마다 조용히 LLM 잡이 뜨는 걸 막기 위해, 환경변수
-   HARNESS_AUTO_REFLECT=1 이 설정된 경우에만 스폰한다. 켜지면:
-   세션 내에서 머지가 확인되면 백그라운드로 잡을 띄워 현재 세션 트랜스크립트를
-   분석 → .claude/memory/_pending/ 에 초안 저장. detached 라 세션을 닫아도 완료된다.
-   SessionStart 에서 _pending 초안이 있으면(누가 만들었든) 검토를 권고한다.
+B) Automatic retrospection job (the co-located reflect.py) -- **opt-in, off by default**:
+   WARNING: this job spawns a background `claude -p` process. To stop a plugin install alone from
+   quietly starting an LLM job on every merge in every project, it is spawned only when the
+   environment variable HARNESS_AUTO_REFLECT=1 is set. When enabled: once a merge is confirmed
+   within the session, a background job analyses the current session transcript and stores drafts in
+   .claude/memory/_pending/. It is detached, so it finishes even if the session is closed.
+   At SessionStart, if there are _pending drafts (whoever created them), review is recommended.
 
-재귀 방지: 잡이 backend=claude 일 때 중첩 `claude -p` 가 또 이 hook 을 띄운다.
-REFLECT_JOB=1 이 설정돼 있으면 hook 전체를 no-op 한다.
-gh/네트워크 실패 등은 모두 조용히 exit 0 (세션/프롬프트를 막지 않음).
-.claude/memory 가 없는 프로젝트에서도 조용히 통과한다(모든 데이터 접근이 fail-open).
+Recursion guard: when the job runs with backend=claude, the nested `claude -p` fires this hook
+again. If REFLECT_JOB=1 is set, the whole hook no-ops.
+gh/network failures and the like all exit 0 silently (they never block the session or the prompt).
+Projects without .claude/memory pass through silently too (every data access is fail-open).
 
-경로 규약(플러그인 배포): **스크립트**(reflect.py·compact_transcript.py)는 이 파일과
-같은 디렉토리에 co-locate → dirname(__file__) 로 해석. **데이터**(memory·_pending·.cache)는
-$CLAUDE_PROJECT_DIR 하위. 이 둘은 플러그인에서 서로 다른 위치다(스크립트=플러그인 루트,
-데이터=프로젝트 루트) — 절대 혼동하지 말 것.
+Path convention (plugin deployment): the **scripts** (reflect.py, compact_transcript.py) are
+co-located in the same directory as this file -> resolved via dirname(__file__). The **data**
+(memory, _pending, .cache) lives under $CLAUDE_PROJECT_DIR. In a plugin these are two different
+locations (scripts = plugin root, data = project root) -- never confuse them.
 """
 import json
 import fnmatch
@@ -33,11 +36,12 @@ import subprocess
 import sys
 import tempfile
 
-# repo_identity 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(reflect.py 와 동일 규약).
+# build.sh co-locates repo_identity in the same directory as this hook (same convention as reflect.py).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from repo_identity import ProjectMatcher
-except ImportError:  # 단독 복사본 등 helper 부재 — 스윕만 비활성, 나머지 훅 기능은 유지
+except ImportError:  # helper missing (e.g. a standalone copy) -- only the sweep is disabled, the
+    # rest of the hook keeps working
     ProjectMatcher = None
 try:
     from hook_io import emit_context, project_dir as hook_project_dir, trace_entry
@@ -54,8 +58,12 @@ except ImportError:
     def trace_entry(*_a, **_kw):
         pass
 
-# "머지를 끝냈다"는 완료형만 매칭. 제안/질문/부정("머지하자/머지 언제해?/머지하지마",
-# "is this merged?", "not merged yet")은 제외.
+# Matches only the completed form, "the merge is done". Proposals, questions and negations are
+# excluded ("머지하자" / "머지 언제해?" / "머지하지마", "is this merged?", "not merged yet").
+#
+# ⚠️ The Korean alternatives below are **matchers against real user input**, not output. Users of
+# this harness type merge announcements in Korean, so these patterns must keep working even though
+# everything this hook *emits* is English. Do not translate them.
 MERGE_DONE = re.compile(
     r"(머지|병합)\s*(을|를)?\s*(했|함|완료|끝|됐|되었)"
     r"|\b(merge\s+(is\s+)?done|merge\s+completed|it('?s| is| has)?\s+merged|pr\s+#?\d+\s+(is\s+)?merged)\b",
@@ -63,35 +71,41 @@ MERGE_DONE = re.compile(
 )
 
 REMIND = (
-    "머지된 PR{detail} 의 회고가 아직 진행되지 않았습니다. "
-    "새 작업에 들어가기 전에 먼저 다음을 실행해 이번 작업의 교훈을 반영하세요:\n"
-    "- /feedback-review — 받은 지적을 규칙이나 skill 로 승격할지 검토\n"
-    "- /memory-update — 새로 알게 된 패턴·결정을 메모리에 영속화 (대기 초안 검토·승격 포함)"
+    "The retrospective for merged PR{detail} has not been done yet. "
+    "Before starting new work, run the following first so this work's lessons are captured:\n"
+    "- /feedback-review — review whether the corrections you received should be promoted to a rule "
+    "or a skill\n"
+    "- /memory-update — persist newly learned patterns and decisions into memory (including "
+    "reviewing and promoting pending drafts)"
 )
 
-# _pending 초안이 이만큼 쌓이면 머지 리마인더를 "지금 정리" 로 강하게 에스컬레이션한다.
+# Once this many _pending drafts have piled up, escalate the merge reminder to a firm "clean this up
+# now".
 DRAFT_BACKLOG_THRESHOLD = 8
 
-# PR 세부 정보는 PR마다 `gh pr view` 한 번(최대 8초)이 필요하다. SessionStart/UserPromptSubmit
-# 를 오래 막지 않도록 한 번에 일부만 처리하고, 나머지는 다음 훅 호출에서 이어간다.
+# PR details cost one `gh pr view` per PR (up to 8 seconds). To avoid blocking SessionStart and
+# UserPromptSubmit for long, only some are processed per run and the rest continue on the next hook
+# invocation.
 PR_SCAN_MAX_PER_RUN = 3
 
-# 회고 산출물 PR 이 다시 회고를 요구하는 루프를 막는 기본 예외.
-# 프로젝트별로 .claude/memory/reflect-skip.json 에서 확장/override 가능.
+# Default exceptions that break the loop where a retrospection-output PR demands its own
+# retrospective. Projects can extend or override this via .claude/memory/reflect-skip.json.
 DEFAULT_REFLECT_SKIP = {
-    # 하네스가 **자기가 만드는** 경로만 둔다. 프로젝트의 파일(CLAUDE.md·AGENTS.md·
-    # .claude/skills/** 등)은 회고할 값어치가 프로젝트마다 다르므로 엔진이 정하지 않는다 —
-    # 이 저장소에선 AGENTS.md 변경이 큰 결정이지만(#105) 다른 팀엔 보일러플레이트다.
-    # 넓은 목록은 project-template/.claude/memory/reflect-skip.json 에 있다.
+    # Only paths the harness **creates itself** belong here. Project files (CLAUDE.md, AGENTS.md,
+    # .claude/skills/**, ...) are worth reflecting on to different degrees per project, so the
+    # engine does not decide for them -- in this repository an AGENTS.md change was a major
+    # decision (#105), while for another team the same file is boilerplate.
+    # The broader list lives in project-template/.claude/memory/reflect-skip.json.
     "paths": [
         ".claude/memory/**",
         ".claude/handoff/**",
         ".agents/skills/**",
     ],
-    # 판정에서 아예 빼는 부수 파일. 이게 없으면 `.gitignore` 한 줄 때문에 all() 이 깨져
-    # 회고 루프가 다시 돈다(#130). 다만 `.gitignore` 가 **실질적** 변경일 수도 있어
-    # (추적 대상·생성물 정책·줄바꿈), 무엇을 부수로 볼지는 엔진이 정하지 않는다.
-    # 메커니즘만 두고 목록은 비운다 — 프로젝트가 채운다.
+    # Incidental files excluded from the verdict entirely. Without this, a single `.gitignore` line
+    # breaks all() and the retrospection loop starts spinning again (#130). But a `.gitignore` change
+    # can also be **substantive** (what is tracked, artifact policy, line endings), so the engine
+    # does not decide what counts as incidental. The mechanism ships, the list stays empty -- the
+    # project fills it in.
     "ignore_paths": [],
     "labels": [
         "skip-reflect",
@@ -106,14 +120,15 @@ DEFAULT_REFLECT_SKIP = {
 
 
 def _auto_reflect_enabled():
-    """자동 회고 잡(claude -p 스폰) opt-in 게이트. 기본 꺼짐 — 설치만으로 백그라운드
-    LLM 잡이 뜨지 않게. HARNESS_AUTO_REFLECT 가 1/true/on 이면 켜짐."""
+    """Opt-in gate for the automatic retrospection job (which spawns `claude -p`). Off by default,
+    so that installing alone never starts a background LLM job. Enabled when HARNESS_AUTO_REFLECT is
+    1/true/on."""
     return os.environ.get("HARNESS_AUTO_REFLECT", "").strip().lower() in ("1", "true", "on", "yes")
 
 
 def _pending_drafts(project_dir):
-    """_pending/ 아래 모든 초안(.md) 상대경로 목록. 하위 디렉토리까지 재귀 —
-    reflect 가 결정 초안을 `_pending/decisions/` 에 넣으므로 non-recursive listdir 로는 놓친다."""
+    """Relative paths of every draft (.md) under _pending/. Recurses into subdirectories -- reflect
+    puts decision drafts in `_pending/decisions/`, so a non-recursive listdir would miss them."""
     d = _pending_dir(project_dir)
     out = []
     try:
@@ -131,13 +146,15 @@ def _draft_count(project_dir):
 
 
 def _remind_text(project_dir, detail):
-    """기본 회고 리마인더 + 초안 누적이 임계 이상이면 검토·승격 에스컬레이션 추가."""
+    """The base retrospection reminder, plus a review/promotion escalation when the draft backlog is
+    at or above the threshold."""
     text = REMIND.format(detail=detail)
     n = _draft_count(project_dir)
     if n >= DRAFT_BACKLOG_THRESHOLD:
         text += (
-            f"\n\n⚠️ reflect 자동 초안이 {n}개 누적됐습니다(임계 {DRAFT_BACKLOG_THRESHOLD}). "
-            f"새 작업 전에 `/memory-update` 로 초안을 검토·승격(또는 폐기)해 _pending 을 정리하세요."
+            f"\n\n⚠️ {n} automatic reflect drafts have piled up "
+            f"(threshold {DRAFT_BACKLOG_THRESHOLD}). Before starting new work, use `/memory-update` "
+            f"to review and promote (or reject) them and clear out _pending."
         )
     return text
 
@@ -146,21 +163,24 @@ def _cache_path(project_dir):
     return os.path.join(project_dir, ".claude/.cache/pr-merge-seen.json")
 
 
-# 커밋되면 안 되는 하네스 산출물. **엔진이 지킨다** — project-template 의 .gitignore 는
-# 사용자가 복사해야 생기고, README 는 그 복사를 선택 단계로 안내한다. 안 복사한 사용자는
-# `git add -A` 로 이것들을 커밋하게 된다.
+# Harness artifacts that must never be committed. **The engine enforces this** -- the .gitignore in
+# project-template only exists once the user copies it, and the README presents that copy as an
+# optional step. A user who did not copy it would commit these with `git add -A`.
 LOCAL_EXCLUDE_ENTRIES = (
-    ".claude/.cache/",              # 런타임 캐시·로그
-    ".claude/memory/_pending/",     # 회고 초안 — 세션 대화에서 뽑은 것, 사람 검토 전
-    ".claude/memory/_rejected.md",  # 폐기 기록 — 작업 습관·실수 이력에 가깝다(개인 tier)
+    ".claude/.cache/",              # runtime caches and logs
+    ".claude/memory/_pending/",     # retrospection drafts — extracted from session conversations,
+                                    # not yet reviewed by a human
+    ".claude/memory/_rejected.md",  # the rejection ledger — closer to a record of work habits and
+                                    # past mistakes (personal tier)
 )
 
 
 def _gitignore_literal(path):
-    """저장소 상대 경로를 gitignore glob이 아닌 literal 패턴으로 만든다.
+    """Turn a repo-relative path into a literal gitignore pattern rather than a glob.
 
-    backslash를 먼저 이스케이프한 뒤 glob·주석·부정·공백 문법 문자를 이스케이프한다.
-    공백은 끝에 있을 때만 필수지만 전부 처리하면 segment 위치와 무관하게 같은 규칙이 된다.
+    Escapes the backslash first, then the glob, comment, negation and whitespace syntax characters.
+    Escaping whitespace is strictly required only at the end, but handling all of it gives the same
+    rule regardless of where in the segment it appears.
     """
     escaped = []
     for char in path:
@@ -171,13 +191,14 @@ def _gitignore_literal(path):
 
 
 def _ensure_local_cache_exclude(project_dir):
-    """커밋되면 안 되는 하네스 산출물을 로컬 exclude에 보강한다.
+    """Top up the local exclude file with the harness artifacts that must not be committed.
 
-    사용자의 tracked .gitignore는 수정하지 않는다. Git이 아니거나 read-only인 프로젝트는
-    훅 실행을 막지 않도록 조용히 통과한다.
+    The user's tracked .gitignore is never modified. Projects that are not git repositories, or that
+    are read-only, pass through silently so the hook never blocks.
 
-    ⚠️ 캐시만이 아니다. `_pending/` 은 **세션 대화에서 뽑은 초안**이고 `_rejected.md` 는
-    **안 남기기로 한 교훈 목록** = 작업 습관·실수 이력이다. 공개 저장소면 그대로 공개된다.
+    WARNING: this is not only about caches. `_pending/` holds **drafts extracted from session
+    conversations** and `_rejected.md` is the **list of lessons deliberately not kept** = a record of
+    work habits and past mistakes. In a public repository they would be published as-is.
     """
     try:
         result = subprocess.run(
@@ -232,14 +253,14 @@ def _pending_dir(project_dir):
 
 
 def _write_json_atomic(path, data):
-    """같은 디렉터리에 임시 파일로 쓰고 rename 한다. rename 은 원자적이다.
+    """Write to a temporary file in the same directory and rename. The rename is atomic.
 
-    ⚠️ 이 훅은 세션 종료·호스트 타임아웃에 **언제든 죽을 수 있다.** 그냥 `open(path,"w")` 로
-    쓰면 자르기와 쓰기 사이에서 죽었을 때 **잘린 파일**이 남고, 다음 실행이 그걸 읽는다.
-    그 상태가 "손상" 이 아니라 "비어 있음" 으로 해석되면(과거에 그랬다) 회고 대상이 통째로
-    다시 밀려든다.
+    WARNING: this hook **can die at any moment** -- session end, host timeout. A plain
+    `open(path, "w")` that dies between truncating and writing leaves a **truncated file** behind,
+    and the next run reads it. If that state is interpreted as "empty" rather than "corrupt" (which
+    is what used to happen), the entire retrospection backlog floods back in.
 
-    같은 디렉터리에 만드는 이유: `os.replace` 는 같은 파일시스템 안에서만 원자적이다.
+    Why the same directory: `os.replace` is atomic only within one filesystem.
     """
     directory = os.path.dirname(path)
     os.makedirs(directory, exist_ok=True)
@@ -259,14 +280,15 @@ def _write_json_atomic(path, data):
 
 
 def _load_state(cache):
-    """캐시 없으면 None(=최초), 있으면 {'seen': set, 'pending': list}.
+    """None when there is no cache (= first run), otherwise {'seen': set, 'pending': list}.
 
-    ⚠️ **손상도 None 이다.** 예전엔 파싱 실패 시 빈 상태를 돌려줬는데, 호출부는 None 만
-    "최초 실행" 으로 보고 빈 seen 은 "아직 아무것도 회고 안 함" 으로 본다. 그래서 잘린 캐시
-    하나가 **머지된 PR 30개를 전부 미회고로** 만들었다 — 설계가 막는다고 적어둔 바로 그 폭주다.
+    WARNING: **corruption is None too.** It used to return an empty state on a parse failure, but
+    callers treat only None as "first run" and read an empty seen as "nothing has been reflected on
+    yet". So one truncated cache turned **all 30 merged PRs into un-reflected ones** -- exactly the
+    stampede the design claims to prevent.
 
-    "손상됨" 과 "없었음" 은 다른 사건이지만, **복구 방법은 같다** — 현재 상태를 조용히 시드하고
-    과거를 캐지 않는다. 그래서 같은 값을 돌려주는 게 맞다.
+    "Corrupt" and "never existed" are different events, but **the recovery is the same**: silently
+    seed the current state and do not dig up the past. So returning the same value is correct.
     """
     if not os.path.exists(cache):
         return None
@@ -284,30 +306,34 @@ def _load_state(cache):
         return {"seen": set(seen), "pending": list(pending)}
     except (json.JSONDecodeError, TypeError, ValueError):
         sys.stderr.write(
-            "[pr-merge-reflect] 캐시가 손상돼 최초 실행처럼 다시 시드한다 "
-            "(기존 pending 은 복구할 수 없음)\n"
+            "[pr-merge-reflect] cache is corrupt, reseeding as if this were the first run "
+            "(the previous pending queue cannot be recovered)\n"
         )
         return None
     except OSError:
-        # 일시적인 읽기 실패를 손상으로 오판해 정상 캐시를 재시드로 덮어쓰지 않는다.
-        sys.stderr.write("[pr-merge-reflect] 캐시를 읽지 못해 이번 상태 갱신을 건너뛴다\n")
+        # Never mistake a transient read failure for corruption and overwrite a healthy cache with a
+        # reseed.
+        sys.stderr.write(
+            "[pr-merge-reflect] could not read the cache, skipping this state update\n")
         raise
 
 
 def _save_state(cache, seen, pending):
-    """seen 은 최근 200개만(무한 증가 방지), pending 은 전부 유지."""
+    """seen keeps only the 200 most recent entries (to stop unbounded growth); pending keeps all."""
     try:
         _write_json_atomic(cache, {
             "seen": sorted(set(seen), reverse=True)[:200],
             "pending": sorted(set(pending), reverse=True),
         })
     except Exception as exc:
-        # 훅은 fail-open 이어야 하지만, 상태가 저장되지 않았다는 사실은 진단 가능해야 한다.
-        sys.stderr.write(f"[pr-merge-reflect] 캐시 저장 실패: {type(exc).__name__}\n")
+        # The hook has to be fail-open, but the fact that the state was not saved must be
+        # diagnosable.
+        sys.stderr.write(
+            f"[pr-merge-reflect] failed to save the cache: {type(exc).__name__}\n")
 
 
 def _recent_merged(project_dir):
-    """최근 머지된 PR [(번호, 제목)] 또는 실패 시 None."""
+    """Recently merged PRs as [(number, title)], or None on failure."""
     try:
         r = subprocess.run(
             ["gh", "pr", "list", "--state", "merged", "--limit", "30",
@@ -332,8 +358,9 @@ def _load_reflect_skip_config(project_dir):
         if not isinstance(data, dict):
             return cfg
         if data.get("defaults") is False:
-            # 키 목록을 여기 다시 쓰지 않는다 — 기본값에 키가 늘면 이쪽이 조용히 뒤처져
-            # 나중에 KeyError 가 난다(ignore_paths 추가 때 실제로 그럴 뻔했다).
+            # Do not restate the key list here -- when a key is added to the defaults this side
+            # would silently lag behind and raise KeyError later (which nearly happened when
+            # ignore_paths was added).
             cfg = {k: [] for k in DEFAULT_REFLECT_SKIP}
         for key in DEFAULT_REFLECT_SKIP:
             vals = data.get(key)
@@ -347,7 +374,7 @@ def _load_reflect_skip_config(project_dir):
 
 
 def _pr_details(project_dir, num):
-    """PR skip 판정에 필요한 세부 정보. gh/네트워크 실패 시 None."""
+    """The details needed for the PR skip verdict. None on gh/network failure."""
     try:
         r = subprocess.run(
             ["gh", "pr", "view", str(num), "--json", "files,labels,commits"],
@@ -394,10 +421,10 @@ def _message_matches_any(message, patterns):
 
 
 def _should_skip_reflect(project_dir, num):
-    """회고 산출물 PR 은 pending/reflect 대상에서 제외한다.
+    """Exclude retrospection-output PRs from the pending/reflect set.
 
-    판정 실패는 False(회고함)로 둔다. 자동화를 놓치는 것보다 실제 작업 회고를 빠뜨리지
-    않는 쪽이 보수적이다.
+    A failed verdict stays False (= do reflect). Missing an automation PR is the more conservative
+    error than skipping the retrospective for real work.
     """
     cfg = _load_reflect_skip_config(project_dir)
     details = _pr_details(project_dir, num)
@@ -415,12 +442,13 @@ def _should_skip_reflect(project_dir, num):
         if _message_matches_any(low, commit_patterns):
             return True
 
-    # 부수 파일은 판정에서 뺀다. `.gitignore` 한 줄이 섞였다고 회고 산출물이 작업 PR 이
-    # 되지는 않는다 — 그 한 줄 때문에 all() 이 깨져 회고의 회고 루프가 돌았다(#130).
+    # Incidental files are removed from the verdict. One `.gitignore` line in the mix does not turn
+    # a retrospection-output PR into a work PR -- that one line broke all() and made the
+    # retrospective-of-a-retrospective loop spin (#130).
     ignore_patterns = cfg.get("ignore_paths") or []
     files = [p for p in details["files"] if not _matches_any(p, ignore_patterns)]
 
-    # 부수 파일만 있는 PR 은 판단 근거가 없다 — 회고한다(fail-open).
+    # A PR with only incidental files gives no grounds for a verdict -- reflect on it (fail-open).
     path_patterns = cfg["paths"]
     if files and path_patterns and all(_matches_any(path, path_patterns) for path in files):
         return True
@@ -429,11 +457,12 @@ def _should_skip_reflect(project_dir, num):
 
 
 def _scan_reflectable(project_dir, nums, cache, seen, pending):
-    """미확인 PR 을 제한된 수만 검사하고 PR마다 상태를 저장한다.
+    """Inspect only a bounded number of unchecked PRs, persisting state after each one.
 
-    `seen` 은 skip 판정을 마친 PR만 뜻한다. 아직 상한 밖인 PR까지 seen 으로 넣으면 다음
-    호출에서도 검사되지 않아 영구 누락된다. 반대로 각 판정 직후 저장하면 훅이 중간에
-    종료돼도 같은 네트워크 작업을 처음부터 반복하지 않는다.
+    `seen` means only "the skip verdict is finished for this PR". Adding PRs that are still beyond
+    the per-run cap to seen would mean they are never inspected on later calls either -- a permanent
+    omission. Conversely, saving right after each verdict means that if the hook is terminated
+    mid-run, the same network work is not repeated from scratch.
     """
     processed = 0
     for num in nums:
@@ -463,16 +492,17 @@ def _emit(event_name, text):
     emit_context(event_name, text)
 
 
-# ---------- 자동 회고 잡 (B) ----------
+# ---------- Automatic retrospection job (B) ----------
 
 def _reflect_script():
-    """co-located reflect.py 절대경로. 플러그인 배포 시 이 hook 과 같은 디렉토리에 있다.
-    (tutti 원본은 project_dir 하위를 가정했으나, 플러그인에선 스크립트가 프로젝트 밖이다.)"""
+    """Absolute path to the co-located reflect.py. In a plugin deployment it sits in the same
+    directory as this hook. (The original tutti version assumed it lived under project_dir, but in a
+    plugin the scripts are outside the project.)"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "reflect.py")
 
 
 def _transcript_path(data, project_dir):
-    """현재 세션 트랜스크립트 .jsonl 경로. hook 입력의 transcript_path 우선."""
+    """Path to the current session transcript .jsonl. The hook input's transcript_path wins."""
     tp = data.get("transcript_path")
     if tp and os.path.exists(tp):
         return tp
@@ -485,36 +515,39 @@ def _transcript_path(data, project_dir):
 
 
 def _run_reflect(transcript, project_dir, label="claude"):
-    """reflect.py 를 detached 실행 (fire-and-forget). Claude 트랜스크립트·Codex rollout 공용.
+    """Run reflect.py detached (fire-and-forget). Shared by Claude transcripts and Codex rollouts.
 
-    stdout/stderr 를 .claude/.cache/reflect.log 에 남긴다(관측성): 시작 시각·label·transcript 와
-    reflect.py 결과 요약([reflect] 초안 N개 / 초안 없음 / 에러)이 기록돼 사후 확인 가능.
+    stdout/stderr go to .claude/.cache/reflect.log (observability): the start time, the label, the
+    transcript and reflect.py's result summary ([reflect] N draft(s) / no drafts / an error) are
+    recorded so it can be checked after the fact.
     """
     script = _reflect_script()
     if not os.path.exists(script) or not transcript or not os.path.exists(transcript):
-        return False  # 스폰 못 함 → 호출부가 seen 처리 안 하도록(재시도 여지)
+        return False  # could not spawn -> tell the caller not to mark it seen (leaves a retry)
     try:
         from datetime import datetime
         log_path = os.path.join(project_dir, ".claude/.cache/reflect.log")
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         logf = open(log_path, "a", encoding="utf-8")
-        logf.write(f"\n==== {datetime.now():%Y-%m-%d %H:%M:%S} reflect 시작 [{label}] "
+        logf.write(f"\n==== {datetime.now():%Y-%m-%d %H:%M:%S} reflect started [{label}] "
                    f"(transcript={os.path.basename(transcript)}) ====\n")
         logf.flush()
         subprocess.Popen(
             ["python3", script, "--transcript", transcript],
             cwd=project_dir,
-            env={**os.environ, "REFLECT_JOB": "1"},  # 중첩 claude 의 hook no-op
-            stdout=logf, stderr=logf,  # DEVNULL 대신 로그로 — 잡 실행/결과/에러 관측
-            start_new_session=True,  # 세션 닫혀도 계속 실행
+            env={**os.environ, "REFLECT_JOB": "1"},  # makes the nested claude's hook no-op
+            stdout=logf, stderr=logf,  # a log rather than DEVNULL -- so the run/result/errors are
+                                       # observable
+            start_new_session=True,  # keeps running after the session is closed
         )
-        return True  # 스폰 성공(잡 자체 결과는 비동기 — reflect.log 로 확인)
+        return True  # spawn succeeded (the job's own result is async -- check reflect.log)
     except Exception:
         return False
 
 
 def _spawn_reflect_job(data, project_dir):
-    """현재 Claude 세션 트랜스크립트로 회고 잡 실행. opt-in 꺼져 있으면 no-op."""
+    """Run the retrospection job on the current Claude session transcript. No-op when the opt-in is
+    off."""
     if not _auto_reflect_enabled():
         return
     _run_reflect(_transcript_path(data, project_dir), project_dir, label="claude")
@@ -524,24 +557,28 @@ def _announce_pending_drafts(project_dir):
     d = _pending_dir(project_dir)
     if not os.path.isdir(d):
         return
-    drafts = _pending_drafts(project_dir)  # 재귀 — decisions/ 하위 초안 포함
+    drafts = _pending_drafts(project_dir)  # recursive -- includes drafts under decisions/
     if not drafts:
         return
-    escalate = " ⚠️ 누적이 많으니 새 작업 전에 정리 권장." if len(drafts) >= DRAFT_BACKLOG_THRESHOLD else ""
+    escalate = (" ⚠️ The backlog is large, so clearing it before new work is recommended."
+                if len(drafts) >= DRAFT_BACKLOG_THRESHOLD else "")
     _emit(
         "SessionStart",
-        f"자가 개선 회고 초안 {len(drafts)}개가 `.claude/memory/_pending/` 에 대기 중입니다 "
-        f"({', '.join(sorted(drafts)[:5])}).{escalate} 사용자에게 검토를 제안하세요 — "
-        f"`/memory-update` 로 검토·승격(또는 폐기)합니다. 교훈은 auto-memory/MEMORY.md 로, "
-        f"결정(ADR, `decisions/`) 초안은 공유 memory(`decisions/`+INDEX)로 정리됩니다.",
+        f"{len(drafts)} self-improvement retrospection draft(s) are waiting in "
+        f"`.claude/memory/_pending/` ({', '.join(sorted(drafts)[:5])}).{escalate} "
+        f"Suggest a review to the user — `/memory-update` reviews and promotes (or rejects) them. "
+        f"Lessons go to auto-memory/MEMORY.md, and decision (ADR, `decisions/`) drafts are filed "
+        f"into shared memory (`decisions/` + INDEX).",
     )
 
 
-# ---------- Codex 단독 세션 회고 (SessionStart 스윕) ----------
+# ---------- Retrospection for standalone Codex sessions (the SessionStart sweep) ----------
 
-CODEX_SWEEP_RECENT_DAYS = 14    # 최근 N일 rollout 만 — 이게 비용 상한(14일치 first-line 읽기)
-CODEX_SWEEP_MIN_IDLE_MIN = 30   # 최근 N분 내 수정 = 진행 중일 수 있음 → 회고/seed 보류(부분 회고 방지)
-CODEX_SWEEP_MAX_PER_RUN = 3     # 1회 스윕당 회고 스폰 상한(버스트 방지)
+CODEX_SWEEP_RECENT_DAYS = 14    # only rollouts from the last N days -- this is the cost ceiling
+                                # (reading the first line of 14 days' worth)
+CODEX_SWEEP_MIN_IDLE_MIN = 30   # modified within the last N minutes = possibly still running ->
+                                # hold off reflecting/seeding (prevents partial retrospectives)
+CODEX_SWEEP_MAX_PER_RUN = 3     # cap on retrospection spawns per sweep (prevents bursts)
 
 
 def _codex_seen_path(project_dir):
@@ -549,7 +586,7 @@ def _codex_seen_path(project_dir):
 
 
 def _codex_meta(rollout_path):
-    """rollout 첫 줄(session_meta) → (session_id, cwd)."""
+    """The rollout's first line (session_meta) -> (session_id, cwd)."""
     try:
         with open(rollout_path, encoding="utf-8") as f:
             d = json.loads(f.readline())
@@ -562,21 +599,29 @@ def _codex_meta(rollout_path):
 
 
 def _sweep_codex_sessions(project_dir, current_session_id=None):
-    """이 프로젝트(cwd) 의 미회고 Codex rollout 을 찾아 reflect 스폰. opt-in 꺼져 있으면 no-op.
+    """Find this project's (by cwd) un-reflected Codex rollouts and spawn reflect. No-op when the
+    opt-in is off.
 
-    - 최초 실행: 과거 무더기 회고 방지로 현재 것을 seen 시드만(회고 X).
-    - 이후: 미회고 rollout 회고, 1회 상한(CODEX_SWEEP_MAX_PER_RUN), 나머지는 다음 스윕.
-    - 진행 중(최근 수정) rollout 은 제외 — 부분 회고/조기 seen 방지(idle 가드).
-    - cwd 가 project_dir 또는 그 하위(in-project worktree)면 매칭. **외부 worktree
-      (Codex Desktop `~/.codex/worktrees/.../<repo>`)는 v1 미커버 — 정확 경로/하위만.**
-    - Codex-inside-Claude 호출도 별도 rollout 이라 함께 잡힘 → Claude 회고와 일부 중복 가능(v1).
-    - fire-and-forget — 스폰 성공 후 reflect.py 가 비동기 실패(백엔드 불가/transient 에러)하면 그 세션은
-      재시도 안 됨(이미 seen). Claude 회고 경로와 동일한 한계. 완료-확인 후 seen 처리는 상태-콜백 후속 과제.
+    - First run: only seed the current ones as seen (no retrospection), to avoid a flood of
+      retrospectives over past sessions.
+    - Afterwards: reflect on un-reflected rollouts, capped per run (CODEX_SWEEP_MAX_PER_RUN); the
+      rest wait for the next sweep.
+    - Rollouts that are still in progress (recently modified) are excluded -- this prevents partial
+      retrospectives and premature seen marking (the idle guard).
+    - Matches when cwd is project_dir or below it (an in-project worktree). **External worktrees
+      (Codex Desktop `~/.codex/worktrees/.../<repo>`) are not covered in v1 -- exact path or below
+      only.**
+    - Codex-inside-Claude invocations are separate rollouts and get picked up too, so some overlap
+      with the Claude retrospective is possible (v1).
+    - Fire-and-forget: if reflect.py fails asynchronously after a successful spawn (backend
+      unavailable, a transient error), that session is not retried (it is already seen). Same limit
+      as the Claude retrospection path. Marking seen only after confirmed completion needs a status
+      callback and is follow-up work.
     """
     if not _auto_reflect_enabled():
         return
     if not os.path.exists(_reflect_script()):
-        return  # Codex 3a 번들은 자동 LLM 회고를 의도적으로 싣지 않는다.
+        return  # the Codex 3a bundle deliberately ships without the automatic LLM retrospective.
     if ProjectMatcher is None:
         return
     import time
@@ -586,11 +631,13 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
     try:
         now = time.time()
         recent_cutoff = now - CODEX_SWEEP_RECENT_DAYS * 86400
-        idle_cutoff = now - CODEX_SWEEP_MIN_IDLE_MIN * 60  # 이보다 최근 수정이면 진행 중 가능 → 제외
-        # 날짜 디렉토리(YYYY/MM/DD)만 훑으면 **오래 전 시작해 최근 resume 한 세션을 놓친다**
-        # (시작일 기준으로 저장되므로). handoff.py 의 _recent_codex_rollouts 와 동일하게
-        # 전체 트리를 훑되 mtime 으로 거른다 — 파일 열기는 mtime 통과분만이라 비용은 stat 수준.
-        rollouts = []  # (mtime, path) — 최근 N일 & 충분히 idle(완료 추정) 한 것만
+        idle_cutoff = now - CODEX_SWEEP_MIN_IDLE_MIN * 60  # modified more recently than this =
+                                                           # possibly still running -> exclude
+        # Walking only the date directories (YYYY/MM/DD) would **miss a session that started long
+        # ago and was resumed recently** (they are stored under their start date). Like
+        # handoff.py's _recent_codex_rollouts, walk the whole tree but filter by mtime -- only the
+        # files that pass the mtime filter are opened, so the cost stays at stat level.
+        rollouts = []  # (mtime, path) -- only the last N days and idle enough to look finished
         for directory, _dirs, names in os.walk(base):
             for fn in names:
                 if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
@@ -602,56 +649,66 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
                     continue
                 if recent_cutoff <= mt <= idle_cutoff:
                     rollouts.append((mt, fp))
-        rollouts.sort(reverse=True)  # 최신 우선
+        rollouts.sort(reverse=True)  # newest first
 
-        # worktree 를 지금 관측해 alias 캐시에 남긴다 — 나중에 제거돼도 되짚을 수 있게.
+        # Observe the worktrees now and record them in the alias cache -- so they can still be
+        # traced back after they are removed.
         matcher = ProjectMatcher(project_dir)
         matcher.record_worktrees()
 
         seen_path = _codex_seen_path(project_dir)
-        # ⚠️ first_run 을 **파일 존재**로 정하면 안 된다. 잘린 파일이 있으면 "최초 아님 +
-        # 빈 seen" 이 되어 이미 회고한 rollout 을 다시 회고하고, 아래 저장이 새 sid 만 남겨
-        # **이전 기록을 통째로 버린다.** 자가 치유가 안 되고 백로그를 걸어가며 중복을 만든다.
-        # 읽기에 성공했을 때만 "최초 아님" 이다 — 손상은 최초와 같이 취급해 조용히 시드한다.
+        # WARNING: first_run must **not** be decided by file existence. With a truncated file that
+        # becomes "not the first run + empty seen", so already-reflected rollouts are reflected on
+        # again, and the save below keeps only the new sids, **throwing the entire previous record
+        # away.** It does not self-heal and it produces duplicates as it walks the backlog.
+        # It is "not the first run" only when the read succeeded -- corruption is treated like a
+        # first run and seeded silently.
         seen_list = None
         if os.path.exists(seen_path):
             try:
                 with open(seen_path, encoding="utf-8") as f:
                     seen_list = list(json.load(f))
             except Exception:
-                sys.stderr.write("[pr-merge-reflect] codex seen 캐시가 손상돼 다시 시드한다\n")
+                sys.stderr.write(
+                    "[pr-merge-reflect] codex seen cache is corrupt, reseeding\n")
         first_run = seen_list is None
         if first_run:
             seen_list = []
-        seen = set(seen_list)  # 멤버십 조회용. seen_list 는 삽입(처리)순 — 캡 시 최신 유지
+        seen = set(seen_list)  # for membership lookups. seen_list is in insertion (processing)
+                               # order -- capping keeps the newest.
 
-        # 프로젝트(cwd) 필터를 cap 보다 먼저 적용 — 다른 repo 세션에 밀려 이 repo 것이 누락되지
-        # 않도록 14일치 전부의 meta 를 읽어 이 프로젝트 미회고만 모은다(최신순). 회고 수만 아래서 제한.
-        fresh = []  # (sid, fp): 이 프로젝트 + 미회고
+        # Apply the project (cwd) filter **before** the cap -- so that sessions from other repos
+        # cannot push this repo's out. Read the meta of all 14 days' worth and collect only this
+        # project's un-reflected ones (newest first). Only the number of retrospectives is limited
+        # below.
+        fresh = []  # (sid, fp): this project + not yet reflected on
         for _, fp in rollouts:
             sid, cwd = _codex_meta(fp)
-            # 경로 prefix 가 아니라 git 저장소 identity 로 판정 — worktree 가 프로젝트
-            # 폴더 밖(`~/.codex/worktrees/`, 형제 `.agent-worktrees/`)에 있어도 잡힌다.
+            # Judged by git repository identity, not by path prefix -- so a worktree outside the
+            # project folder (`~/.codex/worktrees/`, a sibling `.agent-worktrees/`) is caught too.
             if sid and sid != current_session_id and sid not in seen and matcher.belongs(cwd):
                 fresh.append((sid, fp))
 
         if first_run:
-            # 시드만(과거 회고 X). fresh 는 최신순 → 오래된 것부터 append 해 최신이 끝에 오게(캡 시 최신 유지)
+            # Seed only (no retrospection over the past). fresh is newest-first, so append from the
+            # oldest so the newest ends up at the tail (capping keeps the newest).
             for sid, _fp in reversed(fresh):
                 if sid not in seen:
                     seen.add(sid); seen_list.append(sid)
         else:
             for sid, fp in fresh[:CODEX_SWEEP_MAX_PER_RUN]:
                 if _run_reflect(fp, project_dir, label=f"codex:{sid[:8]}"):
-                    seen.add(sid); seen_list.append(sid)  # 스폰 성공 시에만 seen — 실패는 다음 스윕 재시도
+                    # Marked seen only on a successful spawn -- a failure is retried next sweep.
+                    seen.add(sid); seen_list.append(sid)
 
         os.makedirs(os.path.dirname(seen_path), exist_ok=True)
-        _write_json_atomic(seen_path, seen_list[-500:])  # 삽입순 최신 500 유지(무한증가 방지)
+        # Keep the newest 500 in insertion order (prevents unbounded growth).
+        _write_json_atomic(seen_path, seen_list[-500:])
     except Exception:
         pass
 
 
-# ---------- 이벤트 핸들러 ----------
+# ---------- Event handlers ----------
 
 def _on_session_start(project_dir, cache, data=None):
     merged = _recent_merged(project_dir)
@@ -660,24 +717,27 @@ def _on_session_start(project_dir, cache, data=None):
         try:
             state = _load_state(cache)
             if state is None:
-                # 최초 실행: 현재 머지 상태를 시드만 (과거 PR 무더기 적재 방지)
+                # First run: only seed the current merge state (prevents queueing a flood of old
+                # PRs).
                 _save_state(cache, set(nums), [])
             else:
                 _scan_reflectable(
                     project_dir, nums, cache, set(state["seen"]), list(state["pending"])
                 )
         except OSError:
-            # 상태 파일의 일시적 I/O 실패는 이번 PR 갱신만 건너뛴다. 아래 초안 알림과
-            # Codex 스윕은 독립 기능이므로 함께 막지 않는다.
+            # A transient I/O failure on the state file only skips this PR update. The draft
+            # announcement and the Codex sweep below are independent features, so they are not
+            # blocked along with it.
             pass
-    # 이전에 돌아간 잡이 남긴 초안이 있으면 검토 권고
+    # If an earlier job left drafts behind, recommend a review.
     _announce_pending_drafts(project_dir)
-    # 이 프로젝트의 미회고 Codex 단독 세션을 회고 (opt-in)
+    # Reflect on this project's un-reflected standalone Codex sessions (opt-in).
     _sweep_codex_sessions(project_dir, (data or {}).get("session_id"))
 
 
 def _git_toplevel(path):
-    """Codex payload cwd가 하위 디렉터리여도 프로젝트 캐시를 저장소 루트에 통일한다."""
+    """Keep the project cache at the repository root even when the Codex payload cwd is a
+    subdirectory."""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"], cwd=path,
@@ -692,14 +752,16 @@ def _git_toplevel(path):
 
 
 def _resolved_project_dir(data):
-    """Claude의 명시 경로는 보존하고, Codex payload cwd만 저장소 루트로 통일한다."""
+    """Preserve Claude's explicit path; normalise only the Codex payload cwd to the repository
+    root."""
     if os.environ.get("CLAUDE_PROJECT_DIR"):
         return os.path.normpath(hook_project_dir(data))
     return _git_toplevel(hook_project_dir(data))
 
 
 def _pr_is_merged(project_dir, num):
-    """PR 번호가 실제 MERGED 인지 확인. gh/네트워크 실패는 False(보수적)."""
+    """Check whether the PR number is actually MERGED. gh/network failures return False
+    (conservative)."""
     try:
         state = subprocess.run(
             ["gh", "pr", "view", str(num), "--json", "state", "-q", ".state"],
@@ -711,9 +773,10 @@ def _pr_is_merged(project_dir, num):
 
 
 def _merge_statement(cmd):
-    """실제로 `gh pr merge` 로 시작하는 statement 를 반환 — `echo "gh pr merge 5"`
-    나 `grep`, 주석 안의 문자열 매칭 오탐을 배제한다. `;`·개행·`&&`·`||`·`|` 로 분리해
-    각 조각의 앞부분(선행 공백 무시)만 본다."""
+    """Return the statement that actually starts with `gh pr merge` -- this rules out false
+    positives from `echo "gh pr merge 5"`, from `grep`, and from strings inside comments. Splits on
+    `;`, newlines, `&&`, `||` and `|`, and looks only at the head of each fragment (ignoring leading
+    whitespace)."""
     for stmt in re.split(r"[;\n]|&&|\|\|?", cmd):
         if re.match(r"\s*gh\s+pr\s+merge\b", stmt):
             return stmt
@@ -731,21 +794,25 @@ def _on_post_tool(data, project_dir, cache):
     stmt = _merge_statement(cmd)
     if not stmt:
         return
-    # PR 번호는 플래그 앞/뒤 어디든 올 수 있다: `gh pr merge 42 --squash` / `gh pr merge --squash 42`.
+    # The PR number can appear before or after the flags: `gh pr merge 42 --squash` /
+    # `gh pr merge --squash 42`.
     m = re.search(r"gh\s+pr\s+merge\b[^\d]*(\d+)", stmt)
     num = int(m.group(1)) if m else None
-    # 실제 MERGED 인지 확인 후에만 적재·스폰. 번호 없는 `gh pr merge`(현재 브랜치)는 검증 불가라 보류
-    # — SessionStart 스윕/사용자 "머지했어" 발화로 뒤늦게 잡힌다.
+    # Queue and spawn only after confirming it is actually MERGED. A bare `gh pr merge` (current
+    # branch, no number) cannot be verified, so it is held back -- the SessionStart sweep or the
+    # user's own "I merged it" message picks it up later.
     if num is None or not _pr_is_merged(project_dir, num) or _should_skip_reflect(project_dir, num):
         return
-    # 캐시는 SessionStart 시드로만 생성(무더기 보고 방지) → 없으면 적재 보류.
+    # The cache is only created by the SessionStart seeding (to prevent bulk reporting), so if it
+    # is absent, hold off on queueing.
     if os.path.exists(cache):
         state = _load_state(cache)
-        # 손상 캐시(None)는 빈 상태로 덮어쓰지 않는다. 다음 SessionStart 가 최근 머지
-        # 전체를 조용히 재시드해야 과거 PR 이 호출마다 다시 pending 으로 들어오지 않는다.
+        # A corrupt cache (None) is not overwritten with an empty state. The next SessionStart has
+        # to silently reseed all recent merges, otherwise old PRs would re-enter pending on every
+        # call.
         if state is not None:
             _save_state(cache, state["seen"] | {num}, state["pending"] + [num])
-    # 현재 세션이 작업 세션 → 자동 회고 잡 실행(opt-in)
+    # The current session is the work session -> run the automatic retrospection job (opt-in).
     _spawn_reflect_job(data, project_dir)
 
 
@@ -755,12 +822,14 @@ def _on_user_prompt(data, project_dir, cache):
     state = _load_state(cache)
 
     if merge_done:
-        # 사용자가 직접 "머지했다" — 최우선 신호. 현재 세션 == 작업 세션으로 보고 잡 실행.
+        # The user said "I merged it" themselves -- the strongest signal. Treat the current session
+        # as the work session and run the job.
         merged = _recent_merged(project_dir)
         if state is None:
             if merged is not None:
-                # 과거 PR 은 조용히 시드하되, 사용자가 방금 머지했다고 알려준 최신 PR 하나는
-                # 실제 skip 판정을 거친다. 먼저 최신을 제외해 저장해야 중간 종료 시 누락되지 않는다.
+                # Seed the old PRs silently, but put the single newest PR -- the one the user just
+                # said they merged -- through the real skip verdict. The newest has to be excluded
+                # and saved first so it is not lost if we terminate mid-run.
                 latest = [merged[0][0]] if merged else []
                 seen = {n for n, _ in merged if n not in latest}
                 pending = []
@@ -790,18 +859,20 @@ def _on_user_prompt(data, project_dir, cache):
             elif merged is None:
                 _emit("UserPromptSubmit", _remind_text(project_dir, ""))
                 _spawn_reflect_job(data, project_dir)
-            _save_state(cache, seen, [])  # 전달 후 비움
+            _save_state(cache, seen, [])  # cleared once delivered
         return
 
-    # 일반 프롬프트(새 작업 시작 등): 미회고 PR 이 쌓여 있으면 회고부터 (리마인더만).
-    # 교차세션 케이스라 현재 트랜스크립트는 작업 세션이 아님 → 잡은 띄우지 않음.
+    # An ordinary prompt (starting new work, etc.): if un-reflected PRs have piled up, reflect first
+    # (reminder only). This is the cross-session case, so the current transcript is not the work
+    # session -> no job is spawned.
     if state and state["pending"]:
         _emit("UserPromptSubmit", _remind_text(project_dir, _detail(state["pending"], {})))
         _save_state(cache, state["seen"], [])
 
 
 def main():
-    # 재귀 방지: 회고 잡(backend=claude) 내부의 중첩 claude → 이 hook 전체 no-op
+    # Recursion guard: the nested claude inside the retrospection job (backend=claude) -> the whole
+    # hook no-ops.
     if os.environ.get("REFLECT_JOB"):
         sys.exit(0)
 
@@ -812,12 +883,14 @@ def main():
 
     event = data.get("hook_event_name", "")
     trace_entry(__file__, event)
-    # normpath: 끝 슬래시 제거 등 정규화 (Codex in-project 매칭이 trailing sep 로 깨지지 않게).
+    # normpath: normalisation such as stripping a trailing slash (so Codex in-project matching is
+    # not broken by a trailing separator).
     project_dir = _resolved_project_dir(data)
     cache = _cache_path(project_dir)
 
-    # 이 프로젝트가 하네스 메모리 시스템을 안 쓰면(.claude/memory 없음) 전체 no-op.
-    # 미사용 repo 의 매 세션 시작마다 gh 폴링(수 초 블록)·Codex 디렉토리 walk 가 도는 걸 막는다.
+    # If this project does not use the harness memory system (no .claude/memory), no-op entirely.
+    # This stops gh polling (a several-second block) and the Codex directory walk from running at
+    # every session start in a repo that does not use them.
     if not os.path.isdir(os.path.join(project_dir, ".claude/memory")):
         sys.exit(0)
 
@@ -830,7 +903,7 @@ def main():
         elif event == "UserPromptSubmit":
             _on_user_prompt(data, project_dir, cache)
     except Exception:
-        pass  # 어떤 경우에도 세션/프롬프트를 막지 않는다
+        pass  # never block the session or the prompt, under any circumstances
 
     sys.exit(0)
 

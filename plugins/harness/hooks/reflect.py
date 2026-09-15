@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
 """
-자가 개선 회고 잡 (self-improving retrospection job).
+Self-improving retrospection job.
 
-세션 트랜스크립트(.jsonl) 를 압축 → LLM 으로 분석 → 두 종류의 "초안" 을 저장한다:
-  - 교훈 memory  → `.claude/memory/_pending/`
-  - 의사결정 ADR → `.claude/memory/_pending/decisions/` (proposed_chain/supersedes 는 제안만)
-(사람이 다음 세션에서 `/memory-update` 로 검토·승격. 체인 배정은 사람이 확정한다.)
+Compacts the session transcript (.jsonl) -> analyses it with an LLM -> stores two kinds of "drafts":
+  - lesson memories  -> `.claude/memory/_pending/`
+  - decision ADRs    -> `.claude/memory/_pending/decisions/` (proposed_chain/supersedes are
+    proposals only)
+(A human reviews and promotes them in the next session via `/memory-update`. Chain assignment is
+confirmed by the human.)
 
-백엔드는 플러그형 — REFLECT_BACKEND 환경변수로 선택 (기본 claude):
-  - claude   : 로컬 `claude -p` (구독 사용, 키 불필요, 최고 품질)  ← 기본
-  - deepseek : DeepSeek API (DEEPSEEK_API_KEY 필요, 저렴/빠름)
-  - ollama   : 로컬 ollama (REFLECT_OLLAMA_MODEL, 오프라인/무료, 품질↓)
+The backend is pluggable -- select it with the REFLECT_BACKEND environment variable (default claude):
+  - claude   : local `claude -p` (uses the subscription, no key needed, best quality)  <- default
+  - deepseek : DeepSeek API (needs DEEPSEEK_API_KEY, cheap/fast)
+  - ollama   : local ollama (REFLECT_OLLAMA_MODEL, offline/free, lower quality)
 
-사용:
+Usage:
   python3 reflect.py --transcript <session.jsonl> [--backend claude|deepseek|ollama]
 
-주의: claude 백엔드는 중첩 `claude -p` 가 또 hook 을 띄우는 재귀를 막기 위해
-자식 프로세스에 REFLECT_JOB=1 을 넣는다. hook(pr-merge-reflect.py)은 이 값을
-보면 no-op 한다.
+Note: the claude backend sets REFLECT_JOB=1 on the child process to prevent the recursion where a
+nested `claude -p` fires the hook again. The hook (pr-merge-reflect.py) no-ops when it sees that
+value.
 
-이 스크립트는 hook(pr-merge-reflect.py)과 같은 디렉토리에 co-locate 되어야 한다
-(compact_transcript.py 도 같은 디렉토리). 플러그인 배포 시 스크립트 위치와
-프로젝트 위치가 분리되므로, hook 은 이 파일을 dirname(__file__) 로 찾는다.
+This script has to be co-located with the hook (pr-merge-reflect.py) in the same directory
+(compact_transcript.py too). In a plugin deployment the script location and the project location are
+separate, so the hook finds this file via dirname(__file__).
 """
 import json
 import os
@@ -33,26 +35,38 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from compact_transcript import compact  # noqa: E402
 
-# 생성기 공유 — ADR 초안 계약(게이트 + frontmatter 필드 + 본문 섹션).
-# reflect(세션 회고)·mine(git 소급) 두 생성기가 이걸 합성해 쓴다. 둘 다 같은 _split_drafts →
-# 같은 _pending/decisions 라우팅 → 같은 /memory-update 승격 경로를 타므로, 필드가 어긋나면
-# 초안이 잘못 라우팅된다. 계약 정의는 여기 한 곳에만 둔다(이슈 #19 재발 방지).
+# Sentinel returned by the index helpers when a project has no data yet. Both helpers return the
+# **same** string so the prompt reads consistently.
+NONE_YET = "(none yet)"
+
+# Section headings assembled into the prompt by main(). PROMPT quotes these same phrases verbatim
+# when it tells the model to consult them, so the instruction and the section it points at must stay
+# in sync -- test_rejected_drafts pins that they do.
+REJECTED_SECTION = "already rejected drafts"
+DECISIONS_SECTION = "existing decision chain index"
+
+
+# Shared between generators -- the ADR draft contract (gate + frontmatter fields + body sections).
+# Both generators, reflect (session retrospection) and mine (git back-mining), compose this. They go
+# through the same _split_drafts -> the same _pending/decisions routing -> the same /memory-update
+# promotion path, so a field mismatch misroutes drafts. The contract is defined in this one place
+# only (to prevent issue #19 recurring).
 ADR_DRAFT_CONTRACT = """\
-"왜 그렇게 했나"가 중요한 **결정**만. 반드시 게이트를 통과해야 한다:
-- **안 고른 대안(Alternatives)** 과 **결과(Consequence)** 가 둘 다 있어야 ADR 이다. 없으면 ADR 아님 → 교훈 memory 로 돌리거나 버려라.
-- 기준: 기각한 대안이 있거나 / 방향을 바꿨거나 / 되돌리기 비싼 결정. **0~3개, 각각 하나의 결정만(작게)**.
-- **체인 배정은 확정하지 말고 제안만** 하라 — 아래 "기존 결정 체인 인덱스"를 참고해, 이어지는 축이면 그 chain slug 를, 새 축이면 `new:<이름>` 을 쓴다. 확신 없으면 confidence 를 낮춰라.
-- 각 초안은 **백틱 4개** 블록 하나로 감싼다(안에 ``` 코드 인용이 들어갈 수 있으므로):
+Only **decisions** where "why it was done that way" matters. They must pass the gate:
+- It is an ADR only if it has both the **Alternatives** not taken and the **Consequence**. Without those it is not an ADR -> turn it into a lesson memory or drop it.
+- Criteria: there was a rejected alternative / the direction changed / the decision is expensive to reverse. **0-3 of them, each covering exactly one decision (keep them small)**.
+- **Do not finalise the chain assignment, only propose it** -- consult the "existing decision chain index" below; use that chain slug if this continues an existing axis, or `new:<name>` for a new axis. Lower the confidence when you are unsure.
+- Wrap each draft in a single **four-backtick** block (because ``` code quotes may appear inside):
 
 ````
 ---
 name: <kebab-case-slug>
-description: <한 줄 요약 — INDEX/검색 요약에 쓰인다. 꼭 채운다>
+description: <one-line summary — used in the INDEX and search summaries. Always fill this in>
 type: decision
-proposed_chain: <기존 chain slug 또는 new:새이름>
-proposed_supersedes: [<기존 id>, ...]   # 이 결정이 대체한 이전 결정 id. 없으면 []
-confidence: high | medium | low          # chain/supersedes 제안의 확신도
-keywords: [<검색어>, ...]                 # 검색 표면 — 꼭 채운다
+proposed_chain: <an existing chain slug or new:name>
+proposed_supersedes: [<existing id>, ...]   # ids of earlier decisions this one replaces. [] if none
+confidence: high | medium | low             # how confident the chain/supersedes proposal is
+keywords: [<search term>, ...]              # the search surface — always fill this in
 ---
 ## Context
 ## Decision
@@ -62,31 +76,42 @@ keywords: [<검색어>, ...]                 # 검색 표면 — 꼭 채운다
 ````"""
 
 
-PROMPT = ("""너는 "자가 개선 회고 시스템"이다. 아래는 한 작업 세션의 압축된 대화 트랜스크립트다.
-여기서 **두 종류**를 각각 뽑아 초안을 작성하라: (A) 영속할 교훈(memory), (B) 중요한 의사결정(ADR).
+PROMPT = ("""You are a "self-improving retrospection system". Below is the compacted conversation
+transcript of one work session. Extract **two kinds** of drafts from it: (A) lessons worth
+persisting (memory), and (B) important decisions (ADR).
 
-## (A) 교훈 memory
-- 사용자가 준 지적·교정·결정(특히 "~하지 마", "~로 해", 방식 변경)을 우선 추출.
-- 이 세션에만 해당하는 일회성 사실(특정 PR 번호, 특정 파일 경로)은 제외. 일반화되는 패턴만. 애매하면 빼라.
-- **아래 "이미 폐기한 초안" 목록을 먼저 본다.** 같은 얘기면 다시 만들지 마라 — 사람이 이미
-  보고 안 남기기로 한 것이다. 단어가 달라도 같은 교훈이면 같은 것으로 친다.
-  ⚠️ 금지 목록이 아니다. 그 사이에 **같은 일이 반복돼 값어치가 생겼다면** 다시 올려도 된다 —
-  대신 초안 안에 **무엇이 달라졌는지**(몇 번 더 반복됐는지, 어떤 비용이 났는지)를 적어라.
-- 0~5개. 각 초안은 **백틱 4개** 블록 하나로 감싼다(안에 ``` 코드 인용이 들어갈 수 있으므로):
+## (A) Lesson memories
+- Prioritise the corrections, course-changes and decisions the user gave (especially "don't do X",
+  "do it this way", changes of approach).
+- Exclude one-off facts specific to this session (a particular PR number, a particular file path).
+  Only patterns that generalise. When in doubt, leave it out.
+- **Read the "already rejected drafts" list below first.** If it says the same thing, do not create
+  it again -- a human has already looked at it and decided not to keep it. Different wording for the
+  same lesson still counts as the same thing.
+  WARNING: it is not a ban list. If **the same thing has recurred since and now has value**, you may
+  raise it again -- but then write **what changed** in the draft (how many more times it recurred,
+  what it cost).
+- 0-5 of them. Wrap each draft in a single **four-backtick** block (because ``` code quotes may
+  appear inside):
 
 ````
 ---
 name: <kebab-case-slug>
-description: <한 줄 요약>
+description: <one-line summary>
 type: feedback | project | user | reference
 ---
-<핵심 내용. feedback/project 면 **Why:** 와 **How to apply:** 줄 포함>
+<the core content. For feedback/project, include **Why:** and **How to apply:** lines>
 ````
 
-## (B) 의사결정 ADR
+## (B) Decision ADRs
 """ + ADR_DRAFT_CONTRACT + """
 
-설명 없이 (A)·(B) 초안 코드블록들만 출력하라. 뽑을 게 없으면 아무것도 출력하지 마라.
+- Write the draft prose (description, body, section text) in **English**, even when the source
+  material is in another language. Keep quoted evidence, code, file paths, commands and identifiers
+  in their original language and exact wording -- quote them, do not translate them.
+
+Output only the (A) and (B) draft code blocks, with no commentary. If there is nothing to extract,
+output nothing at all.
 """)
 
 
@@ -95,66 +120,73 @@ def _project_dir():
 
 
 def _rejected_index(project_dir):
-    """사람이 이미 폐기한 초안 목록 — LLM 이 같은 걸 또 만들지 않게 프롬프트에 넣는다.
+    """The list of drafts a human already rejected -- fed into the prompt so the LLM does not
+    recreate the same ones.
 
-    ## 왜 이게 필요한가
+    ## Why this is needed
 
-    초안을 폐기하면 파일이 지워진다. **거절했다는 사실이 어디에도 안 남는다.** 다음 세션이
-    같은 트랜스크립트를 읽고 같은 교훈을 뽑아 같은 초안을 또 만든다. 사람은 또 버린다.
-    백로그가 커질수록 이 비용이 매번 반복된다(이슈 #109).
+    Rejecting a draft deletes the file. **The fact that it was rejected is recorded nowhere.** The
+    next session reads the same transcript, extracts the same lesson, and creates the same draft
+    again. The human throws it away again. The bigger the backlog, the more this cost repeats
+    (issue #109).
 
-    ## 왜 정규식이나 유사도 계산이 아닌가
+    ## Why not a regex or a similarity score
 
-    "같은 교훈인가"는 문자열 비교로 안 갈린다 — 같은 얘기를 다른 말로 쓰면 못 잡는다.
-    그런데 그 판단을 **이미 LLM 이 하고 있다.** `_decisions_index` 가 기존 ADR 을 프롬프트에
-    넣어 체인 제안을 시키는 것과 똑같은 방식으로, 폐기 목록을 보여주면 알아본다.
-    별도 기계장치가 필요 없다.
+    "Is this the same lesson" cannot be settled by string comparison -- the same point written in
+    different words is missed. But **an LLM is already making that judgement.** Showing it the
+    rejection list works exactly like `_decisions_index` putting existing ADRs in the prompt to get
+    chain proposals: it recognises them. No separate machinery is needed.
 
-    ## 왜 하드 필터가 아니라 프롬프트 힌트인가
+    ## Why a prompt hint rather than a hard filter
 
-    한 번 거절했다고 **영원히** 막으면 그게 또 버그다 — 7월에 "너무 사소하다"고 버린 교훈이
-    9월에 세 번 더 반복되면 남길 값어치가 생긴다. 프롬프트에 넣으면 LLM 이 정황을 보고 다시
-    올릴 수 있다. 그래서 만료 규칙이 필요 없다.
+    Blocking something **forever** because it was rejected once would be its own bug -- a lesson
+    dropped in July as "too trivial" gains value if it recurs three more times by September. Putting
+    it in the prompt lets the LLM weigh the circumstances and raise it again. That is why no expiry
+    rule is needed.
 
-    파일이 없으면 `(아직 없음)`. `_decisions_index` 와 같이 **읽기만** 한다.
+    Returns `(none yet)` when the file is absent. Like `_decisions_index`, this **only reads**.
     """
     path = os.path.join(project_dir, ".claude/memory/_rejected.md")
     try:
         text = open(path, encoding="utf-8").read()
     except OSError:
-        return "(아직 없음)"
-    # ⚠️ 주석 블록을 **먼저** 걷어낸다. 템플릿이 예시 항목을 `<!-- ... -->` 안에 넣는데,
-    # 줄 단위로만 보면 그 예시가 `- ` 로 시작해 **진짜 폐기 기록으로 잡힌다.** 템플릿을
-    # 복사한 프로젝트마다 있지도 않은 거절이 프롬프트에 주입돼, 비슷한 교훈이 조용히 막힌다.
-    # (`_decisions_index` 가 README·EXAMPLE 파일을 거르는 것과 같은 이유다.)
+        return NONE_YET
+    # WARNING: strip comment blocks **first**. The template puts its example entries inside
+    # `<!-- ... -->`, and a line-oriented pass sees those examples start with `- ` and **takes them
+    # for real rejection records.** Every project that copied the template would inject rejections
+    # that never happened into the prompt, silently blocking similar lessons.
+    # (Same reason `_decisions_index` filters out README and EXAMPLE files.)
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
-    # 항목은 `- ` 로 시작하는 줄. 나머지(제목·설명문)는 무시한다.
+    # An entry is a line starting with `- `. Everything else (titles, prose) is ignored.
+    # NOTE: this is a **language-agnostic** parse — existing Korean `_rejected.md` ledgers keep
+    # working unchanged even though newly generated prompt text is English.
     rows = [l.rstrip() for l in text.splitlines() if l.startswith("- ")]
     if not rows:
-        return "(아직 없음)"
-    # 추가 전용 파일이라 **뒤쪽이 최신**이다. 넘치면 오래된 앞쪽을 버린다 — 최근 거절일수록
-    # 다시 생성될 확률이 높다.
+        return NONE_YET
+    # The file is append-only, so **the tail is the newest**. When it overflows, drop the old head --
+    # the more recent a rejection is, the likelier it is to be generated again.
     cap = 50
     truncated = len(rows) > cap
     out = "\n".join(rows[-cap:])
     if truncated:
-        out += f"\n(… 오래된 {len(rows) - cap}건 생략)"
+        out += f"\n(… {len(rows) - cap} older entries omitted)"
     return out
 
 
 def _decisions_index(project_dir):
-    """기존 결정 ADR 들의 요약 인덱스(chain·id·keywords) — LLM 이 proposed_chain/proposed_supersedes
-    를 제안할 수 있게 프롬프트에 넣는다. 없으면 '(아직 없음)'.
-    이건 프로젝트 데이터(.claude/memory/decisions/)를 **읽기만** 한다 — 엔진에 프로젝트 특정
-    하드코딩을 넣지 않는다(하네스 엔진/데이터 분리)."""
+    """A summary index of the existing decision ADRs (chain, id, keywords) -- fed into the prompt so
+    the LLM can propose proposed_chain/proposed_supersedes. Returns the "none yet" sentinel when
+    absent.
+    This **only reads** project data (.claude/memory/decisions/) -- no project-specific hardcoding
+    goes into the engine (the harness's engine/data separation)."""
     ddir = os.path.join(project_dir, ".claude/memory/decisions")
     if not os.path.isdir(ddir):
-        return "(아직 없음)"
+        return NONE_YET
     rows = []  # (mtime, block)
     for fn in os.listdir(ddir):
-        # README(스키마 문서)와 예시 ADR(EXAMPLE)은 자동화 입력에서 제외 — 템플릿을 그대로
-        # 복사한 새 프로젝트에서 예시가 "실제 기존 체인"으로 LLM 에 주입돼 supersedes 후보로
-        # 제안되는 걸 막는다.
+        # Exclude the README (the schema document) and example ADRs (EXAMPLE) from automation input
+        # -- this stops a new project that copied the template verbatim from having its examples
+        # injected into the LLM as "real existing chains" and proposed as supersedes candidates.
         if not fn.endswith(".md") or fn == "README.md" or "EXAMPLE" in fn.upper():
             continue
         fp = os.path.join(ddir, fn)
@@ -165,19 +197,21 @@ def _decisions_index(project_dir):
             continue
         parts = head.split("---", 2)
         block = parts[1] if len(parts) >= 3 else head
-        if not _is_decision(block):  # 라우팅과 동일 normalize (quote/주석/대소문자)
+        if not _is_decision(block):  # same normalisation as routing (quotes/comments/case)
             continue
         rows.append((mt, block))
     if not rows:
-        return "(아직 없음)"
-    # 파일명이 아니라 mtime 최신순으로 정렬 후 상한 — 파일명은 설명적이라 정렬해도 시간·관련성이
-    # 아니어서, 결정이 많아지면 active(최근) 체인이 상한에 밀려 조용히 사라질 수 있다. 최근 것 우선.
+        return NONE_YET
+    # Sort by mtime (newest first) before capping, not by file name -- names are descriptive, so
+    # sorting by them reflects neither time nor relevance, and as decisions pile up the active
+    # (recent) chains could be pushed past the cap and silently disappear. Recent ones win.
     rows.sort(key=lambda r: r[0], reverse=True)
     cap = 50
     truncated = len(rows) > cap
     blocks = [b for _mt, b in rows[:cap]]
-    # 단방향 supersedes 모델: superseded_by 는 저장 안 하고 여기(조회 시점)서 계산한다.
-    # 다른 결정이 supersedes 로 무는 id 는 "대체됨" 으로 표시(active 후보 오인 방지).
+    # One-way supersedes model: superseded_by is not stored, it is computed here at lookup time.
+    # An id that another decision claims via supersedes is marked "superseded" (so it is not
+    # mistaken for an active candidate).
     superseded = set()
     for b in blocks:
         superseded |= set(_fm_list(b, "supersedes"))
@@ -188,7 +222,7 @@ def _decisions_index(project_dir):
         if _id in superseded:
             mark = " (superseded)"
         elif status == "rejected":
-            mark = " (rejected)"  # 기각된 결정 — 계속·대체 후보 아님
+            mark = " (rejected)"  # a rejected decision -- not a continuation or supersedes candidate
         else:
             mark = ""
         lines.append(
@@ -196,18 +230,18 @@ def _decisions_index(project_dir):
             f"{_fm(b, 'description') or _fm(b, 'name')} | keywords={_fm(b, 'keywords')}"
         )
     if truncated:
-        lines.append(f"- … (결정 {len(rows)}개 중 최근 {cap}개만 표시)")
+        lines.append(f"- … (showing only the {cap} most recent of {len(rows)} decisions)")
     return "\n".join(lines)
 
 
 def _fm(block, key):
-    """frontmatter 단일라인 값 (없으면 '')."""
+    """A single-line frontmatter value ('' when absent)."""
     m = re.search(rf"^{key}:\s*(.+)$", block, re.M)
     return m.group(1).strip() if m else ""
 
 
 def _fm_list(block, key):
-    """frontmatter 인라인 리스트(`key: [a, b]`) → [a, b]. 없으면 []."""
+    """An inline frontmatter list (`key: [a, b]`) -> [a, b]. [] when absent."""
     m = re.search(rf"^{key}:\s*\[(.*?)\]", block, re.M)
     if not m:
         return []
@@ -215,8 +249,9 @@ def _fm_list(block, key):
 
 
 def _is_decision(block):
-    """frontmatter type 이 decision 인가. quote/인라인주석/대소문자 변형까지 관대하게 —
-    안 그러면 `type: "decision"` 같은 유효 변형이 _pending/ 로 잘못 라우팅돼 소비자가 못 잡는다."""
+    """Is the frontmatter type `decision`? Lenient about quote/inline-comment/case variants --
+    otherwise a valid variant such as `type: "decision"` is misrouted to _pending/ and consumers
+    never see it."""
     m = re.search(r"^type:\s*(.+)$", block, re.M)
     if not m:
         return False
@@ -224,23 +259,23 @@ def _is_decision(block):
     return val == "decision"
 
 
-# ---------- 백엔드 ----------
+# ---------- Backends ----------
 
 def _backend_claude(prompt):
-    env = {**os.environ, "REFLECT_JOB": "1"}  # 재귀 방지: 중첩 claude 의 hook no-op
+    env = {**os.environ, "REFLECT_JOB": "1"}  # recursion guard: makes the nested claude's hook no-op
     r = subprocess.run(
         ["claude", "-p", prompt],
         capture_output=True, text=True, timeout=300, env=env,
     )
     if r.returncode != 0:
-        raise RuntimeError(f"claude -p 실패: {r.stderr[:300]}")
+        raise RuntimeError(f"claude -p failed: {r.stderr[:300]}")
     return r.stdout
 
 
 def _backend_deepseek(prompt):
     key = os.environ.get("DEEPSEEK_API_KEY")
     if not key:
-        raise RuntimeError("DEEPSEEK_API_KEY 없음")
+        raise RuntimeError("DEEPSEEK_API_KEY is not set")
     model = os.environ.get("REFLECT_DEEPSEEK_MODEL", "deepseek-chat")
     payload = json.dumps({
         "model": model,
@@ -276,13 +311,14 @@ BACKENDS = {
 }
 
 
-# ---------- 출력 파싱 → 초안 파일 ----------
+# ---------- Output parsing -> draft files ----------
 
 def _fenced_blocks(text):
-    """백틱 블록들의 본문. **닫는 펜스는 연 펜스만큼 길어야 하고** 언어 태그가 없어야 한다.
+    """The bodies of the backtick blocks. **A closing fence must be at least as long as the opening
+    one** and must carry no language tag.
 
-    이 두 조건이 중첩 인용 문제를 푼다 — 바깥이 ```` 로 열리면 안쪽 ``` 는 길이가 모자라
-    닫지 못한다. 세거나 추측하지 않는다.
+    Those two conditions solve the nested-quote problem -- if the outer fence opens with ````, an
+    inner ``` is too short to close it. Nothing is counted or guessed.
     """
     fence = re.compile(r"^(`{3,})\s*([A-Za-z0-9_+-]*)\s*$")
     blocks, buf, opener = [], None, 0
@@ -297,35 +333,38 @@ def _fenced_blocks(text):
             continue
         if buf is not None:
             buf.append(line)
-    if buf is not None:                      # 안 닫힘 = 출력이 잘림
+    if buf is not None:                      # unclosed = the output was truncated
         blocks.append("\n".join(buf))
     return blocks
 
 
 def _split_drafts(text):
-    """LLM 출력에서 frontmatter 를 가진 블록들을 추출.
+    """Extract the blocks that carry frontmatter from the LLM output.
 
-    ## 왜 백틱 4개인가
+    ## Why four backticks
 
-    초안 안에 코드를 인용하는 건 예외가 아니라 기본이다 — ADR 계약이 `Evidence` 섹션을
-    요구한다. 그런데 바깥 펜스도 ```, 안쪽 인용도 ``` 면 **어느 쪽인지 알 방법이 없다.**
-    태그 유무로 세는 것도 안 된다: 언어 태그 없는 ``` 인용이 흔하고, 그건 닫는 펜스와
-    글자까지 같다. 추측하면 초안이 잘리고, 잘린 초안은 멀쩡한 얼굴로 `_pending/` 에 저장돼
-    사람이 승격 검토를 하게 된다.
+    Quoting code inside a draft is the norm, not the exception -- the ADR contract requires an
+    `Evidence` section. But if the outer fence is ``` and the inner quote is ``` too, **there is no
+    way to tell them apart.** Counting by the presence of a tag does not work either: untagged ```
+    quotes are common and are character-for-character identical to a closing fence. Guessing
+    truncates the draft, and a truncated draft is stored in `_pending/` looking perfectly fine, so a
+    human reviews it for promotion.
 
-    그래서 **프롬프트에서 백틱 4개를 요구한다.** 우리가 프롬프트와 파서를 둘 다 갖고 있으니
-    모호함을 없앨 수 있다 — 파싱을 잘하려 애쓰는 대신 파싱할 게 명확해지게 만든다.
+    So **the prompt demands four backticks.** We own both the prompt and the parser, so we can remove
+    the ambiguity -- instead of trying to parse better, we make the thing being parsed unambiguous.
 
-    3개 블록은 **호환용 폴백**이다(옛 출력·지시 이탈). 그 경로는 원래의 모호함을 그대로
-    안고 있으므로, 4개 블록이 하나라도 있으면 그쪽만 쓴다.
+    Three-backtick blocks are a **compatibility fallback** (old output, instruction drift). That path
+    still carries the original ambiguity, so if there is even one four-backtick block we use only
+    those.
     """
     blocks = _fenced_blocks(text)
     kept = [b.strip() for b in blocks
             if "name:" in b and re.search(r"^type:", b, re.M)]
-    # 마지막 블록이 안 닫힌 채 살아남았으면 출력이 잘린 것이다. 통째로 버리면 "뽑을 게
-    # 없었다" 와 구별이 안 되므로 살리되, 잘렸다는 사실은 알린다.
+    # If the final block survived unclosed, the output was truncated. Dropping it wholesale would be
+    # indistinguishable from "there was nothing to extract", so we keep it but announce the truncation.
     if kept and not text.rstrip().endswith("`"):
-        sys.stderr.write("[reflect] ⚠️ 마지막 블록이 안 닫힘 — 출력이 잘린 듯. 그대로 살림\n")
+        sys.stderr.write(
+            "[reflect] ⚠️ final block is unclosed — output looks truncated. Keeping it as-is\n")
     return kept
 
 
@@ -339,7 +378,7 @@ def main():
     args = sys.argv[1:]
 
     def _flag_value(flag):
-        """--flag 뒤의 값. 플래그가 없거나 값이 안 붙으면 None (IndexError 방지)."""
+        """The value after --flag. None when the flag is absent or has no value (avoids IndexError)."""
         if flag in args:
             i = args.index(flag)
             if i + 1 < len(args):
@@ -353,40 +392,41 @@ def main():
     if backend not in BACKENDS:
         sys.exit(f"unknown backend: {backend}")
     if not os.path.exists(transcript):
-        sys.exit(f"transcript 없음: {transcript}")
+        sys.exit(f"transcript not found: {transcript}")
 
-    # 메모리 초안은 출처가 확실한 사용자 턴에서만 만든다. 복원(fw/history)은 옛 로그를
-    # best-effort 로 읽어도 되지만, 규칙 승격 후보는 재현율보다 신뢰가 우선이다(이슈 #121).
+    # Memory drafts are built only from user turns with a confirmed origin. Recovery (fw/history) may
+    # read old logs best-effort, but for rule-promotion candidates trust beats recall (issue #121).
     body, n = compact(transcript, require_attributed_user=True)
     if not body.strip():
-        sys.exit(0)  # 빈 세션 → 조용히
+        sys.exit(0)  # empty session -> stay quiet
 
     project_dir = _project_dir()
     prompt = (
         PROMPT
-        + "\n=== 이미 폐기한 초안 (같은 얘기면 다시 만들지 말 것) ===\n"
+        + f"\n=== {REJECTED_SECTION} (do not create the same thing again) ===\n"
         + _rejected_index(project_dir)
-        + "\n\n=== 기존 결정 체인 인덱스 (proposed_chain/proposed_supersedes 제안에 참고) ===\n"
+        + "\n\n=== " + DECISIONS_SECTION + " (reference for proposed_chain/proposed_supersedes) ===\n"
         + _decisions_index(project_dir)
-        + "\n\n=== 압축 트랜스크립트 ===\n"
+        + "\n\n=== compacted transcript ===\n"
         + body
     )
     text = BACKENDS[backend](prompt)
     drafts = _split_drafts(text)
     if not drafts:
-        sys.stderr.write("[reflect] 초안 없음\n")
+        sys.stderr.write("[reflect] no drafts\n")
         return
 
     pending = os.path.join(project_dir, ".claude/memory/_pending")
     written = []
     for d in drafts:
         slug = _slug(d)
-        # 결정(ADR) 초안은 _pending/decisions/ 로, 교훈 memory 는 _pending/ 로 분리 라우팅.
+        # Decision (ADR) drafts route to _pending/decisions/, lesson memories to _pending/.
         target = os.path.join(pending, "decisions") if _is_decision(d) else pending
         os.makedirs(target, exist_ok=True)
         path = os.path.join(target, f"{slug}.md")
-        # 같은 slug 초안이 이미 대기 중이면 덮어쓰지 않고 suffix 로 보존 — 미검토 초안 유실 방지.
-        # (/memory-update 가 검토 시 중복을 병합하므로 누적돼도 안전하다.)
+        # If a draft with the same slug is already pending, keep it and add a suffix instead of
+        # overwriting -- this prevents losing an unreviewed draft. (/memory-update merges duplicates
+        # during review, so accumulating them is safe.)
         i = 2
         while os.path.exists(path):
             path = os.path.join(target, f"{slug}-{i}.md")
@@ -394,7 +434,7 @@ def main():
         open(path, "w", encoding="utf-8").write(d + "\n")
         written.append(os.path.relpath(path, pending))
     sys.stderr.write(
-        f"[reflect] backend={backend} 트랜스크립트 {n}줄 → 초안 {len(written)}개: "
+        f"[reflect] backend={backend} transcript {n} lines → {len(written)} draft(s): "
         f"{', '.join(written)}\n"
     )
 

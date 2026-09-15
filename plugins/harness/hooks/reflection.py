@@ -1,38 +1,41 @@
 #!/usr/bin/env python3
 """
-PostToolUse hook (Edit|Write|MultiEdit): 방금 쓴 코드에 대해 간단한 품질 경고를
-tool result 옆에 주입한다. "이거 이렇게 두면 나중에 문제" 를 즉시 상기.
+PostToolUse hook (Edit|Write|MultiEdit): injects a short quality warning about the code that was
+just written, right next to the tool result. An immediate reminder that "leaving this as-is will
+hurt later".
 
-엔진/데이터 분리 (하네스 3층 구조):
-- **엔진(core, 이 파일)**: 정규식 규칙을 새 코드 내용에 적용해 경고문 생성.
-- **데이터(프로젝트)**: `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` 이
-  언어·팀 특정 규칙(예: Kotlin `!!`/`var`)을 정의한다. 없으면 내장 범용 규칙만.
-  Kotlin 등 언어 전용 규칙은 core 에 두지 않는다 — 예시는 project-template 에.
+Engine/data separation (the harness's three-layer structure):
+- **Engine (core, this file)**: applies regex rules to the newly added code and builds the warnings.
+- **Data (project)**: `$CLAUDE_PROJECT_DIR/.claude/memory/reflection-rules.json` defines the
+  language/team specific rules (e.g. Kotlin `!!`/`var`). Without it, only the built-in generic rules
+  run. Language-specific rules such as Kotlin's do not live in core -- examples are in
+  project-template.
 
-내장 범용 규칙: TODO/FIXME 잔존 경고 (모든 파일, 언어 무관). 끄려면 rules 파일에
-`"builtins": {"todo_fixme": false}`.
+Built-in generic rule: warn about leftover TODO/FIXME (every file, language-agnostic). To turn it
+off, put `"builtins": {"todo_fixme": false}` in the rules file.
 
-reflection-rules.json 형식:
+reflection-rules.json format:
   {
     "rules": [
       {"glob": "*.kt", "regex": "!!",
-       "message": "`!!` 사용 {count}곳 — requireNotNull 또는 ?: return 으로 교체 검토"},
+       "message": "`!!` used in {count} place(s) — consider requireNotNull or ?: return"},
       {"glob": "*.kt", "regex": "(?m)^\\s*var ", "min_count": 3,
-       "message": "var 선언 다수({count}) — fold/associate/sumOf 등으로 대체 검토"}
+       "message": "many var declarations ({count}) — consider fold/associate/sumOf"}
     ],
     "packs": [
       {"name": "react-async-timing", "enabled": false, "rules": [...]}
     ]
   }
-- glob:  이 규칙을 적용할 파일 (fnmatch, 생략 시 모든 파일).
-- globs: 여러 파일 패턴 중 하나에 적용할 때 쓰는 glob 배열.
-- regex: 새 코드에서 찾을 패턴 (Python re). 매칭 수(count) 계산.
-- enabled: false 면 이 규칙만 비활성.
-- min_count: 이 수 이상일 때만 경고 (기본 1).
-- message: 경고문. `{count}` 는 매칭 수로 치환.
-- packs: opt-in 규칙 묶음. enabled=true 인 pack 의 rules 만 적용.
+- glob:  the file this rule applies to (fnmatch; applies to every file when omitted).
+- globs: array of globs, used when the rule should apply to any one of several file patterns.
+- regex: pattern to look for in the new code (Python re). The number of matches becomes `count`.
+- enabled: false disables just this rule.
+- min_count: warn only at this many matches or more (default 1).
+- message: the warning text. `{count}` is replaced with the match count.
+- packs: opt-in rule bundles. Only the rules of packs with enabled=true are applied.
 
-JSON 사용(무의존). 어떤 예외에도 조용히 통과(fail-open) — 편집 결과를 막지 않는다.
+Uses JSON (dependency-free). Passes silently on any exception (fail-open) -- it never blocks the
+result of an edit.
 """
 import fnmatch
 import json
@@ -40,8 +43,8 @@ import os
 import re
 import sys
 
-# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 한다(repo_identity 와 같은 규약).
-# core 소스 트리에서 직접 돌릴 때는 ../scripts 에 있다 — 테스트가 이 경로로 로드한다.
+# build.sh co-locates hook_io in the same directory as this hook (same convention as repo_identity).
+# When run directly from the core source tree it lives in ../scripts -- tests load it from there.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
@@ -52,7 +55,7 @@ from hook_io import (  # noqa: E402
     trace_entry,
 )
 
-TODO_MESSAGE = "⚠️  TODO/FIXME 남아있음 — 작업 완료 후 제거 필요"
+TODO_MESSAGE = "⚠️  TODO/FIXME left behind — remove it once the work is done"
 
 
 def _load_config(memory_dir):
@@ -126,8 +129,8 @@ def main():
 
     trace_entry(__file__, data.get("hook_event_name"))
 
-    # 내용이 실제로 추가된 파일만 본다. 한 번의 편집이 여러 파일을 건드릴 수 있고
-    # (Codex 패치), 삭제는 검사할 새 코드가 없다.
+    # Only look at files that actually gained content. A single edit can touch several files
+    # (a Codex patch), and a deletion has no new code to inspect.
     targets = [f for f in edited_files(data) if f.added]
     if not targets:
         sys.exit(0)
@@ -135,29 +138,29 @@ def main():
     memory_dir = os.path.join(_project_dir(data), ".claude/memory")
     cfg = _load_config(memory_dir)
 
-    # ⚠️ 규칙은 **파일마다 따로** 적용한다. 여러 파일의 추가 내용을 합쳐서 한 번에 돌리면
-    # `{"glob": "*.kt"}` 규칙이 .md 파일의 내용까지 보게 된다. 그래서 min_count 와
-    # `{count}` 는 **파일 단위** 값이다.
+    # WARNING: rules are applied **per file**. Merging the added content of several files into one
+    # run would let a `{"glob": "*.kt"}` rule see the content of a .md file too. That is why
+    # min_count and `{count}` are **per-file** values.
     warnings = []
     for target in targets:
         for warning in _file_warnings(cfg, target.path, target.added):
-            if warning not in warnings:   # 같은 경고가 파일마다 반복되면 한 번만
+            if warning not in warnings:   # the same warning repeated across files is shown once
                 warnings.append(warning)
 
-    # PostToolUse 평문 stdout 은 모델에게 도달하지 않는다.
-    # additionalContext 로 내보내야 tool result 옆에 주입된다(키 형태는 hook_io 참고).
+    # Plain stdout from PostToolUse never reaches the model. It has to go out as additionalContext
+    # to be injected next to the tool result (see hook_io for the key shape).
     if warnings:
         emit_context("PostToolUse", "## Reflection\n" + "\n".join(warnings))
     sys.exit(0)
 
 
 def _file_warnings(cfg, file_path, content):
-    """파일 하나에 대한 경고 목록."""
+    """The list of warnings for a single file."""
     out = []
-    # 내장 범용 규칙: TODO/FIXME (끄지 않은 경우)
+    # Built-in generic rule: TODO/FIXME (unless turned off)
     if cfg["builtins"].get("todo_fixme", True) and re.search(r"TODO|FIXME", content):
         out.append(TODO_MESSAGE)
-    # 프로젝트 정의 규칙
+    # Project-defined rules
     for rule in cfg["rules"]:
         try:
             warning = _apply_rule(rule, file_path, content)
