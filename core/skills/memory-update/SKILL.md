@@ -18,7 +18,7 @@ Review lessons from this session together with pending drafts (`_pending`) gener
 
 Read `MEMORY.md` in the Claude auto-memory directory:
 `~/.claude/projects/<encoded-project-path>/memory/MEMORY.md`, where `<encoded-project-path>` is
-`{{PROJECT_ROOT}}` with every `/` replaced by `-`. When system memory instructions give an exact
+`{{PROJECT_ROOT}}` with every `/` and `.` replaced by `-`. When system memory instructions give an exact
 path, use it **only if it belongs to this target project** — a path carried in from a session for a
 different project would attach that project's personal memory to this one; otherwise fall back to the
 encoded path above. This directory is outside the project; do not anchor it on `{{PROJECT_ROOT}}`,
