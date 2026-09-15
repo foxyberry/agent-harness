@@ -149,9 +149,12 @@ directly gets overwritten on the next build, and CI fails the diff.
 
 ## Updating
 
+Run these commands in a terminal. Restart Claude Code after updating its plugin.
+
 ```bash
 # Claude Code
 claude plugin marketplace update foxyberry
+claude plugin update agent-harness@foxyberry
 
 # Codex — there is no `plugin update` yet, so refresh the snapshot and re-add
 codex plugin marketplace upgrade foxyberry
@@ -170,6 +173,12 @@ an earlier version. Details in [docs/codex-hooks.md](docs/codex-hooks.md).
 
 You do not need to do this often — only when a new release lands.
 
+An update replaces the plugin, not your project. Your `AGENTS.md`, `CLAUDE.md`, `.github/`, and
+`.claude/memory/` are never overwritten, so changes to `project-template/` reach a project you
+already set up **only if you merge them in by hand**.
+
+Release notes and the full procedure: [docs/release.md](docs/release.md).
+
 ## Development
 
 Regenerate the adapters after touching `core/`.
@@ -184,8 +193,9 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.12.1`
-- Public marketplace installation verified for both Claude Code and Codex
+- Plugin version: `0.12.2`
+- Public marketplace installation verified for both Claude Code and Codex (measured on earlier
+  releases, not re-run for every version)
 - 7 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
@@ -205,6 +215,7 @@ without a link, so nothing goes missing.
 | [docs/overview.html](docs/overview.html) | Illustrated design overview |
 | [docs/self-improvement-hooks.md](docs/self-improvement-hooks.md) | How the hooks work |
 | [docs/codex-hooks.md](docs/codex-hooks.md) | Codex hook contract and constraints |
+| [docs/release.md](docs/release.md) | Release notes and the update procedure |
 
 **Adopting it in your project**
 
