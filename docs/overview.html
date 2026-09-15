@@ -175,7 +175,7 @@
     and hooks that surface project memory while you work.
   </p>
   <p class="muted">New here? Start with the <a href="guide.md">usage guide</a> to choose a command by situation.
-    This page explains the design and implementation, based on release <b>0.12.1</b> (reviewed 2026-09-14).</p>
+    This page explains the design and implementation, based on release <b>0.12.2</b> (reviewed 2026-09-15).</p>
 
   <h2>What the harness connects</h2>
   <ul>
@@ -366,10 +366,11 @@ cat /tmp/hook-trace.jsonl</code></pre>
     <div class="flow">▼ &nbsp;git <b>commit · push</b> &nbsp;(<code>.claude/handoff/&lt;branch&gt;.md</code>; git facts collected automatically)</div>
     <div class="node use"><b>Session B</b><span>Pull on another machine or switch tools, then use <code>/handoff-load</code></span></div>
   </div>
-  <div class="note warn"><b>Known limitation in 0.12.1:</b> handoff output can label an uncommitted file as committed
-    (<a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>). Check git status and the committed contents yourself.
-    This is fixed in source — save and load now report the file's state at the time they run — but no release carries it yet.
-    Loading also does not automatically retire the consumed handoff
+  <div class="note warn"><b>Known limitation in 0.12.2:</b> saving does not commit or push, and the reported commit state
+    covers a local commit only — push state is not checked, so confirm it separately before relying on a handoff elsewhere.
+    Save and load now report the file's state at the time they run, which closes the mislabeling in
+    <a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>.
+    Loading still does not automatically retire the consumed handoff
     (<a href="https://github.com/foxyberry/agent-harness/issues/138">#138</a>).</div>
 
   <h2>What gets recorded</h2>
@@ -377,12 +378,14 @@ cat /tmp/hook-trace.jsonl</code></pre>
   <div class="cards" style="grid-template-columns:1fr">
     <div class="card"><h3>📋 Handoff <span class="muted" style="font-weight:400">— <code>.claude/handoff/&lt;branch&gt;.md</code></span></h3>
       <p class="muted" style="margin:2px 0 10px">Current work state, with branch, commit, and changed files collected automatically.
-        The outline below describes the fields in English; 0.12.1 script-generated headings may still be Korean.</p>
+        The outline below describes the fields, which the scripts generate in English.</p>
       <pre><code># Work handoff — main
 ## Summary       One or two lines about the task
-## Completed     Work already finished
-## Remaining     Next actions for whoever resumes
-## Validation    Test and build results
+## Done          Work already finished
+## Remaining / next actions
+                 Next actions for whoever resumes
+## Verification status
+                 Test and build results
 ## Git facts     Branch, commit, changed files (automatic)</code></pre></div>
     <div class="card"><h3>🧠 Shared memory <span class="muted" style="font-weight:400">— <code>.claude/memory/*.md</code></span></h3>
       <p class="muted" style="margin:2px 0 10px">Durable rules and decisions, promoted after human review.</p>
@@ -512,7 +515,7 @@ codex plugin add agent-harness@foxyberry
 ├─ .agents/plugins/marketplace.json   <span class="c">Codex distribution</span>
 └─ AGENTS.md · README.md
 </pre>
-  <h2>Implementation status <span class="muted">(0.12.1 baseline)</span></h2>
+  <h2>Implementation status <span class="muted">(0.12.2 baseline)</span></h2>
   <ul class="status">
     <li><span class="badge done">DONE</span> Seven skills in both adapters and four hooks, with partial Codex merge support.</li>
     <li><span class="badge done">DONE</span> Marketplace installation and installed-skill checks on both tools, including loading a Claude-written handoff in Codex. These are recorded checks, not a guarantee for every installation.</li>
@@ -529,7 +532,7 @@ codex plugin add agent-harness@foxyberry
     <li><span class="badge done">DONE</span> Crash-resilient hook state: atomic cache writes, reseeding corrupt state, at most three PR investigations per call, and incremental persistence. Shared project-path resolution honors Codex <code>cwd</code>.</li>
     <li><span class="badge done">DONE</span> Nested code-fence handling prevents ADR evidence blocks from prematurely ending a draft. Closing fences must be at least as long as opening fences; the prompt asks for four-backtick outer fences.</li>
     <li><span class="badge soon">PARTIAL</span> Codex <code>pr-merge-reflect</code>: detection and shared queue updates are registered. Installed-environment verification, UserPromptSubmit reminders, and automatic drafting remain in <a href="https://github.com/foxyberry/agent-harness/issues/85">#85</a>.</li>
-    <li><span class="badge soon">PARTIAL</span> Handoff commit-state labels (<a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>): fixed in source, not in any release yet. Save and load now compute the file's state when they run instead of asserting it in the saved text. Consumed-handoff cleanup (<a href="https://github.com/foxyberry/agent-harness/issues/138">#138</a>) is still open.</li>
+    <li><span class="badge soon">PARTIAL</span> Handoff lifecycle. Commit-state labels (<a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>) are fixed as of 0.12.2: save and load compute the file's state when they run instead of asserting it in the saved text, and the reported state is a local commit — push state is not checked. Consumed-handoff cleanup (<a href="https://github.com/foxyberry/agent-harness/issues/138">#138</a>) is still open.</li>
     <li><span class="badge soon">OPEN</span> Repeated retrospectives on retrospective-generated PRs (<a href="https://github.com/foxyberry/agent-harness/issues/130">#130</a>) and template detection/migration (<a href="https://github.com/foxyberry/agent-harness/issues/132">#132</a>). The ADR schema portion of #132 is already addressed.</li>
     <li><span class="badge soon">DESIGN</span> Preventing parallel agents from mixing changes in one working tree (<a href="https://github.com/foxyberry/agent-harness/issues/108">#108</a>). Repository identification alone does not prevent concurrent write conflicts.</li>
   </ul>

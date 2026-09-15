@@ -143,9 +143,12 @@ Codex 는 마지막 훅을 SessionStart와 Bash PostToolUse 탐지에만 등록�
 
 ## 업데이트
 
+아래 명령은 터미널에서 실행합니다. Claude 플러그인 갱신 후에는 Claude Code를 재시작하세요.
+
 ```bash
 # Claude Code
 claude plugin marketplace update foxyberry
+claude plugin update agent-harness@foxyberry
 
 # Codex — 아직 `plugin update` 가 없어서 스냅샷을 갱신하고 다시 설치합니다
 codex plugin marketplace upgrade foxyberry
@@ -164,6 +167,12 @@ codex plugin add agent-harness@foxyberry
 
 자주 할 필요는 없습니다. 새 릴리스가 나왔을 때만 하면 됩니다.
 
+업데이트는 플러그인만 갈아 끼웁니다. 프로젝트의 `AGENTS.md`, `CLAUDE.md`, `.github/`,
+`.claude/memory/` 는 덮어쓰지 않으므로, `project-template/` 의 변경은 이미 구성해 둔 프로젝트에
+**직접 병합해야** 반영됩니다.
+
+릴리스 노트와 전체 절차: [docs/release.md](docs/release.md).
+
 ## 개발
 
 `core/` 를 고친 뒤에는 어댑터를 다시 생성합니다.
@@ -178,8 +187,9 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 상태
 
-- 플러그인 버전: `0.12.1`
-- Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료
+- 플러그인 버전: `0.12.2`
+- Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료 (이전 릴리스에서 측정한 결과이며
+  매 버전마다 다시 돌리지는 않습니다)
 - 양쪽 어댑터에 스킬 7개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)
 - 훅 발화와 컨텍스트 주입 검증 완료 — 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을
   직접 읽어 답한 경우를 배제했습니다
@@ -199,6 +209,7 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 | [docs/overview.html](docs/overview.html) | 그림이 있는 설계 개요 |
 | [docs/self-improvement-hooks.md](docs/self-improvement-hooks.md) | 훅이 어떻게 도는지 |
 | [docs/codex-hooks.md](docs/codex-hooks.md) | Codex 훅 계약과 제약 |
+| [docs/release.md](docs/release.md) | 릴리스 노트와 업데이트 절차 |
 
 **내 프로젝트에 들일 때**
 
