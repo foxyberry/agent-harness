@@ -14,5 +14,6 @@ Editing an adapter by hand gets overwritten by the next build.
 
 **How to apply:** do not edit the adapters (plugins/harness, plugins/codex) directly — fix it in
 core and run build.sh. Write SKILL.md with placeholders such as `{{RULES_FILE}}` and let the
-build.sh render step substitute the per-adapter value. Bundled scripts must be referenced from
-inside the adapter only through `${CLAUDE_PLUGIN_ROOT}` (Claude); no `../`.
+build.sh render step substitute the per-adapter value. Keep script references inside the adapter:
+Claude skills and both adapters' hooks use `${CLAUDE_PLUGIN_ROOT}`; Codex skills use `scripts/`
+relative to their own skill directory. Never reach outside the adapter with `../`.

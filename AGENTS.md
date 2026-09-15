@@ -117,8 +117,9 @@ the line blurs again.
 ## Rules
 
 - Change core → run `build.sh` → commit the regenerated adapter output together with it.
-- Bundled scripts must be referenced from inside the adapter through `${CLAUDE_PLUGIN_ROOT}`
-  (Claude) only; never use `../`.
+- Keep script references inside the adapter: Claude skills and both adapters' hooks use
+  `${CLAUDE_PLUGIN_ROOT}`; Codex skills use `scripts/` relative to their own skill directory.
+  Never reach outside the adapter with `../`.
 - Committed shared memory requires governance: `_pending → human approval → committed`.
   No sensitive information.
 - **Memory tier — personal is the default.** This repository is **public**, so anything placed in
