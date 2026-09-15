@@ -1,23 +1,31 @@
-# 프로젝트 메모리 인덱스 — agent-harness
+# Project memory index — agent-harness
 
-공유(커밋) 메모리. Claude 는 세션 시작 시 이 인덱스를 자동으로 보고, 이후 memory-search 훅으로
-관련 메모리 본문을 읽는다. Codex 는 아직 훅 배포가 없어 이 인덱스를 직접 읽는다.
+Shared (committed) memory. Claude reads this index at session start and then pulls the relevant
+memory bodies in through the memory-search hook. Codex ships these hooks too: the bundled
+`project-memory-index` hook injects this index at SessionStart and `memory-search` injects memory
+bodies before edits — both were observed firing on Codex on 2026-08-15. Codex coverage is still
+partial: `pr-merge-reflect` is registered for SessionStart and PostToolUse/Bash, but its install
+measurement is still pending, and UserPromptSubmit injection plus the LLM job stay unregistered
+(`docs/codex-hooks.md`). Registration is not the same as measured firing — whenever this index
+was not injected for any reason (not installed, the plugin untrusted, a hook that did not run),
+read it directly.
 
-- [engine-data-separation](engine-data-separation.md) — core/hooks는 generic 엔진, "무엇을"은 프로젝트 데이터. 하드코딩 금지
-- [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — 플러그인 dev설치(작업 repo 직접 참조); 훅 삭제 시 다른 세션 Bash 블록 주의
-- [build-drift](build-drift.md) — core가 정본, core 수정 후 항상 ./build.sh 하고 생성물까지 커밋
-- [plugin-release-updates](plugin-release-updates.md) — 사용자-facing 플러그인 배포는 버전 bump 와 업데이트 안내를 릴리스 단위로 관리
-- [adapter-cross-project-testing](adapter-cross-project-testing.md) — 어댑터 동작과 공개 설치는 repo·인증·캐시를 격리해 검증
-- [skill-command-examples](skill-command-examples.md) — SKILL.md 필수 인자는 각주 말고 복붙되는 명령 예시 자체에
-- [tool-placement-heuristic](tool-placement-heuristic.md) — 새 훅·도구 배치: 범용이면 하네스 core / 취향이면 개인 ~/.claude 또는 repo 커밋; 훅은 core 에 넣지 말 것
-- [review-evidence-on-target-thread](review-evidence-on-target-thread.md) — 외부 리뷰 결과는 대상 PR·이슈 댓글에 원문 또는 링크로 남김
-- [committed-artifact-env-leak](committed-artifact-env-leak.md) — 커밋되는 산출물에 호스트명·절대경로 자동 삽입 금지; 기본 비공개 + 환경변수 opt-in
-- [squash-merge-consequences](squash-merge-consequences.md) — squash merge라 branch --merged 무력화; stacked PR은 base 머지 후 rebase
-- [cache-must-outlive-target](cache-must-outlive-target.md) — 캐시·alias 저장 위치: worktree/세션 안에 두지 말 것, worktree 상태는 .git 공통 디렉터리에
-- [no-absolute-time-in-fixtures](no-absolute-time-in-fixtures.md) — 최근성 창을 보는 코드의 테스트 fixture 에 절대 시각 금지; 날짜가 지나면 코드 변경 없이 CI 가 깨진다
-- [close-the-issue-close-the-doc](close-the-issue-close-the-doc.md) — "알려진 버그·미검증·한계"를 적었으면 그 이슈를 닫을 때 문서도 같은 PR 에서 고친다
+- [engine-data-separation](engine-data-separation.md) — core/hooks is a generic engine; "what to do" lives in project data. No hardcoding
+- [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — when the plugin root is a live working copy, hook edits hit other running sessions; build.sh guards missing scripts, older sessions do not
+- [build-drift](build-drift.md) — core is the source of truth; after editing core always run ./build.sh and commit the generated output too
+- [plugin-release-updates](plugin-release-updates.md) — bump the Claude and Codex manifest versions together and ship the update instructions as one release unit
+- [adapter-cross-project-testing](adapter-cross-project-testing.md) — verify adapter behavior and public installation with the repo, credentials and caches isolated
+- [skill-command-examples](skill-command-examples.md) — put a required SKILL.md argument in the copy-pasted command example itself, not in a footnote
+- [tool-placement-heuristic](tool-placement-heuristic.md) — placing a new hook or tool: generic data-driven engine → harness core; taste- or convention-specific behavior → personal ~/.claude or a repo commit
+- [review-evidence-on-target-thread](review-evidence-on-target-thread.md) — leave external review results on the target PR or issue thread, as the original text or a link
+- [committed-artifact-env-leak](committed-artifact-env-leak.md) — never auto-insert hostnames or absolute paths into committed artifacts; the default is `undisclosed`, with an environment-variable opt-in
+- [squash-merge-consequences](squash-merge-consequences.md) — squash merge makes branch --merged useless; a stacked PR needs a rebase once its base is merged
+- [cache-must-outlive-target](cache-must-outlive-target.md) — where to store a cache or alias: not inside a worktree or session; worktree state goes under the shared .git directory
+- [no-absolute-time-in-fixtures](no-absolute-time-in-fixtures.md) — no absolute timestamps in test fixtures for code that looks at a recency window; once the date passes, CI breaks with no code change
+- [close-the-issue-close-the-doc](close-the-issue-close-the-doc.md) — if you wrote down a "known bug / unverified / limitation", fix the doc in the same PR that closes that issue
 
-## 결정 기록 (ADR)
+## Decision records (ADR)
 
-승격된 ADR 을 한 줄씩 등록한다: `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>`.
-(스키마는 `memory-update` 스킬 §1.6 — 플러그인과 함께 배포된다. 아직 승격된 실 ADR 없음.)
+Register each promoted ADR on one line: `[<id>](decisions/<name>.md) — [chain: <chain>] <one line>`.
+(The schema is in the `memory-update` skill §1.6, which ships with the plugin. No real ADR has
+been promoted yet.)

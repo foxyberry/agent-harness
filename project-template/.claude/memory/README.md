@@ -1,54 +1,64 @@
-# .claude/memory — 프로젝트 메모리 (데이터 층)
+# .claude/memory — project memory (data layer)
 
-이 디렉토리는 하네스 훅의 **데이터 층**이다. 엔진(스킬·훅)은 `agent-harness` 플러그인이
-제공하고, "무엇을" 주입·경고할지는 여기 프로젝트별 파일이 정한다. 3층 구조의 "데이터=프로젝트" 경계.
+This directory is the **data layer** of the harness hooks. The engine (skills and hooks) comes
+from the `agent-harness` plugin; the per-project files here decide *what* gets injected and
+warned about. It is the "data = project" side of the three-layer structure.
 
-## 설정 파일 (엔진이 읽는 것)
+## Configuration files (what the engine reads)
 
-| 파일 | 읽는 훅 | 역할 | 없으면 |
-|------|---------|------|--------|
-| `routes.json` | memory-search (PreToolUse 편집·Bash) | 편집 파일·셸 명령 → 주입할 메모리 매핑 | no-op (주입 없음) |
-| `reflection-rules.json` | reflection (PostToolUse Edit/Write) | 새 코드 → 품질 경고 정규식 규칙 | 내장 TODO/FIXME 규칙만 |
-| `_rejected.md` *(자동 생성)* | reflect 잡 + `/memory-update` | 이미 폐기한 회고 초안 → 같은 초안 재생성 방지 | 폐기한 게 다음 세션에 다시 올라옴 |
+| File | Hook that reads it | Role | If missing |
+|------|--------------------|------|------------|
+| `routes.json` | memory-search (PreToolUse edit/Bash) | edited file or shell command → memory to inject | no-op (nothing injected) |
+| `reflection-rules.json` | reflection (PostToolUse Edit/Write/`apply_patch`) | new code → quality warning regexes | only the built-in TODO/FIXME rule |
+| `_rejected.md` *(created automatically)* | reflect job + `/memory-update` | drafts already discarded → do not regenerate the same draft | discarded drafts come back next session |
 
-`_rejected.md` 는 템플릿에 없다 — `/memory-update` 가 처음 초안을 폐기할 때 머리말과 함께
-만든다. **gitignore 대상**이다: 안 남기기로 한 교훈 목록은 작업 습관·실수 이력에 가까워
-개인 tier 로 둔다. 같은 프로젝트의 Claude·Codex 는 같은 경로를 읽으므로 커밋하지 않아도
-두 툴이 함께 쓴다.
+`_rejected.md` is not in the template — `/memory-update` creates it, with a header, the first
+time a draft is discarded. It is **gitignored**: a list of lessons you decided not to keep is
+closer to work habits and mistake history, so it stays in the personal tier. Claude and Codex
+in the same project read the same path, so both tools share it without committing it.
 
-기본 활성 예시는 Kotlin/Spring 기준이다. **네 프로젝트 언어·규칙에 맞게 고쳐라.**
+The enabled examples target Kotlin/Spring. **Adapt them to your project's language and rules.**
 
-`reflection-rules.json`에는 기본 꺼짐인 `react-async-timing` 스타터 팩도 있다. React
-프로젝트에서만 해당 pack의 `enabled`를 `true`로 바꿔 사용한다. 정규식 경고는 타이밍
-위험 후보이므로 실제 scope를 확인하고 순서를 재현하는 테스트로 검증한다.
+`reflection-rules.json` also contains a `react-async-timing` starter pack that is off by
+default. Turn that pack's `enabled` to `true` only in a React project. Regex warnings are
+timing-risk *candidates*, so confirm the real scope and verify with a test that reproduces
+the ordering.
 
-## 메모리 파일 (routes.json 이 가리키는 것)
+## Memory files (what routes.json points at)
 
-`routes.json` 의 `memory` 항목이 가리키는 실제 지식 파일. 예: `patterns/code-quality.md`,
-`decisions/git-workflow.md`. frontmatter(name/description/type) 를 가진 마크다운으로 쓰고,
-`INDEX.md` 에 한 줄씩 등록한다(Codex 는 이 인덱스로 읽는다). `/memory-update` 스킬이 관리한다.
+The actual knowledge files referenced by the `memory` entries in `routes.json`, for example
+`patterns/code-quality.md` and `decisions/git-workflow.md`. Write them as markdown with
+frontmatter (name/description/type) and register each one on a line in `INDEX.md` (Codex falls
+back to reading that index directly). The `/memory-update` skill maintains them.
 
-메모리에는 오래 유지할 **결정·제약·비자명한 패턴**만 둔다. 재개 체크포인트, WIP,
-진행 중 PR과 다음 액션은 메모리가 아니다. 실제로 세션·툴·머신·사람을 전환할 때만
-`/handoff-save` 로 인계한다. 줄 수·테스트 수·열린 PR 상태처럼 코드나 명령으로 다시
-구할 수 있는 현재 값은 저장하지 않는다.
+Memory holds only **decisions, constraints and non-obvious patterns** that stay true for a long
+time. Resume checkpoints, WIP, in-flight PRs and next actions are not memory. Hand those over
+with `/handoff-save`, and only when you actually switch session, tool, machine or person. Do not
+store current values you can recompute from the code or a command, such as line counts, test
+counts or open-PR status.
 
-## _pending/ (자동 회고 초안)
+## _pending/ (automatic retrospective drafts)
 
-`HARNESS_AUTO_REFLECT=1` 로 자동 회고를 켜면, reflect 잡이 세션 트랜스크립트를 분석해
-승격 후보 초안을 `_pending/*.md` 에 쌓는다. `/memory-update` 로 검토·승격(또는 폐기)한다.
-기본은 꺼져 있다 — 설치만으로 백그라운드 LLM 잡이 뜨지 않는다.
+When you enable automatic retrospectives with `HARNESS_AUTO_REFLECT=1`, the reflect job analyses
+the session transcript and collects promotion candidates as drafts in `_pending/*.md`. Review and
+promote (or discard) them with `/memory-update`. It is off by default — installing the harness
+alone never starts a background LLM job.
 
-이 디렉토리의 `.gitignore` 가 `_pending/` 만 제외하므로 미승인 초안은 `git add .` 에
-포함되지 않는다. 검토를 마쳐 상위 메모리나 `decisions/` 로 승격한 파일은 정상적으로
-커밋할 수 있다.
+This automatic drafting runs on **Claude**. The Codex adapter currently ships only the merge
+detection and queueing stages: it registers no `UserPromptSubmit` hook and does not bundle
+`reflect.py`, so no LLM draft is generated there. See
+<https://github.com/foxyberry/agent-harness/blob/main/docs/codex-hooks.md>.
 
-이미 Git이 추적 중인 `_pending/` 파일에는 ignore 규칙이 소급 적용되지 않는다. 기존
-프로젝트에서 초안을 커밋한 적이 있다면 내용을 검토한 뒤 Git 인덱스에서도 제거해야 한다.
+The `.gitignore` in this directory excludes `_pending/` and `_rejected.md`, so unapproved drafts
+and the discarded-draft log are not picked up by `git add .`. A file you have reviewed and promoted
+to a top-level memory or to `decisions/` commits normally.
 
-## 자동 회고 켜기 (opt-in)
+The ignore rule is not retroactive for `_pending/` files Git already tracks. If an existing project
+has committed drafts before, review their content and then remove them from the Git index as well.
+
+## Enabling automatic retrospectives (opt-in)
 
 ```bash
-export HARNESS_AUTO_REFLECT=1   # 머지 시 claude -p 로 회고 초안 자동 생성
+export HARNESS_AUTO_REFLECT=1   # on merge, generate retrospective drafts with claude -p (Claude)
 ```
-백엔드는 `REFLECT_BACKEND`(claude|deepseek|ollama, 기본 claude) 로 고른다.
+Choose the backend with `REFLECT_BACKEND` (claude|deepseek|ollama, default claude).

@@ -1,36 +1,39 @@
 ---
 name: close-the-issue-close-the-doc
-description: 문서에 "알려진 버그·미검증·한계"를 적었으면 그 이슈를 닫을 때 문서도 같이 고친다 — 안 그러면 고쳐진 것이 버그로 남는다
+description: If a doc says "known bug / unverified / limitation", fix the doc when you close that issue — otherwise something already fixed stays documented as broken
 type: project
 ---
 
-문서에 **"알려진 버그"·"미검증"·"알려진 한계"**를 적는 순간, 그 문장은 이슈와 짝이 된다.
-이슈를 닫거나 그 한계를 없앤 PR 을 머지할 때 **문서도 같은 PR 에서 고친다.** 고친 사람이
-안 고치면 아무도 안 고친다 — 다음에 그 문서를 여는 사람은 고쳐진 걸 버그로 읽는다.
+The moment a doc says **"known bug", "unverified" or "known limitation"**, that sentence is
+paired with an issue. When you close the issue, or merge the PR that removes the limitation,
+**fix the doc in the same PR.** If the person who fixed it does not fix the doc, nobody will —
+and the next person to open that doc reads a fixed thing as a bug.
 
-**Why:** 2026-08-31 에 문서를 전수 점검했더니 세 건이 나왔다.
+**Why:** a full documentation sweep on 2026-08-31 turned up three cases.
 
-- `docs/guide.md` — "알려진 버그 #81 `/feedback-review` 가 `_pending` 과 과거 세션을 안 봄".
-  #81 은 08-19 에 #119 로 닫혔다. 12일 동안 고쳐진 기능이 버그로 안내되고 있었다.
-- `docs/self-improvement-hooks.md` — "초안 파서는 중첩 코드펜스에서 잘릴 수 있다".
-  `reflect.py` 가 이미 `^(` + 백틱`{3,})` 로 가변 길이 펜스를 쓴다. 고쳐져 있었다.
-- `docs/self-improvement-hooks.md` — "live-fire 미검증, 이슈 #3 으로 이관". #3 은 닫혔고,
-  **README 는 같은 사실을 "검증 완료"라고** 쓰고 있었다. 두 문서가 정반대를 주장했다.
+- `docs/guide.md` — "known bug #81: `/feedback-review` does not look at `_pending` or past
+  sessions". #81 was closed by #119 on 08-19. For 12 days a working feature was documented as
+  broken.
+- `docs/self-improvement-hooks.md` — "the draft parser can truncate on nested code fences".
+  `reflect.py` already uses a variable-length fence, `^(` + backtick`{3,})`. It was already fixed.
+- `docs/self-improvement-hooks.md` — "live-fire unverified, moved to issue #3". #3 was closed,
+  and **the README stated the same fact as "verified"**. Two documents claimed the opposite.
 
-마지막이 제일 나쁘다. 하나가 낡은 게 아니라 **어느 쪽을 읽었느냐로 결론이 갈린다.** 읽는
-사람은 자기가 모순된 저장소를 보고 있다는 걸 모른다.
+The last one is the worst. It is not that one is out of date — **which conclusion you reach
+depends on which document you read.** The reader has no idea the repository contradicts itself.
 
 **How to apply:**
 
-- 문서에 이슈 번호를 적을 때는 **그 문서가 그 이슈의 구독자**라고 생각한다. 이슈를 닫는
-  PR 의 체크리스트에 "이 번호를 언급한 문서" 를 넣는다:
-  `grep -rn "#<번호>" README*.md docs/ AGENTS.md`
-- 한계·미검증을 **없앤** PR 은 코드만 고치고 끝내지 않는다. 그 문장을 지우거나
-  "고쳐졌다"로 바꾸는 것까지가 그 PR 이다.
-- 지울 때 **그냥 지우지 말고 무엇이 달라졌는지 남긴다.** "#81 은 고쳐졌다 — 이제 `_pending`
-  은 항상, 과거 세션은 사람이 고른 것만 들어온다" 가 빈 자리보다 낫다. 다음 사람이 같은
-  질문을 다시 하지 않는다.
-- 반대로 **아직 참인 한계는 지우지 않는다.** 같은 점검에서 "회고 잡은 스폰 성공 = seen"
-  항목은 코드를 확인한 뒤 그대로 뒀다. 정리하는 김에 사실인 것까지 지우면 그것도 손실이다.
+- When you put an issue number in a doc, treat **that doc as a subscriber to that issue**. Put
+  "docs that mention this number" on the checklist of the PR that closes it:
+  `grep -rn "#<number>" README*.md docs/ AGENTS.md`
+- A PR that **removes** a limitation or an unverified caveat does not end with the code. Deleting
+  that sentence, or changing it to "fixed", is part of that PR.
+- When you delete it, **do not just delete it — say what changed.** "#81 is fixed — `_pending` is
+  now always included, and past sessions only when a human selects them" is better than a blank
+  space. The next person does not have to ask the same question again.
+- Conversely, **do not delete a limitation that is still true.** In the same sweep, the item
+  "the reflection job treats a successful spawn as seen" was left in place after checking the
+  code. Deleting true statements while tidying up is also a loss.
 
-관련: [[review-evidence-on-target-thread]]
+Related: [[review-evidence-on-target-thread]]

@@ -1,17 +1,20 @@
-# 프로젝트 메모리 인덱스
+# Project memory index
 
-공유(커밋) 메모리 목록. Claude 는 세션 시작 시 이 인덱스를 자동으로 보고, 이후
-memory-search 훅으로 관련 메모리 본문을 읽는다. **Codex 는 이 인덱스를 직접 읽는 것**을 기본으로 한다.
-`/memory-update` 가 메모리 파일을 추가·갱신할 때 여기에 한 줄씩 등록한다.
+The list of shared (committed) memories. Claude reads this index automatically at session
+start and then pulls memory bodies in through the memory-search hook. Codex ships the same
+hooks, but its coverage is partial — if this index was not injected at session start, read it
+directly (the harness documents the Codex limits in
+<https://github.com/foxyberry/agent-harness/blob/main/docs/codex-hooks.md>).
+`/memory-update` adds one line here whenever it adds or updates a memory file.
 
-- [code-quality](patterns/code-quality.md) — 코드 품질 규칙 (예시 — 교체하라)
-- [git-workflow](decisions/git-workflow.md) — git 작업 규칙 (예시 — 교체하라)
+- [code-quality](patterns/code-quality.md) — code quality rules (example — replace it)
+- [git-workflow](decisions/git-workflow.md) — git workflow rules (example — replace it)
 
-설정 파일:
-- `routes.json` — 편집 파일·셸 명령→메모리 주입 매핑
-- `reflection-rules.json` — 편집 후 품질 경고 정규식
-- `reflect-skip.json` — 회고 산출물 PR skip rule
+Configuration files:
+- `routes.json` — maps edited files and shell commands to the memory to inject
+- `reflection-rules.json` — regexes for post-edit quality warnings
+- `reflect-skip.json` — skip rules for retrospective-output PRs
 
-## 결정 기록 (ADR — decisions/, 스키마는 `memory-update` 스킬 §1.6)
-승격된 ADR 을 여기 한 줄씩 등록한다: `[<id>](decisions/<name>.md) — [chain: <chain>] <한 줄>`.
-(형식 예시는 `decisions/adr-EXAMPLE-*.md` 참조 — 그 예시 파일은 실제 결정이 아니므로 이 목록에 넣지 않는다.)
+## Decision records (ADR — decisions/, schema in the `memory-update` skill §1.6)
+Register each promoted ADR here on one line: `[<id>](decisions/<name>.md) — [chain: <chain>] <one line>`.
+(See `decisions/adr-EXAMPLE-*.md` for the format — that example is not a real decision, so it is not listed here.)

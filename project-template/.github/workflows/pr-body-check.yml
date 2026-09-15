@@ -12,7 +12,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Require bilingual implementation logic for implementation PRs
+      - name: Require English implementation sections for implementation PRs
         uses: actions/github-script@v7
         with:
           script: |
@@ -43,9 +43,9 @@ jobs:
             }
 
             const body = (pr.body || "").replace(/<!--[\s\S]*?-->/g, "").replace(/\r\n/g, "\n");
+            // English is the required language. A Korean section is welcome as an extra note,
+            // but it is optional and is not checked here.
             const sections = [
-              { name: "구현 내용 (KR)", pattern: /^##\s*구현\s*(내용|요약).*$/im },
-              { name: "구현 로직 (KR)", pattern: /^##\s*구현\s*(로직|방식).*$/im },
               { name: "Implementation Summary (EN)", pattern: /^##\s*Implementation\s*Summary.*$/im },
               { name: "Implementation Logic (EN)", pattern: /^##\s*Implementation\s*(Logic|Details).*$/im },
             ];
@@ -66,9 +66,10 @@ jobs:
             if (missing.length > 0) {
               core.setFailed(
                 [
-                  "Implementation PRs must explain what changed and how it works in Korean and English.",
+                  "Implementation PRs must explain what changed and how it works in English.",
                   `Missing or too short sections: ${missing.join(", ")}`,
                   "Add real implementation details, not only template placeholders or file lists.",
+                  "A Korean section may be added as an optional extra note.",
                 ].join("\n")
               );
             }

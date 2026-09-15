@@ -11,28 +11,40 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "project-template"
 
+EN_SECTIONS = [
+    "## Implementation Summary (EN)",
+    "## Implementation Logic (EN)",
+]
+KOREAN_SUMMARY = "사용자가 저장 버튼을 누르면 초안을 서버에 저장합니다."
+KOREAN_LOGIC = "입력값을 검증한 뒤 저장하고, 실패하면 기존 초안을 유지합니다."
+EN_SUMMARY = "Save the user's draft through the API when requested."
+EN_LOGIC = "Validate input, persist the draft, and preserve existing data on failure."
+
 
 class ProjectTemplateTest(unittest.TestCase):
-    def test_pr_template_and_check_require_bilingual_implementation_logic(self):
+    def test_pr_template_and_check_require_english_implementation_logic(self):
         template = (TEMPLATE / ".github" / "pull_request_template.md").read_text()
         workflow = (
             TEMPLATE / ".github" / "workflows" / "pr-body-check.yml"
         ).read_text()
         agents = (TEMPLATE / "AGENTS.md").read_text()
-        sections = [
-            "## 구현 내용 (KR)",
-            "## 구현 로직 (KR)",
-            "## Implementation Summary (EN)",
-            "## Implementation Logic (EN)",
-        ]
 
-        for section in sections:
+        for section in EN_SECTIONS:
             self.assertIn(section, template)
             self.assertIn(section.removeprefix("## "), workflow)
             self.assertIn(section.removeprefix("## "), agents)
+
+        # Korean is supplementary: the shipped template offers the optional section under an
+        # English heading, and the rules say English is required with Korean as an extra.
+        self.assertIn("## Korean notes (optional)", template)
+        self.assertIn("Korean notes (optional)", agents)
+        self.assertIn("in English", agents)
+        # The validator must not gate on any Korean heading, however the regex is spelled.
+        self.assertNotIn("구현", workflow)
+
         self.assertIn("feat|fix|refactor|perf", workflow)
         self.assertIn("length < 20", workflow)
-        self.assertIn("파일 이름", agents)
+        self.assertIn("file names", agents)
 
     @unittest.skipUnless(shutil.which("node"), "node is required")
     def test_pr_body_check_behavior(self):
@@ -52,14 +64,47 @@ const core = {
 %s
 })().then(() => console.log(JSON.stringify({ failure })));
 """ % textwrap.indent(script, "  ")
-        valid_body = """## 구현 내용 (KR)
-사용자가 저장 버튼을 누르면 초안을 서버에 저장합니다.
-## 구현 로직 (KR)
-입력값을 검증한 뒤 저장하고, 실패하면 기존 초안을 유지합니다.
-## Implementation Summary (EN)
-Save the user's draft through the API when requested.
+
+        english_only = f"""## Implementation Summary (EN)
+{EN_SUMMARY}
 ## Implementation Logic (EN)
-Validate input, persist the draft, and preserve existing data on failure.
+{EN_LOGIC}
+"""
+        english_with_korean_note = f"""{english_only}## 구현 노트 (KR)
+{KOREAN_SUMMARY}
+"""
+        # The previous policy required four bilingual sections. Bodies written that way must
+        # keep passing — the new rule is strictly more permissive.
+        legacy_bilingual = f"""## 구현 내용 (KR)
+{KOREAN_SUMMARY}
+## 구현 로직 (KR)
+{KOREAN_LOGIC}
+{english_only}"""
+        korean_only = f"""## 구현 내용 (KR)
+{KOREAN_SUMMARY}
+## 구현 로직 (KR)
+{KOREAN_LOGIC}
+"""
+        missing_summary = f"""## Implementation Logic (EN)
+{EN_LOGIC}
+"""
+        missing_logic = f"""## Implementation Summary (EN)
+{EN_SUMMARY}
+"""
+        short_summary = f"""## Implementation Summary (EN)
+Saves it.
+## Implementation Logic (EN)
+{EN_LOGIC}
+"""
+        short_logic = f"""## Implementation Summary (EN)
+{EN_SUMMARY}
+## Implementation Logic (EN)
+Validates.
+"""
+        placeholder_only = """## Implementation Summary (EN)
+<!-- Required. Summarize what was implemented in clear English. -->
+## Implementation Logic (EN)
+<!-- Required. Explain the core execution flow in English. -->
 """
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,24 +127,51 @@ Validate input, persist the draft, and preserve existing data on failure.
                 )
                 return json.loads(result.stdout)["failure"]
 
-            self.assertIsNone(check("feat(save): 초안 저장", valid_body))
-            self.assertIsNone(check("docs(readme): 설치 안내", ""))
+            # English alone is enough; Korean is accepted but never required.
+            self.assertIsNone(check("feat(save): save draft", english_only))
+            self.assertIsNone(
+                check("feat(save): save draft", english_with_korean_note)
+            )
+            # A Korean title still passes the language-agnostic title gate.
+            self.assertIsNone(check("feat(save): 초안 저장", legacy_bilingual))
+
+            # Either English section missing, too short, or replaced by Korean fails.
+            for body, expected in (
+                (korean_only, ["Implementation Summary (EN)", "Implementation Logic (EN)"]),
+                (missing_summary, ["Implementation Summary (EN)"]),
+                (missing_logic, ["Implementation Logic (EN)"]),
+                (short_summary, ["Implementation Summary (EN)"]),
+                (short_logic, ["Implementation Logic (EN)"]),
+                (placeholder_only, ["Implementation Summary (EN)", "Implementation Logic (EN)"]),
+                ("", ["Implementation Summary (EN)", "Implementation Logic (EN)"]),
+            ):
+                with self.subTest(body=body[:40]):
+                    failure = check("fix(save): restore saving", body)
+                    self.assertIn("Missing or too short", failure)
+                    for name in expected:
+                        self.assertIn(name, failure)
+                    for name in EN_SECTIONS:
+                        if name.removeprefix("## ") not in expected:
+                            self.assertNotIn(name.removeprefix("## "), failure)
+
+            # Non-implementation types, GitHub reverts and skip labels keep their behavior.
+            self.assertIsNone(check("docs(readme): install guide", ""))
             self.assertIsNone(check('Revert "feat(save): 초안 저장"', ""))
             self.assertIsNone(check('Revert "Revert \\"feat(save): 초안 저장\\""', ""))
             self.assertIsNone(
-                check("feat(save): 초안 저장", "", [{"name": "skip-pr-body-check"}])
+                check("feat(save): save draft", "", [{"name": "skip-pr-body-check"}])
             )
-            self.assertIn("Missing or too short", check("fix(save): 저장 복구"))
             for title in (
-                "[feature/issue1] feat: 저장",
-                "✨ feat(save): 저장",
-                "feat (save): 저장",
+                "[feature/issue1] feat: save",
+                "✨ feat(save): save",
+                "feat (save): save",
             ):
                 self.assertIn("PR titles must start", check(title))
+            # The title gate runs before the skip label.
             self.assertIn(
                 "PR titles must start",
                 check(
-                    "[feature/issue1] feat: 저장",
+                    "[feature/issue1] feat: save",
                     "",
                     [{"name": "skip-pr-body-check"}],
                 ),

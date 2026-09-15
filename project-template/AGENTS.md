@@ -1,48 +1,65 @@
-# AGENTS.md — <프로젝트명>
+# AGENTS.md — <project name>
 
-이 파일이 에이전트 지침의 **정본(single source of truth)** 이다.
-Codex 는 이 파일을 직접 읽고, Claude Code 는 `CLAUDE.md` 가 이 파일을 `@import` 한다.
-(둘을 따로 관리하지 말 것 — 규칙은 항상 여기에만 쓴다.)
+This file is the **single source of truth** for agent instructions.
+Codex reads it directly, and for Claude Code `CLAUDE.md` pulls it in with `@import`.
+(Do not maintain the two separately — rules always go here only.)
 
-## 프로젝트 개요
+## Project overview
 
-<이 repo 가 무엇인지 한두 줄. 스택·주요 디렉토리.>
+<One or two lines on what this repo is. Stack and main directories.>
 
-## 작업 규칙
+## Working rules
 
-- main 직접 푸시 금지 — 브랜치 + PR 로 진행.
-- <커밋 승인 규칙: 예) 커밋 전 사용자에게 확인>
-- <빌드/테스트 명령: 예) ./gradlew test>
+- Never push directly to main — work on a branch and open a PR.
+- <Commit approval rule, e.g. confirm with the user before committing>
+- <Build/test command, e.g. ./gradlew test>
 
-## PR 설명 규칙
+## PR description rules
 
-- 모든 PR 제목은 conventional type으로 시작한다. 예: `feat(scope): 설명`, `docs: 설명`.
-  브랜치 이름이나 이모지를 제목 앞에 붙이지 않는다. GitHub 자동 revert 제목은 예외다.
-- `feat`, `fix`, `refactor`, `perf` PR은 무엇을 바꿨는지와 실제로 어떻게 동작하는지를
-  한국어·영어로 각각 설명한다.
-- PR 본문에는 `구현 내용 (KR)`, `구현 로직 (KR)`, `Implementation Summary (EN)`,
-  `Implementation Logic (EN)` 네 섹션을 모두 작성한다.
-- 구현 로직에는 핵심 실행 순서, 조건 분기, 데이터 흐름, 실패·예외 처리를 쉬운 말로 적는다.
-  변경 파일 이름이나 함수 이름만 나열하는 것은 구현 설명으로 보지 않는다.
-- `.github/workflows/pr-body-check.yml`이 네 섹션의 존재와 최소 내용을 검사한다.
+- PR and issue titles and bodies are written **in English**. Korean is allowed only as an
+  optional supplement in addition to the English text, never in place of it.
+- Every PR title starts with a conventional type, e.g. `feat(scope): description`,
+  `docs: description`. Do not prefix the title with a branch name or an emoji.
+  GitHub's automatic revert titles are the exception.
+- `feat`, `fix`, `refactor` and `perf` PRs explain what changed and how it actually works
+  in English.
+- The PR body must contain the `Implementation Summary (EN)` and `Implementation Logic (EN)`
+  sections. A supplementary Korean section (for example `## Korean notes (optional)`) may be
+  added after them; it is never a substitute for the English sections.
+- The implementation logic describes the core execution order, branching, data flow, and
+  failure and error handling in plain words. Listing changed file names or function names only
+  does not count as an implementation description.
+- `.github/workflows/pr-body-check.yml` checks that the two English sections exist and are not
+  too short.
 
-## 메모리 (agent-harness)
+## Memory (agent-harness)
 
-- 공유 메모리는 `.claude/memory/` 에 **커밋**된다. 목록은 `.claude/memory/INDEX.md`.
-- Claude 플러그인은 세션 시작 시 `INDEX.md` 를 자동으로 주입한다. Codex 는 아직 훅 배포가 없어
-  작업 시작 시 이 인덱스를 직접 읽는 것을 기본 규칙으로 둔다.
-- 훅 데이터: `routes.json`(편집 파일·셸 명령→메모리 주입), `reflection-rules.json`(품질 경고 정규식),
-  `reflect-skip.json`(회고 산출물 PR skip rule).
-  이 프로젝트 언어·규칙에 맞게 고쳐 쓴다 — 없으면 훅은 조용히 no-op.
-- governance: 자동 회고 초안은 `_pending/` 에만 쌓이고, `/memory-update` 로
-  **사람 승인 후** 승격된다. 민감정보(키·토큰·내부 URL)는 메모리·핸드오프에 금지.
-- `.claude/.cache/` 는 훅·스킬의 로컬 상태와 로그이며 Git에 커밋하지 않는다.
-- 메모리에는 오래 유지할 결정·제약·패턴만 둔다. WIP·진행 중 PR·다음 액션은 실제 전환
-  시점의 `/handoff-save` 로만 인계하고, 줄 수·테스트 수처럼 다시 구할 수 있는 값은 저장하지 않는다.
+- Shared memory is **committed** under `.claude/memory/`. The list is `.claude/memory/INDEX.md`.
+- The Claude plugin injects `INDEX.md` automatically at session start. Codex ships the same
+  hooks, but its coverage is partial, so the fallback rule stands: if the index was not injected
+  at session start, read `.claude/memory/INDEX.md` directly before starting work. When it was
+  injected, do not read it again. The harness documents the Codex limits in
+  <https://github.com/foxyberry/agent-harness/blob/main/docs/codex-hooks.md>.
+- Hook data: `routes.json` (edited file or shell command → memory injection),
+  `reflection-rules.json` (quality warning regexes), `reflect-skip.json` (skip rules for
+  retrospective-output PRs).
+  Adapt them to this project's language and rules — without them the hooks quietly no-op, and
+  only the built-in TODO/FIXME check and the default retrospective skip rules remain.
+- Governance: automatic retrospective drafts only accumulate in `_pending/` and are promoted
+  **after human approval** through `/memory-update`. The automatic drafting job
+  (`HARNESS_AUTO_REFLECT=1`) is supported on Claude; on Codex only merge detection and queueing
+  run today. Secrets (keys, tokens, internal URLs) are forbidden in memory and handoffs.
+- `.claude/.cache/` holds local hook and skill state and logs; it is not committed to Git.
+- Memory holds only long-lived decisions, constraints and patterns. WIP, in-flight PRs and next
+  actions are handed over only through `/handoff-save` at an actual switch point, and values you
+  can recompute, such as line counts or test counts, are not stored.
 
-## 핸드오프
+## Handoff
 
-- 세션·툴(Codex↔Claude)·머신·사람을 바꾸기 전 `/handoff-save` — `.claude/handoff/<브랜치>.md` 로 커밋.
-- 이어받을 때 `/handoff-load` — 커밋된 핸드오프 1순위, 현재 git 상태가 항상 우선.
-- 어느 세션을 이어받을지 모르면 `/history`로 Claude·Codex 로그를 읽기 전용 조회·검색한 뒤,
-  선택한 경로를 `/fw --session`으로 넘긴다.
+- Before switching session, tool (Codex ↔ Claude), machine or person, run `/handoff-save` — it
+  saves `.claude/handoff/<branch>.md` locally. Saving does not commit: commit and push that file
+  under this project's commit approval rules, and never report a saved handoff as committed.
+- To pick work back up, run `/handoff-load` — the committed handoff comes first, and the current
+  git state always wins.
+- If you do not know which session to resume, browse and search Claude and Codex logs read-only
+  with `/history`, then pass the path you picked to `/fw --session`.

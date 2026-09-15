@@ -100,7 +100,7 @@ chmod +x plugins/harness/hooks/*.py
   printf '%s\n' '}'
 } > plugins/harness/hooks/hooks.json
 
-# ── Codex adapter: plugins/codex/ (skill-only plugin) ──────────
+# ── Codex adapter: plugins/codex/ (skills and hooks) ──────────
 # Aligned with the canonical convention (plugins/<name>) — same location as the OpenAI
 # marketplace and the Claude adapter (issue #4).
 # Scripts are bundled inside each skill folder (scripts/) to avoid assuming a bin PATH

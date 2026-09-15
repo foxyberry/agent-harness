@@ -1,38 +1,42 @@
 ---
 name: squash-merge-consequences
-description: 이 저장소는 squash merge — git 조상 기반 판정(branch --merged)이 무력화되고, stacked PR 은 base 머지 후 rebase 필요
+description: This repo uses squash merge — ancestry-based checks (branch --merged) stop working, and a stacked PR needs a rebase once its base is merged
 type: project
 ---
 
-이 저장소는 PR 을 **squash merge** 한다. PR 의 커밋들이 main 에 새 커밋 하나로 눌려
-들어가므로, **원래 브랜치 tip 은 main 의 조상이 되지 않는다.** 여기서 두 가지가 파생된다.
+This repository **squash merges** PRs. A PR's commits land on main as one new commit, so **the
+original branch tip never becomes an ancestor of main.** Two things follow.
 
-**1. `git branch --merged` 가 아무것도 못 잡는다**
+**1. `git branch --merged` finds nothing**
 
-머지 여부는 git 조상 관계가 아니라 **PR head 기준**으로 판정해야 한다
-(`gh pr list --state all --json headRefName,state`). 브랜치 삭제도 `-d` 는 거부되므로 `-D` 가 필요하다.
+Merged-ness has to be decided from the **PR head**, not from git ancestry
+(`gh pr list --state all --json headRefName,state`). Branch deletion also needs `-D`, since `-d`
+refuses.
 
-**2. stacked PR 은 base 가 머지되면 rebase 해야 한다**
+**2. A stacked PR must be rebased once its base is merged**
 
-base PR 위에 쌓은 PR 의 base 를 main 으로 바꾸기만 하면, base PR 의 **옛 커밋이 딸려
-들어간다**(squash 결과와 patch-id 가 다르므로). `git rebase --onto origin/main <옛 base>` 로
-자기 커밋만 옮긴 뒤 base 를 변경한다.
+If you only retarget a PR stacked on a base PR to main, **the base PR's old commits come along**
+(the squash result has a different patch-id). Move just your own commits with
+`git rebase --onto origin/main <old base>`, then change the base.
 
-**Why:** 2026-08-07 실측.
-- 정리 도구가 "로컬 merged 브랜치 0개 / worktree 0개"로 오탐했다. 실제로는 로컬 23개 중
-  22개, worktree 3개 전부가 정리 대상이었다. `git branch --merged` 로 판정한 섹션만 그랬고,
-  PR API 를 쓴 원격 섹션은 제대로 잡았다 — 판정 근거가 섹션마다 갈려 있던 게 원인.
-  (그 도구는 2026-08-17 에 개인 스킬로 옮겼다. squash merge 판정 문제 자체는 그대로 유효하다.)
-- PR #77 을 #74 위에 쌓았는데 #74 가 squash 머지되자, base 만 바꾸면 #74 의 옛 커밋이
-  섞이는 상태가 됐다. 사용자가 "리베이스 해야 하는거 아니야?"를 먼저 지적했다.
+**Why:** measured 2026-08-07.
+- A cleanup tool reported "0 merged local branches / 0 worktrees". In reality 22 of 23 local
+  branches and all 3 worktrees were cleanup candidates. Only the sections that judged with
+  `git branch --merged` were wrong; the remote section, which used the PR API, got it right —
+  the cause was that the basis for the decision differed per section. (That tool moved to a
+  personal skill on 2026-08-17. The squash-merge detection problem itself still stands.)
+- PR #77 was stacked on #74, and once #74 was squash merged, simply changing the base would have
+  mixed in #74's old commits. The user was the first to point out "shouldn't this be rebased?".
 
 **How to apply:**
-- 브랜치·worktree 정리 후보를 판정할 때 `git branch --merged` 를 쓰지 마라. PR API 로 판정한다.
-- stacked PR 은 base 머지 직후 `git rebase --onto origin/main <옛 base 브랜치>` → force-push →
-  `gh pr edit --base main`. 바꾸기 전에 `git diff origin/main --name-only` 로 **의도한 파일만**
-  들었는지 확인한다.
-- 삭제 전 복구 가능성을 확인한다: merged PR head 는 main 에 내용이 있고, closed PR head 도
-  GitHub 이 `refs/pull/<N>/head` 를 영구 보관한다. **PR 기록이 아예 없는 로컬 브랜치만
-  진짜로 사라진다** — 이것만 따로 확인받아라.
+- Do not use `git branch --merged` to pick branch or worktree cleanup candidates. Decide with the
+  PR API.
+- For a stacked PR, right after the base is merged:
+  `git rebase --onto origin/main <old base branch>` → force-push → `gh pr edit --base main`.
+  Before switching, confirm with `git diff origin/main --name-only` that **only the intended
+  files** are included.
+- Check recoverability before deleting: a merged PR head's content is on main, and for a closed
+  PR head GitHub keeps `refs/pull/<N>/head` permanently. **Only a local branch with no PR record
+  at all is really gone** — get explicit confirmation for those.
 
-관련: [[build-drift]]
+Related: [[build-drift]]
