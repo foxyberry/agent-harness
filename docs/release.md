@@ -46,6 +46,8 @@ directories, so its sessions survive an update. Details in [codex-hooks.md](code
 machinery only. Your `AGENTS.md`, `CLAUDE.md`, `.github/`, and `.claude/memory/` are never
 overwritten by an update. When `project-template/` changes in a release, those changes reach an
 existing project **only if you merge them in by hand** — read the diff and adopt what applies.
+`/template-check` lists the `.claude/memory/` template files a project lacks or has with different
+content; it is read-only.
 
 ---
 

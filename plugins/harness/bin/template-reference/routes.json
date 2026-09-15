@@ -1,0 +1,12 @@
+{
+  "//": "memory-search hook data — maps 'which memory to inject when a given file is edited'.",
+  "//engine": "The engine (core) hardcodes nothing. This file is the per-project data. Delete it and the hook is a no-op.",
+  "//format": "glob=fnmatch, contains=substring (case-insensitive), match_empty=also match edits with no path, command_contains=substring of the raw shell command, memory=path relative to .claude/memory/",
+  "//scope": "Path keys (glob, contains, match_empty) are read only for file edits; command_contains only for shell commands. They never cross over — otherwise a contains rule would also fire on read-only commands such as grep.",
+  "//example": "The rules below are a Kotlin/Spring example. Adapt them to your project. A memory file must actually exist to be injected (missing files are skipped silently).",
+  "rules": [
+    { "glob": "*.kt", "memory": ["patterns/code-quality.md"] },
+    { "contains": ["git"], "match_empty": true, "memory": ["decisions/git-workflow.md"] },
+    { "command_contains": ["gh pr create"], "memory": ["decisions/git-workflow.md"] }
+  ]
+}

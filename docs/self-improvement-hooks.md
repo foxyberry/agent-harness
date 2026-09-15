@@ -236,7 +236,9 @@ it might be boilerplate. Hardcoding the broader list could silently discard a me
 retrospective.
 
 The broader example is therefore project data in
-`project-template/.claude/memory/reflect-skip.json`. Copy and adjust it as needed:
+`project-template/.claude/memory/reflect-skip.json`. Copy and adjust it as needed. A project that
+adopted the template before this file existed does not have it; `/template-check` lists it as
+missing.
 
 ```json
 {

@@ -1,0 +1,50 @@
+{
+  "//": "reflection hook data — quality warnings to raise about the code just written (language- and team-specific).",
+  "//engine": "The engine (core) hardcodes no language rules. Only the generic TODO/FIXME rule is built in; everything else is data here.",
+  "//format": "glob=file to apply to, globs=array of file patterns (omit both to apply to everything), regex=Python re pattern, enabled=false disables the rule, min_count=fire only at this many matches or more (default 1), message={count} is replaced with the match count",
+  "//packs": "packs are opt-in rule bundles. In a project that wants one, flip that pack's enabled to true.",
+  "//builtins": "To turn the built-in TODO/FIXME warning off: \"builtins\": {\"todo_fixme\": false}",
+  "//example": "rules are enabled-by-default Kotlin examples; packs are disabled-by-default opt-in examples. Adapt them to your language and rules.",
+  "rules": [
+    {
+      "glob": "*.kt",
+      "regex": "!!",
+      "message": "{count} use(s) of `!!` — consider replacing with requireNotNull or ?: return"
+    },
+    {
+      "glob": "*.kt",
+      "regex": "(?m)^\\s*var ",
+      "min_count": 3,
+      "message": "Many var declarations ({count}) — consider fold/associate/sumOf instead"
+    }
+  ],
+  "packs": [
+    {
+      "name": "react-async-timing",
+      "enabled": false,
+      "description": "Candidates for React effect and async ordering risks. These are regex warnings, so check the real scope and execution order.",
+      "rules": [
+        {
+          "globs": ["*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.mts", "*.cts"],
+          "regex": "set[A-Z]\\w*\\(\\s*\\(?\\s*\\w+(?:\\s*:[^)=]+)?\\s*\\)?\\s*=>\\s*(?:\\{(?:(?!\\}\\s*\\))[\\s\\S]){0,600}?|[^{};\\n]{0,600}?)(?:localStorage\\.|save[A-Z]\\w*\\s*\\(|fetch\\s*\\()",
+          "message": "{count} candidate side effect(s) inside a state updater — an updater can re-run, so consider moving localStorage/save/fetch to an effect or event boundary. tsc and existing tests do not guarantee ordering, so reproduce it with renderHook + rerender"
+        },
+        {
+          "globs": ["*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.mts", "*.cts"],
+          "regex": "(?:catch\\s*(?:\\([^)]*\\))?\\s*\\{|\\.catch\\s*\\(\\s*(?:\\([^)]*\\)|\\w+)\\s*=>\\s*\\{)(?!(?:[^{}]{0,800}?)(?:set\\w*(?:Loaded|Ready|Settled)\\w*\\s*\\(|\\w+Ref\\.current\\s*=\\s*true))[^{}]{0,800}?\\}",
+          "message": "{count} candidate catch path(s) with no loaded/ready/settled completion signal — check that later saves are not blocked forever. Reproduce the pending->reject order with renderHook + rerender"
+        },
+        {
+          "globs": ["*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.mts", "*.cts"],
+          "regex": "\\b\\w+Ref\\.current\\s*(?:===|!==|\\?(?!\\.))",
+          "message": "{count} candidate render path(s) branching on ref.current — changing a ref does not trigger a rerender. Check whether this is render scope, and consider moving to state or a derived value plus a rerender test"
+        },
+        {
+          "globs": ["*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.mts", "*.cts"],
+          "regex": "use(?:Layout)?Effect\\s*\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{\\s*set[A-Z]\\w*\\(\\s*(?:new\\s+(?:Set|Map)\\s*(?:<[^>]*>)?\\s*\\(\\s*\\)|\\[\\s*\\])\\s*\\)",
+          "message": "{count} candidate effect(s) whose first action resets a state collection — check whether it overwrites a value filled in by a parent or another effect in the same commit. Test the mount, account switch, and unmount-then-remount order"
+        }
+      ]
+    }
+  ]
+}

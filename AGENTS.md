@@ -67,9 +67,12 @@ cross-platform use and external distribution).
 
 - **Claude**: `/plugin marketplace add foxyberry/agent-harness` → `/plugin install agent-harness@foxyberry`
 - **Codex**: `codex plugin marketplace add foxyberry/agent-harness`, or locally `codex plugin marketplace add ./`. No separate installer: the official marketplace CLI handles install, update and cache.
-- **Both**: copy `project-template/` into the project (the canonical AGENTS.md plus the `.claude/memory` template)
+- **Both**: copy `project-template/` into the project (the canonical AGENTS.md plus the `.claude/memory` template).
+  The plugins do not ship `project-template/`; they ship only a read-only copy of its
+  `.claude/memory/` as the reference for `/template-check`, which reports what an adopted project
+  lacks or has with different content and never writes (#132).
 
-Installation differs per tool, but the **user-facing command names stay identical**: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/history`, `/feedback-review`, `/memory-update`.
+Installation differs per tool, but the **user-facing command names stay identical**: `/handoff-save`, `/handoff-load`, `/fw`, `/fw-both`, `/history`, `/feedback-review`, `/memory-update`, `/template-check`.
 
 **handoff vs fw vs fw-both**: `handoff-save/load` = the portable canonical record a human commits explicitly (works across machines). `fw` = the fallback that reconstructs state from session logs (Claude `.jsonl` / Codex rollout) even when nothing was saved (same machine, for switching tools). The rendered `fw` passes the **opposite tool** as the `--from` default, so the current session cannot select itself. `fw-both` = the variant that reads **both Claude and Codex logs at once** (`fw --from both`) — use it when work is scattered across tools and you want to resume from the combination. The rendered `fw-both` passes `--current <current tool>` (rendered per adapter as claude or codex at build time) so that only **the current tool's live session** is excluded (the other tool's latest log is the immediately preceding work, so it is kept). In all three, **the current git state wins**.
 
@@ -113,6 +116,10 @@ It did overflow once. On 2026-08-17, five skills (`merge-cleanup`, `prettier-gua
 Adding a third axis ("inspection") kept accumulating ordinary git work such as branch cleanup
 and issue triage, and that work was consuming most of the repository's maintenance cost.
 **Keep it to two axes.**
+
+`template-check` (#132) passes this test on the memory axis: it compares the project's
+`.claude/memory/` — data the harness hooks read by name — with the template reference, and it only
+reads. The #105 removals handled git and GitHub.
 
 When a case looks borderline, move it out rather than carving an exception. One exception and
 the line blurs again.
