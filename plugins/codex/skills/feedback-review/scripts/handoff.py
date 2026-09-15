@@ -1,34 +1,39 @@
 #!/usr/bin/env python3
-"""
-작업 핸드오프 (portable work handoff).
+"""Portable work handoff.
 
-세션·툴·머신·사람을 넘어 작업을 이어받기 위한 "이식 가능한 핸드오프 상태"를
-git 에 커밋되는 파일로 관리한다.
+Keeps the "portable handoff state" that lets work be picked up across sessions,
+tools, machines and people, in a file that is committed to git.
 
-왜 필요한가:
-  - transcript(.jsonl) 는 로컬·툴 종속이다. Claude=`~/.claude/projects/...`,
-    Codex=`~/.codex/sessions/...` 로 위치·포맷이 다르고, 둘 다 repo 밖이라
-    다른 머신/사람/툴은 읽을 수 없다. (참고: cross-machine-feedback-placement)
-  - 반면 이 핸드오프 파일은 `.claude/handoff/<branch>.md` 에 커밋되므로
-    clone/pull 하는 모든 머신·사람·에이전트가 동일하게 본다.
+Why it is needed:
+  - A transcript (.jsonl) is local and tool-specific. Claude=`~/.claude/projects/...`,
+    Codex=`~/.codex/sessions/...` differ in location and format, and both live outside
+    the repo, so another machine/person/tool cannot read them.
+    (see: cross-machine-feedback-placement)
+  - This handoff file, on the other hand, is committed at `.claude/handoff/<branch>.md`,
+    so every machine/person/agent that clones or pulls sees exactly the same thing.
 
-계층:
-  - 이식 경로(1순위) = 이 핸드오프 파일  → **커밋된 뒤에** 누구나/어디서나/어느 툴이나
-  - 깊은 복구(보강)  = 로컬 transcript(.jsonl)  → 같은 머신·같은 툴일 때만
+Layers:
+  - Portable path (first choice) = this handoff file → **once committed**, for anyone,
+    anywhere, on any tool.
+  - Deep recovery (supplement)   = the local transcript (.jsonl) → same machine, same
+    tool only.
 
-  ⚠️ 이 스크립트는 커밋하지 않는다(저장 ≠ 커밋, tracked·staged ≠ 커밋). 커밋 상태는 본문에
-  박제하지 않고 `handoff_sync_state()` 가 조회 시점에 계산한다(#133).
+  ⚠️ This script does not commit (saving ≠ committing, tracked/staged ≠ committed). The
+  commit state is never baked into the body; `handoff_sync_state()` computes it at
+  lookup time (#133).
 
-서브커맨드:
-  save  현재 git 사실을 자동 수집해 핸드오프 파일을 생성/갱신한다.
-        서술(요약/완료/다음/검증)은 에이전트가 인자로 채운다.
-  load  현재 브랜치 핸드오프 파일 + 현재 git 사실을 출력한다(이식 경로).
-        로컬 transcript 가 있으면 "깊은 복구 가능" 힌트를 덧붙인다.
+Subcommands:
+  save  Collects current git facts automatically and creates/updates the handoff file.
+        The narrative (summary/done/next/verification) is filled in by the agent via
+        arguments.
+  load  Prints the handoff file for the current branch plus current git facts
+        (the portable path). If a local transcript exists, adds a "deep recovery
+        available" hint.
 
-툴 무관: Claude(.claude/skills) · Codex(.agents/skills) 모두 이 스크립트를 호출한다.
-stdlib 전용 (외부 의존성 없음). Python 3.8+.
+Tool-agnostic: both Claude (.claude/skills) and Codex (.agents/skills) call this script.
+Standard library only (no external dependencies). Python 3.8+.
 
-사용:
+Usage:
   python3 scripts/handoff/handoff.py save \
       --agent claude --summary "..." --done "..." --next "..." --verify "..."
   python3 scripts/handoff/handoff.py load
@@ -48,7 +53,7 @@ SNIP = 500
 
 
 def run(cmd, cwd=None):
-    """셸 명령 실행 후 (stdout, ok) 반환. 실패해도 예외 없이 빈 문자열."""
+    """Run a shell command and return (stdout, ok). Never raises; empty string on failure."""
     try:
         out = subprocess.run(
             cmd, cwd=cwd, capture_output=True, text=True, timeout=20
@@ -59,10 +64,10 @@ def run(cmd, cwd=None):
 
 
 def probe(cmd, cwd=None):
-    """상태 판정용 실행 — `(returncode, ran)` 반환.
+    """Run a command for state detection — returns `(returncode, ran)`.
 
-    `run()` 은 returncode 를 bool 로 접어 "없다(1)" 와 "조회가 실패했다(128)" 를 못 가른다.
-    `ran=False` 는 "모른다" 이지 "아니다" 가 아니다.
+    `run()` folds the returncode into a bool, which cannot distinguish "absent (1)"
+    from "the lookup itself failed (128)". `ran=False` means "unknown", not "no".
     """
     try:
         out = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=20)
@@ -72,7 +77,8 @@ def probe(cmd, cwd=None):
 
 
 def head_blob(root, rel):
-    """HEAD 커밋에 든 `<rel>` 의 **바이트 내용**. 못 꺼내면 None ("모른다")."""
+    """The **raw bytes** of `<rel>` as stored in the HEAD commit. None if unavailable
+    ("unknown")."""
     try:
         out = subprocess.run(["git", "cat-file", "blob", "HEAD:" + rel],
                              cwd=root, capture_output=True, timeout=20)
@@ -82,13 +88,14 @@ def head_blob(root, rel):
 
 
 def repo_root(explicit=None):
-    """핸드오프를 저장/조회할 프로젝트 루트. 우선순위:
-    1) 명시 인자(--project-dir) — cwd 무관하게 확정. Codex 처럼 스크립트를 스킬 폴더에서
-       실행할 때, 사용자 프로젝트를 명시하기 위한 것(스킬 폴더는 플러그인 캐시라 repo 밖일 수 있음).
-    2) CLAUDE_PROJECT_DIR env — Claude 훅/플러그인이 세팅.
-    3) git toplevel(cwd 기준) — cwd 가 사용자 프로젝트 안일 때.
-    4) cwd 폴백.
-    명시/env 경로가 git repo(또는 그 하위)면 toplevel 로 정규화한다."""
+    """Project root used to save/look up the handoff. Priority order:
+    1) Explicit argument (--project-dir) — fixed regardless of cwd. Needed when the script
+       runs from a skill folder (as Codex does) to name the user project explicitly
+       (the skill folder is a plugin cache and may live outside the repo).
+    2) CLAUDE_PROJECT_DIR env — set by Claude hooks/plugins.
+    3) git toplevel (relative to cwd) — when cwd is inside the user project.
+    4) cwd fallback.
+    If the explicit/env path is a git repo (or below one), it is normalized to the toplevel."""
     cand = explicit or os.environ.get("CLAUDE_PROJECT_DIR")
     if cand:
         cand = os.path.abspath(os.path.expanduser(cand))
@@ -104,7 +111,7 @@ def current_branch(root):
 
 
 def safe_name(branch):
-    """브랜치명을 파일명으로 — '/' 등 경로문자를 '-' 로 치환."""
+    """Branch name → file name: replace path characters such as '/' with '-'."""
     return branch.replace("/", "-").replace(" ", "_")
 
 
@@ -112,32 +119,36 @@ def handoff_path(root, branch):
     return os.path.join(root, HANDOFF_DIR, safe_name(branch) + ".md")
 
 
-# 파일 본문에 박제하면 커밋 전후로 반드시 거짓이 되므로(#133) 상태는 save/load 가 돌 때마다
-# 계산한다. `committed-*` 는 로컬 커밋 기준 — 푸시는 판정하지 않는다.
+# Baking the state into the file body inevitably makes it false on one side of the commit
+# (#133), so the state is computed every time save/load runs. `committed-*` is judged
+# against the local commit — push state is never claimed.
 HANDOFF_STATE_LABELS = {
-    "missing": "파일 없음",
-    "unknown": "확인 불가 — git 조회 실패 (커밋 여부를 단정하지 않음)",
-    "untracked": "커밋 안 됨 — git 에 추가조차 안 된 상태(untracked)",
-    "staged-new": "커밋 안 됨 — `git add` 로 staged 만 된 상태",
-    "committed-clean": "커밋됨 — HEAD 커밋 내용과 현재 파일이 동일 (로컬 커밋 기준. 푸시 여부는 별개)",
-    "committed-modified": "커밋 후 수정됨 — 현재 파일(워킹트리)이 HEAD 커밋 내용과 다름",
-    "committed-untracked": "HEAD 엔 커밋본이 있으나 현재 파일은 git 추적 밖(`git rm --cached` 등)",
+    "missing": "no file",
+    "unknown": "cannot tell — git lookup failed (no claim either way about the commit state)",
+    "untracked": "not committed — not even added to git (untracked)",
+    "staged-new": "not committed — only staged with `git add`",
+    "committed-clean": "committed — the current file matches the HEAD commit contents (local commit only; pushed state is separate)",
+    "committed-modified": "modified after commit — the current file (working tree) differs from the HEAD commit contents",
+    "committed-untracked": "HEAD holds a committed copy, but the current file is outside git tracking (`git rm --cached` etc.)",
 }
 
 
 def handoff_sync_state(root, path):
-    """이 핸드오프 파일 하나의 커밋 상태. index 멤버십 → HEAD 멤버십 → **내용 비교** 순.
+    """Commit state of this one handoff file. Index membership → HEAD membership →
+    **content comparison**, in that order.
 
-    tracked ≠ committed ≠ 내용 일치다 — `git add` 만 해도 tracked 이고, 커밋 뒤 다시 save 하면
-    HEAD 와 워킹트리가 갈린다. 판정 규칙 셋:
+    tracked ≠ committed ≠ identical content — a mere `git add` makes it tracked, and
+    saving again after a commit splits HEAD from the working tree. Three rules:
 
-    - 종료코드를 그대로 본다. `!= 0` 으로 뭉개면 조회 실패(128)가 '부재'(1)로 둔갑한다
-      (비저장소 → unknown, 커밋 0개 저장소 → 커밋된 것일 수 없음).
-    - 내용은 `git diff` 가 아니라 HEAD blob 을 꺼내 **바이트로** 비교한다. diff 는
-      `assume-unchanged`·`skip-worktree` 에서 조용히 "차이 없음" 을 돌려줘 HEAD 에 없는 내용을
-      '커밋됨' 이라 말하게 된다. 바이트 비교는 틀리는 방향이 반대다 — 줄끝·필터 차이로 clean 을
-      modified 라 할 수는 있어도, HEAD 에 없는 내용을 clean 이라 하진 못한다.
-    - 푸시 여부는 판정하지 않고, 이 파일 외 index 상태도 말하지 않는다.
+    - Read the exit code as-is. Flattening it with `!= 0` disguises a failed lookup (128)
+      as absence (1) (non-repository → unknown; repository with zero commits → cannot
+      possibly be committed).
+    - Compare contents by pulling the HEAD blob and diffing **bytes**, not via `git diff`.
+      diff quietly reports "no difference" under `assume-unchanged`/`skip-worktree`, which
+      makes us call content that is not in HEAD "committed". Byte comparison errs in the
+      opposite direction — line endings or filters may make a clean file look modified,
+      but it can never call content that is missing from HEAD clean.
+    - Push state is not judged, and nothing is said about index state beyond this file.
     """
     if not os.path.isfile(path):
         return "missing"
@@ -176,26 +187,28 @@ def handoff_state_label(state):
 
 
 def now_iso():
-    # 로컬 타임존 포함 ISO (예: 2026-06-30T14:05:00+09:00)
+    # ISO timestamp including the local timezone (e.g. 2026-06-30T14:05:00+09:00)
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 def machine_name():
     """Return an explicit machine label without leaking the host name by default."""
-    return os.environ.get("HARNESS_HANDOFF_MACHINE", "비공개")
+    return os.environ.get("HARNESS_HANDOFF_MACHINE", "undisclosed")
 
 
 def git_facts(root):
-    """이어받는 쪽이 transcript 없이도 현재 상태를 대조할 수 있게 git 사실 수집."""
+    """Collect git facts so the receiving side can cross-check the current state even
+    without a transcript."""
     branch = current_branch(root)
     status, _ = run(["git", "status", "-sb"], cwd=root)
     stat_unstaged, _ = run(["git", "diff", "--stat"], cwd=root)
     stat_staged, _ = run(["git", "diff", "--cached", "--stat"], cwd=root)
-    # origin/main 대비 앞선 커밋 (base 가 main 이 아닐 수 있으나 가장 흔한 기준)
+    # Commits ahead of origin/main (the base may not be main, but this is the most common
+    # reference point)
     ahead, ahead_ok = run(
         ["git", "log", "--oneline", "origin/main..HEAD"], cwd=root
     )
-    # 열린 PR (gh 있고 네트워크 되면). 실패해도 무시.
+    # Open PRs (when gh exists and the network is up). Ignored on failure.
     pr, pr_ok = run(
         ["gh", "pr", "list", "--head", branch,
          "--json", "number,title,url",
@@ -207,37 +220,41 @@ def git_facts(root):
         "status": status,
         "stat_unstaged": stat_unstaged,
         "stat_staged": stat_staged,
-        "ahead": ahead if ahead_ok else "(origin/main 대비 비교 불가 — fetch 필요)",
-        "pr": pr if (pr_ok and pr) else "(없음 또는 조회 불가)",
+        "ahead": ahead if ahead_ok else "(cannot compare against origin/main — fetch needed)",
+        "pr": pr if (pr_ok and pr) else "(none, or lookup failed)",
     }
 
 
 def transcript_hint(root):
-    """같은 머신에 **이 프로젝트의** 로컬 transcript 가 있으면 '깊은 복구 가능' 힌트 반환.
+    """Return a "deep recovery available" hint when a local transcript **for this project**
+    exists on this machine.
 
-    ⚠️ 양쪽 다 반드시 프로젝트로 스코프한다. 예전 Codex 분기는 `~/.codex/sessions` 전체를
-    훑어 "존재함"만 알렸는데, 그 문구는 어떤 세션이 이 프로젝트 것인지 말해주지 않아
-    사람·모델이 직접 로그를 뒤지게 만들었고, 손 탐색에는 스코핑이 없어서 **전역 mtime 최신인
-    남의 프로젝트 세션**을 직전 작업으로 오인했다(이슈 #95). 힌트는 개수를 세는 게 목적이
-    아니라 **다음에 칠 명령**을 알려주는 것이다 — 없으면 없다고 분명히 말한다.
+    ⚠️ Both branches must be scoped to the project. An older Codex branch scanned all of
+    `~/.codex/sessions` and only reported "they exist", which never told you which session
+    belonged to this project. That sent people and models off to dig through logs by hand,
+    and hand-digging has no scoping — so a globally newest session **from someone else's
+    project** was mistaken for the most recent work (issue #95). The point of the hint is
+    not to count anything but to name **the next command to run** — if there is nothing,
+    say so plainly.
     """
     hints = []
-    # Claude: ~/.claude/projects/<cwd '/'→'-'>/*.jsonl — 디렉터리 자체가 프로젝트별로
-    # 갈리므로 한 번의 listdir 로 스코프와 개수가 동시에 나온다(싸다).
+    # Claude: ~/.claude/projects/<cwd '/'→'-'>/*.jsonl — the directory itself is per project,
+    # so a single listdir yields both the scoping and the count (cheap).
     claude_dir = _claude_project_dir(root)
     if os.path.isdir(claude_dir):
         jsonls = [f for f in os.listdir(claude_dir) if f.endswith(".jsonl")]
         if jsonls:
             hints.append(
-                f"Claude transcript {len(jsonls)}개 @ {claude_dir} "
-                f"→ `/fw --from claude` 또는 `/fw-both` 로 깊은 복구 가능 (이 머신 한정)"
+                f"{len(jsonls)} Claude transcript(s) @ {claude_dir} "
+                f"→ deep recovery via `/fw --from claude` or `/fw-both` (this machine only)"
             )
-    # Codex: 프로젝트 구분이 파일 안(session_meta.cwd)에 있어 개수를 세려면 전부 열어야 한다.
-    # 힌트에 필요한 건 개수가 아니라 **다음에 칠 명령**이므로 존재 여부만 확인하고 멈춘다.
+    # Codex: the project marker lives inside the file (session_meta.cwd), so counting would
+    # mean opening every one of them. The hint needs **the next command**, not a count, so
+    # this stops at "does one exist".
     if _has_project_codex_rollout(root):
         hints.append(
-            f"Codex rollout 있음 @ {_codex_sessions_dir()} "
-            f"→ `/fw --from codex` 또는 `/fw-both` 로 깊은 복구 가능 (이 머신 한정)"
+            f"Codex rollout present @ {_codex_sessions_dir()} "
+            f"→ deep recovery via `/fw --from codex` or `/fw-both` (this machine only)"
         )
     return hints
 
@@ -254,9 +271,11 @@ def _claude_project_key(path):
 
 
 def _recent_claude_transcripts(root, limit=2, exclude_stem=None):
-    """최근 Claude Code top-level transcript 목록. subagents 는 보조 로그라 기본 제외.
-    exclude_stem: 파일명 stem(=세션 UUID)이 이것과 같으면 제외 — fw both 에서 현재
-    실행 중인 Claude 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
+    """Most recent top-level Claude Code transcripts. Subagent logs are auxiliary and are
+    excluded by default.
+    exclude_stem: skip the file whose name stem (= session UUID) equals this — so that
+    `fw both` does not mistake the currently running Claude session (the one that invoked
+    fw) for the most recent work."""
     claude_dir = _claude_project_dir(root)
     if not os.path.isdir(claude_dir):
         return []
@@ -282,10 +301,11 @@ TIMELINE_CAP = 20
 
 
 def _ts_label(ts):
-    """ISO 타임스탬프 → `MM-DD HH:MM` (로컬). 파싱 실패하면 앞부분을 그대로 쓴다.
+    """ISO timestamp → `MM-DD HH:MM` (local). Falls back to the leading substring if parsing
+    fails.
 
-    날짜를 붙이는 이유: 세션 하나가 며칠에 걸치는 일이 흔하다(재부팅 전후, resume).
-    시:분만 있으면 순서가 뒤집힌 것처럼 보인다.
+    Why the date is included: a single session commonly spans several days (across reboots,
+    or on resume). With only hours and minutes the order looks inverted.
     """
     if not isinstance(ts, str) or not ts:
         return "--:--"
@@ -297,11 +317,11 @@ def _ts_label(ts):
 
 
 def _push_timeline(summary, ts, kind, text):
-    """시간순 타임라인에 한 줄 쌓는다(최근 TIMELINE_CAP 개만 유지).
+    """Append one row to the chronological timeline (only the last TIMELINE_CAP are kept).
 
-    `last_users`/`last_assistants`/`last_tools` 는 종류별로 잘려 있어서 **서로 섞이지
-    않는다.** "마지막에 뭐 했나" 는 순서가 핵심인데 — 어떤 지시 다음에 무슨 도구를
-    돌렸는지 — 그 형태로는 안 보인다(이슈 #96).
+    `last_users`/`last_assistants`/`last_tools` are truncated per kind, so they **never
+    interleave**. But "what happened last" is all about order — which tool ran after which
+    instruction — and that shape cannot show it (issue #96).
     """
     if not text:
         return
@@ -309,7 +329,7 @@ def _push_timeline(summary, ts, kind, text):
     summary["timeline"] = summary["timeline"][-TIMELINE_CAP:]
 
 
-def _timeline_lines(summary, header="- 시간순 (최근 순서대로):"):
+def _timeline_lines(summary, header="- Timeline (chronological, most recent last):"):
     rows = summary.get("timeline") or []
     if not rows:
         return []
@@ -325,7 +345,7 @@ def _clip(text, n=SNIP):
 
 
 def _content_text(content):
-    """Claude message content(str|list) 에서 사람이 읽을 텍스트만 추출."""
+    """Extract only the human-readable text from Claude message content (str|list)."""
     if isinstance(content, str):
         return content
     if isinstance(content, dict):
@@ -346,19 +366,20 @@ def _content_text(content):
 
 
 def _user_speech_text(content):
-    """user 메시지에서 **사람이 친 말만** 뽑는다.
+    """Extract **only what the human typed** from a user message.
 
-    Claude JSONL 의 `role: "user"` 에는 사람 발화 말고도 두 가지가 섞여 들어온다:
-    도구 결과(`tool_result`)와 하네스가 끼워 넣는 `<system-reminder>` 블록. 이걸 걸러내지
-    않으면 "최근 사용자 입력"과 시간순 타임라인이 도구 출력으로 뒤덮여 **누가 무엇을
-    지시했는지가 묻힌다**(이슈 #96).
+    `role: "user"` in Claude JSONL carries two more things besides human speech: tool
+    results (`tool_result`) and the `<system-reminder>` blocks the harness injects. Without
+    filtering them out, "recent user input" and the chronological timeline get buried under
+    tool output, and **who asked for what disappears** (issue #96).
 
-    ⚠️ 한 메시지에 tool_result 와 text 가 **함께** 오는 경우가 흔하다(도구 결과 뒤에
-    system-reminder 가 붙는다). "전부 tool_result 인가"로 판정하면 그 경우를 놓친다 —
-    그래서 블록 종류로 거르지 않고 **사람 발화만 골라 담는다.**
+    ⚠️ A single message frequently carries tool_result and text **together** (a
+    system-reminder follows the tool result). Deciding by "is everything a tool_result?"
+    misses that case — so instead of filtering by block kind, this **collects only human
+    speech**.
 
-    `_content_text` 는 tool_result 본문까지 읽는데 그건 task 알림 추출에 필요해서다.
-    그 용도는 그대로 두고, 발화 판정만 여기서 한다.
+    `_content_text` does read tool_result bodies, because task-notification extraction needs
+    that. That use stays as is; only the speech decision happens here.
     """
     if isinstance(content, str):
         return _strip_reminders(content)
@@ -390,7 +411,7 @@ def _task_notes(text):
 
 
 def _summarize_claude_transcript(path):
-    """Claude Code JSONL 에서 이어받기에 필요한 마지막 신호만 요약한다."""
+    """Summarize only the last signals from a Claude Code JSONL that matter for pickup."""
     summary = {
         "last_prompt": "",
         "last_users": [],
@@ -434,8 +455,9 @@ def _summarize_claude_transcript(path):
                         continue
                     for note in _task_notes(text):
                         summary["task_notes"].append(note)
-                    # 발화 판정은 사람이 친 말만 본다(도구 결과·system-reminder 제외).
-                    # task 알림 추출은 위에서 `text`(전체 내용) 로 이미 끝냈다.
+                    # Speech detection looks only at what the human typed (tool results and
+                    # system-reminders excluded). Task-notification extraction already ran
+                    # above against `text` (the full content).
                     speech = _user_speech_text(blocks)
                     if speech and "<task-notification>" not in speech:
                         summary["last_users"].append(_clip(speech))
@@ -480,34 +502,34 @@ def _format_claude_deep_recovery(root, limit=2, transcript=None, exclude_stem=No
     if not paths:
         return []
 
-    out = ["## 🧩 Claude JSONL 빠른 복구 (이 머신 한정)"]
+    out = ["## 🧩 Claude JSONL quick recovery (this machine only)"]
     for mt, size, path in paths:
         if not os.path.exists(path):
-            out.append(f"- 없음: `{path}`")
+            out.append(f"- missing: `{path}`")
             continue
         label = os.path.basename(path)
         when = datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="seconds")
         out.append(f"### `{label}`")
-        out.append(f"- 경로: `{path}`")
-        out.append(f"- 갱신: {when} · 크기: {os.path.getsize(path)} bytes")
+        out.append(f"- Path: `{path}`")
+        out.append(f"- Updated: {when} · Size: {os.path.getsize(path)} bytes")
         s = _summarize_claude_transcript(path)
         if s["last_prompt"]:
-            out.append(f"- 마지막 프롬프트: {_clip(s['last_prompt'], 300)}")
+            out.append(f"- Last prompt: {_clip(s['last_prompt'], 300)}")
         out.extend(_timeline_lines(s))
         if s["last_users"]:
-            out.append("- 최근 사용자 입력:")
+            out.append("- Recent user input:")
             for item in s["last_users"]:
                 out.append(f"  - {item}")
         if s["last_assistants"]:
-            out.append("- 최근 assistant 응답:")
+            out.append("- Recent assistant replies:")
             for item in s["last_assistants"]:
                 out.append(f"  - {item}")
         if s["last_tools"]:
-            out.append("- 최근 도구 호출:")
+            out.append("- Recent tool calls:")
             for item in s["last_tools"]:
                 out.append(f"  - `{item}`")
         if s["task_notes"]:
-            out.append("- 백그라운드 task 알림:")
+            out.append("- Background task notifications:")
             task_notes = []
             seen_tasks = set()
             for note in s["task_notes"]:
@@ -517,29 +539,29 @@ def _format_claude_deep_recovery(root, limit=2, transcript=None, exclude_stem=No
                 seen_tasks.add(key)
                 task_notes.append(note)
             for note in task_notes[-5:]:
-                summary = note.get("summary", "(summary 없음)")
+                summary = note.get("summary", "(no summary)")
                 status = note.get("status", "?")
                 task_id = note.get("task-id", "?")
                 out.append(f"  - {task_id} [{status}] {summary}")
                 if note.get("output-file"):
                     out.append(f"    output: `{note['output-file']}`")
         if s["pr_links"]:
-            out.append("- PR 링크:")
+            out.append("- PR links:")
             for link in list(dict.fromkeys(s["pr_links"]))[-3:]:
                 out.append(f"  - {link}")
         if s["rate_limit"]:
-            out.append(f"- 세션 제한 신호: {s['rate_limit']}")
+            out.append(f"- Session limit signal: {s['rate_limit']}")
     return out
 
 
-# ---------- Codex rollout 탐지·요약 (fw 용) ----------
+# ---------- Codex rollout detection/summary (for fw) ----------
 
 def _codex_sessions_dir():
     return os.path.join(os.path.expanduser("~"), ".codex", "sessions")
 
 
 def _codex_rollout_meta(path):
-    """rollout 첫 줄 session_meta → (session_id, cwd). 아니면 (None, None)."""
+    """First line session_meta of a rollout → (session_id, cwd). Otherwise (None, None)."""
     try:
         with open(path, encoding="utf-8") as f:
             d = json.loads(f.readline())
@@ -552,30 +574,32 @@ def _codex_rollout_meta(path):
 
 
 def _project_matcher(root):
-    """`cwd` → 이 프로젝트 소속인가 를 판정하는 콜러블.
+    """A callable deciding whether a `cwd` belongs to this project.
 
-    repo_identity 는 build.sh 가 이 스크립트와 같은 디렉토리에 co-locate 한다. 없으면
-    (스크립트만 단독 복사된 경우) 예전 경로 prefix 판정으로 떨어진다 — worktree 를 놓치지만
-    죽지는 않는다."""
+    build.sh co-locates repo_identity in the same directory as this script. If it is absent
+    (the script was copied on its own), this falls back to the old path-prefix check — that
+    misses worktrees, but it does not die."""
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from repo_identity import ProjectMatcher
     except ImportError:
         return lambda cwd: cwd == root or bool(cwd and cwd.startswith(root + os.sep))
     m = ProjectMatcher(root)
-    # 지금 살아있는 worktree 를 관측 기록한다. 자동 회고(HARNESS_AUTO_REFLECT)는 **기본 꺼짐**
-    # 이라 그쪽에만 기록을 맡기면 캐시가 영영 안 생긴다 — 그러면 worktree 를 지운 뒤 fw/history
-    # 가 그 세션을 못 찾는다. 회고를 안 켠 사용자도 되짚기가 되도록 여기서도 남긴다.
+    # Record the worktrees that are alive right now. Auto reflection (HARNESS_AUTO_REFLECT)
+    # is **off by default**, so leaving the bookkeeping to it alone would mean the cache
+    # never gets written — and then fw/history cannot find a session after its worktree is
+    # deleted. Record here too, so users who never enabled reflection can still look back.
     m.record_worktrees()
     return m.belongs
 
 
 def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
-    """이 프로젝트(session_meta.cwd == root 또는 그 하위) 의 최근 Codex rollout
-    [(mtime, size, path)]. 시작 날짜 디렉터리와 무관하게 전체 트리에서 mtime이 최근
-    `days` 안인 파일만 metadata를 읽는다(resume된 오래된 세션 누락 방지).
-    exclude_sid: session_meta.id 가 이것과 같으면 제외 — fw both 에서 현재 실행 중인
-    Codex 세션(지금 fw 를 부른 그 세션)을 직전 작업으로 오인하지 않도록."""
+    """Recent Codex rollouts of this project (session_meta.cwd == root or below it) as
+    [(mtime, size, path)]. Regardless of the start-date directory, metadata is read only for
+    files whose mtime falls within the last `days` (so resumed old sessions are not missed).
+    exclude_sid: skip the rollout whose session_meta.id equals this — so that `fw both` does
+    not mistake the currently running Codex session (the one that invoked fw) for the most
+    recent work."""
     base = _codex_sessions_dir()
     if not os.path.isdir(base):
         return []
@@ -596,8 +620,9 @@ def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
             if mtime < cutoff:
                 continue
             sid, cwd = _codex_rollout_meta(fp)
-            # 경로 prefix 가 아니라 git 저장소 identity 로 판정 — worktree 가 프로젝트
-            # 폴더 밖에 있어도(`~/.codex/worktrees/`, 형제 `.agent-worktrees/`) 잡힌다.
+            # Decided by git repository identity rather than path prefix — that catches
+            # worktrees living outside the project folder (`~/.codex/worktrees/`, a sibling
+            # `.agent-worktrees/`).
             if not matcher(cwd):
                 continue
             if exclude_sid and sid == exclude_sid:
@@ -608,15 +633,17 @@ def _recent_codex_rollouts(root, limit=2, days=30, exclude_sid=None):
 
 
 def _has_project_codex_rollout(root, days=30):
-    """이 프로젝트의 Codex rollout 이 하나라도 있나 — 찾는 즉시 멈춘다.
+    """Is there any Codex rollout for this project — stops at the first match.
 
-    `_recent_codex_rollouts` 를 불러 개수를 세면 rollout 전부의 metadata 를 열고 cwd 마다
-    git identity 를 물어야 한다(이 머신 기준 1200개 이상 = 수백 ms). 그 비용은 `--deep` 요약에는
-    값지지만, 힌트 한 줄 때문에 **평범한 `load` 마다** 물릴 이유가 없다.
+    Counting via `_recent_codex_rollouts` would open the metadata of every rollout and ask
+    for the git identity of each cwd (1200+ files on this machine = several hundred ms).
+    That cost is worth it for a `--deep` summary, but there is no reason to pay it on
+    **every ordinary `load`** for one hint line.
 
-    그래서 (1) 최신 파일부터 보고 (2) 첫 매칭에서 끝낸다 — 있는 경우엔 대개 몇 개만 읽는다.
-    없는 경우에만 전부 확인하는데, 그 확인은 건너뛰지 않는다: 성급히 '있음' 이라고 하면
-    사용자를 손 탐색으로 보내고, 손 탐색에는 프로젝트 스코핑이 없다(이슈 #95).
+    So this (1) starts from the newest file and (2) stops at the first match — when a match
+    exists, usually only a few files are read. Only the "nothing found" case scans
+    everything, and that scan is not skipped: claiming "present" prematurely sends the user
+    off to dig by hand, and hand-digging has no project scoping (issue #95).
     """
     base = _codex_sessions_dir()
     if not os.path.isdir(base):
@@ -636,7 +663,7 @@ def _has_project_codex_rollout(root, days=30):
                 cands.append((mtime, fp))
     if not cands:
         return False
-    cands.sort(reverse=True)  # 최신부터 — 내 프로젝트 세션이 있으면 대개 앞쪽에 있다
+    cands.sort(reverse=True)  # newest first — a session of mine is usually near the front
     matcher = _project_matcher(root)
     for _mtime, fp in cands:
         if matcher(_codex_rollout_meta(fp)[1]):
@@ -645,7 +672,8 @@ def _has_project_codex_rollout(root, days=30):
 
 
 def _summarize_codex_rollout(path):
-    """Codex rollout JSONL 에서 이어받기 신호(최근 user/assistant 텍스트, 도구명)만 요약."""
+    """Summarize only the pickup signals (recent user/assistant text, tool names) from a
+    Codex rollout JSONL."""
     summary = {"last_users": [], "last_assistants": [], "last_tools": []}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -695,28 +723,28 @@ def _format_codex_deep_recovery(root, limit=1, session=None, exclude_sid=None):
     else:
         paths = _recent_codex_rollouts(root, limit=limit, exclude_sid=exclude_sid)
     if not paths:
-        return ["## 🧩 Codex rollout: 이 프로젝트의 최근 세션 로그 없음 (이 머신 한정)"]
-    out = ["## 🧩 Codex rollout 빠른 복구 (이 머신 한정)"]
+        return ["## 🧩 Codex rollout: no recent session log for this project (this machine only)"]
+    out = ["## 🧩 Codex rollout quick recovery (this machine only)"]
     for _mt, _size, path in paths:
         if not os.path.exists(path):
-            out.append(f"- 없음: `{path}`")
+            out.append(f"- missing: `{path}`")
             continue
         when = datetime.fromtimestamp(os.path.getmtime(path)).astimezone().isoformat(timespec="seconds")
         out.append(f"### `{os.path.basename(path)}`")
-        out.append(f"- 경로: `{path}`")
-        out.append(f"- 갱신: {when} · 크기: {os.path.getsize(path)} bytes")
+        out.append(f"- Path: `{path}`")
+        out.append(f"- Updated: {when} · Size: {os.path.getsize(path)} bytes")
         s = _summarize_codex_rollout(path)
         out.extend(_timeline_lines(s))
         if s["last_users"]:
-            out.append("- 최근 사용자 입력:")
+            out.append("- Recent user input:")
             for item in s["last_users"]:
                 out.append(f"  - {item}")
         if s["last_assistants"]:
-            out.append("- 최근 assistant 응답:")
+            out.append("- Recent assistant replies:")
             for item in s["last_assistants"]:
                 out.append(f"  - {item}")
         if s["last_tools"]:
-            out.append("- 최근 도구 호출:")
+            out.append("- Recent tool calls:")
             for item in s["last_tools"]:
                 out.append(f"  - `{item}`")
     return out
@@ -725,14 +753,14 @@ def _format_codex_deep_recovery(root, limit=1, session=None, exclude_sid=None):
 def _parse_since(value):
     match = re.fullmatch(r"(\d+)([mhdw])", value or "")
     if not match:
-        raise ValueError("--since 형식: 30m, 12h, 7d, 2w")
+        raise ValueError("--since format: 30m, 12h, 7d, 2w")
     amount = int(match.group(1))
     if amount <= 0:
-        raise ValueError("--since는 1 이상이어야 합니다")
+        raise ValueError("--since must be 1 or greater")
     units = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
     seconds = amount * units[match.group(2)]
     if seconds > 3650 * 86400:
-        raise ValueError("--since는 최대 10년까지 허용합니다")
+        raise ValueError("--since allows at most 10 years")
     return seconds
 
 
@@ -813,12 +841,12 @@ def _history_resume_command(root, path):
 
 def _render_history(root, rows, no_content=False):
     if not rows:
-        # "없음" 일 때야말로 어느 프로젝트를 봤는지 밝혀야 한다 — 대상을 잘못 지목한 것과
-        # 정말 로그가 없는 것이 여기서는 똑같이 보인다.
+        # "Nothing found" is exactly when the project being inspected must be named —
+        # pointing at the wrong target and genuinely having no logs look identical here.
         return (
             "# Session history\n\n"
             f"- Project: `{root}`\n\n"
-            "조건에 맞는 Claude/Codex 세션 로그가 없습니다."
+            "No Claude/Codex session log matches these conditions."
         )
     lines = [
         "# Session history (read-only)",
@@ -830,19 +858,19 @@ def _render_history(root, rows, no_content=False):
         lines.extend([
             "",
             f"## {index}. {row['time']} · {row['tool']}",
-            f"- 로그 경로: `{row['path']}`",
-            f"- 프로젝트 매치: {row['project_match']} · {row['size']} bytes",
+            f"- Log path: `{row['path']}`",
+            f"- Project match: {row['project_match']} · {row['size']} bytes",
         ])
         if not no_content:
-            lines.append(f"- 마지막 사용자 입력: {row['snippet'] or '(파싱 가능한 입력 없음)'}")
-        lines.append(f"- 이어받기: `{row['resume_command']}`")
+            lines.append(f"- Last user input: {row['snippet'] or '(no parsable input)'}")
+        lines.append(f"- Resume with: `{row['resume_command']}`")
     return "\n".join(lines)
 
 
 def cmd_history(args):
     root = repo_root(getattr(args, "project_dir", None))
     if args.limit <= 0:
-        print("ERROR: --limit은 1 이상이어야 합니다.", file=sys.stderr)
+        print("ERROR: --limit must be 1 or greater.", file=sys.stderr)
         return 2
     try:
         rows = _history_rows(
@@ -864,87 +892,91 @@ def cmd_history(args):
 
 
 def _target_lines(root, explicit):
-    """이 실행이 **어느 프로젝트를 봤는지**, 그리고 **왜 거기로 정했는지** 를 맨 앞에 밝힌다.
+    """State up front **which project this run looked at** and **why it picked that one**.
 
-    이어받기는 대상을 잘못 지목해도 출력이 멀쩡해 보인다 — 그 저장소의 브랜치와 세션이
-    정상적으로 나오기 때문이다. 툴은 시킨 대로 한 것이라 그 자체는 결함이 아니지만,
-    **틀렸다는 걸 알아챌 방법이 없는 것**은 결함이다. 읽는 사람이 의도한 프로젝트와
-    대조할 수 있게 한 줄 남긴다(이슈 #95 의 "감지한 cwd/git root, 선택 이유를 표시").
+    A pickup that points at the wrong target still looks perfectly fine — that repo's
+    branch and sessions come out normally. The tool did what it was told, so that alone is
+    not a defect; the defect is **having no way to notice it was wrong**. One line so the
+    reader can check it against the project they meant (issue #95: "show the detected
+    cwd/git root and the reason it was chosen").
     """
     if explicit:
-        why = "`--project-dir` 인자"
+        why = "`--project-dir` argument"
     elif os.environ.get("CLAUDE_PROJECT_DIR"):
-        why = "`CLAUDE_PROJECT_DIR` 환경변수"
+        why = "`CLAUDE_PROJECT_DIR` environment variable"
     else:
-        why = "현재 디렉터리"
-    return [f"- 대상 프로젝트: `{root}` (지목: {why})", ""]
+        why = "current directory"
+    return [f"- Target project: `{root}` (chosen via: {why})", ""]
 
 
 def _facts_lines(facts, header):
-    """git_facts dict 를 사람이 읽는 마크다운 줄로 (load·fw 공용)."""
+    """git_facts dict → human-readable markdown lines (shared by load and fw)."""
     return [
         header,
-        f"- 브랜치: `{facts['branch']}`",
-        "- origin/main 대비 커밋:", "```", facts["ahead"] or "(없음)", "```",
-        "- 변경 파일 (status -sb):", "```", facts["status"] or "(없음)", "```",
-        f"- 열린 PR: {facts['pr']}",
+        f"- Branch: `{facts['branch']}`",
+        "- Commits ahead of origin/main:", "```", facts["ahead"] or "(none)", "```",
+        "- Changed files (status -sb):", "```", facts["status"] or "(none)", "```",
+        f"- Open PRs: {facts['pr']}",
     ]
 def cmd_save(args):
     root = repo_root(getattr(args, "project_dir", None))
     branch = current_branch(root)
     if branch in ("DETACHED", "HEAD"):
-        print("⚠️  DETACHED HEAD 상태 — 브랜치를 먼저 체크아웃하세요.", file=sys.stderr)
+        print("⚠️  DETACHED HEAD — check out a branch first.", file=sys.stderr)
         return 1
     facts = git_facts(root)
 
-    done = args.done or "(미작성)"
-    nxt = args.next or "(미작성)"
-    summary = args.summary or "(미작성)"
-    verify = args.verify or "(미작성)"
+    done = args.done or "(not written)"
+    nxt = args.next or "(not written)"
+    summary = args.summary or "(not written)"
+    verify = args.verify or "(not written)"
 
-    body = f"""# 작업 핸드오프 — {branch}
+    body = f"""# Work handoff — {branch}
 
-> 갱신: {now_iso()} · 에이전트: {args.agent} · 머신: {machine_name()}
-> ⚠️ 이 파일은 이어받기용 **핸드오프 정본**이다 — 커밋·푸시해야 다른 머신/사람/툴에 전달된다.
-> 이 파일이 지금 커밋돼 있는지는 **본문이 아니라 git 에서** 확인하세요 (저장 시점에 적어둔
-> 상태는 커밋 직후 바로 낡습니다 — `load` 가 조회 시점 상태를 다시 계산해 알려줍니다).
-> 이어받는 사람/툴은 먼저 이걸 읽고 **현재 git 상태와 대조**한 뒤 진행하세요.
-> transcript 만 믿지 말 것 — git 사실이 우선입니다.
+> Updated: {now_iso()} · Agent: {args.agent} · Machine: {machine_name()}
+> ⚠️ This file is the **handoff source of truth** for picking work up — it has to be
+> committed and pushed to reach another machine/person/tool.
+> Check **git, not this body**, for whether the file is committed right now (a state
+> written down at save time goes stale the moment you commit — `load` recomputes the
+> state at lookup time and tells you).
+> Whoever picks this up should read it first and **cross-check it against the current
+> git state** before proceeding.
+> Do not trust the transcript alone — git facts win.
 
-## 요약
+## Summary
 {summary}
 
-## 완료한 것
+## Done
 {done}
 
-## 남은 것 / 다음 액션
+## Remaining / next actions
 {nxt}
 
-## 검증 상태
+## Verification status
 {verify}
 
 ---
 {AUTO_MARK}
-## Git 사실 (자동 수집 @ {now_iso()})
+## Git facts (collected automatically @ {now_iso()})
 
-- 브랜치: `{facts['branch']}`
-- origin/main 대비 커밋:
+- Branch: `{facts['branch']}`
+- Commits ahead of origin/main:
 ```
-{facts['ahead'] or '(없음)'}
+{facts['ahead'] or '(none)'}
 ```
-- 변경 파일 (status -sb):
+- Changed files (status -sb):
 ```
-{facts['status'] or '(없음)'}
+{facts['status'] or '(none)'}
 ```
 - diff --stat (unstaged):
 ```
-{facts['stat_unstaged'] or '(없음)'}
+{facts['stat_unstaged'] or '(none)'}
 ```
 - diff --stat (staged):
 ```
-{facts['stat_staged'] or '(없음)'}
+{facts['stat_staged'] or '(none)'}
 ```
-- 열린 PR: {facts['pr']}
+- Open PRs: {facts['pr']}
 """
 
     target = handoff_path(root, branch)
@@ -952,17 +984,20 @@ def cmd_save(args):
     with open(target, "w", encoding="utf-8") as f:
         f.write(body)
     rel = os.path.relpath(target, root).replace(os.sep, "/")
-    print(f"✅ 핸드오프 저장: {rel}")
-    print(f"   현재 git 상태: {handoff_state_label(handoff_sync_state(root, target))}")
-    # 문구는 어떤 상태에서도 참이어야 한다 — 바로 위 상태 줄이 `커밋됨` 일 때 모순되면 안 된다.
-    print("   → 커밋하고 push 해야 다른 머신/사람/툴에 전달됩니다:")
-    # `-C <root>` 를 항상 붙인다. `--project-dir`·스킬 폴더 실행이면 cwd ≠ 대상 저장소라
-    # `git add <rel>` 만 안내하면 엉뚱한 저장소에서 돈다. 절대경로는 stdout 에만 — 커밋될
-    # 본문에 넣으면 머신마다 달라 이식 정본을 오염시킨다.
+    print(f"✅ Handoff saved: {rel}")
+    print(f"   Current git state: {handoff_state_label(handoff_sync_state(root, target))}")
+    # The wording has to stay true in every state — it must not contradict the state line
+    # right above it when that line already says `committed`.
+    print("   → Commit and push to deliver it to another machine/person/tool:")
+    # `-C <root>` is always included. With `--project-dir` or a skill-folder run, cwd is not
+    # the target repository, so guiding only `git add <rel>` would run in the wrong repo.
+    # Absolute paths go to stdout only — putting them in the committed body would pollute
+    # the portable source of truth, since they differ per machine.
     at = f"git -C {shlex.quote(root)}"
     print(f"      {at} add -- {shlex.quote(rel)}")
-    print(f"      {at} commit    # 커밋 메시지·승인 규칙은 프로젝트 규칙을 따르세요")
-    print("   (push 명령은 원격·업스트림 설정에 따라 달라서 안내하지 않습니다 — 프로젝트 방식대로.)")
+    print(f"      {at} commit    # follow the project rules for commit messages and approval")
+    print("   (The push command depends on your remote/upstream setup, so it is not "
+          "suggested here — do it the project's way.)")
     return 0
 
 
@@ -971,47 +1006,52 @@ def cmd_load(args):
     branch = current_branch(root)
     target = handoff_path(root, branch)
     out = []
-    out.append(f"# 작업 이어받기 — 브랜치 `{branch}`")
+    out.append(f"# Picking up work — branch `{branch}`")
     out.append("")
     out.extend(_target_lines(root, getattr(args, "project_dir", None)))
     rel = os.path.relpath(target, root).replace(os.sep, "/")
     state = handoff_sync_state(root, target)
     if state != "missing":
-        # 상태는 본문 **위**에 둔다. 예전 버전이 박아둔 "이 파일은 커밋됨" 배너가 남은 파일이
-        # 있어서, 읽는 쪽이 그 문장을 만나기 전에 실제 상태를 봐야 한다(#133).
-        out.append(f"## 📄 핸드오프 파일 ({rel})")
+        # The state goes **above** the body. Files written by older versions still carry a
+        # baked-in "this file is committed" banner, so the reader has to see the real state
+        # before running into that sentence (#133).
+        out.append(f"## 📄 Handoff file ({rel})")
         out.append("")
-        out.append(f"- git 상태: {handoff_state_label(state)}")
-        # 출처만 밝힌다. HEAD 와 같은지는 위 상태 줄이 말한다 — 여기서 "HEAD 가 아님" 을
-        # 단정하면 committed-clean 일 때 그 줄과 모순된다.
-        out.append("- 아래 본문은 **워킹트리 파일을 읽은 내용**입니다 (HEAD 에서 꺼낸 것이 아님).")
+        out.append(f"- git state: {handoff_state_label(state)}")
+        # Only the provenance is stated. Whether it matches HEAD is what the state line
+        # above says — asserting "this is not HEAD" here would contradict that line in the
+        # committed-clean case.
+        out.append("- The body below is **the working-tree file as read from disk** (not "
+                   "extracted from HEAD).")
         out.append("")
         with open(target, encoding="utf-8") as f:
             out.append(f.read().rstrip())
     else:
-        out.append("## 📄 핸드오프 파일: 없음")
-        out.append(f"   (이 브랜치엔 `{rel}` 가 아직 없음)")
+        out.append("## 📄 Handoff file: none")
+        out.append(f"   (this branch has no `{rel}` yet)")
     out.append("")
     out.append("---")
-    out.extend(_facts_lines(git_facts(root), "## 🔎 현재 git 사실 (핸드오프와 대조용)"))
+    out.extend(_facts_lines(git_facts(root), "## 🔎 Current git facts (cross-check against the handoff)"))
     out.append("")
     hints = transcript_hint(root)
     if hints:
-        out.append("## 🧩 깊은 복구 (이 머신 한정)")
+        out.append("## 🧩 Deep recovery (this machine only)")
         for h in hints:
             out.append(f"- {h}")
     else:
-        # "커밋된 핸드오프로만 진행" 이라 쓰면 위에서 `커밋 안 됨` 이라 보고한 그 파일을 같은
-        # 출력에서 커밋된 것으로 단정하게 된다(#133). 가리키는 건 채널이지 커밋 상태가 아니다.
-        out.append("## 🧩 깊은 복구: 이 머신엔 로컬 transcript 없음 — 저장된 핸드오프 파일로만 진행")
+        # Writing "proceed from the committed handoff only" would assert, in the same
+        # output, that the very file reported as `not committed` above is committed (#133).
+        # What this points at is the channel, not the commit state.
+        out.append("## 🧩 Deep recovery: no local transcript on this machine — proceed from the saved handoff file only")
     if args.deep or args.transcript:
         out.append("")
         out.extend(_format_claude_deep_recovery(root, transcript=args.transcript))
-        # ⚠️ Codex 쪽도 반드시 함께 낸다. 예전엔 Claude 만 요약하고 Codex 는 힌트 한 줄로
-        # 끝냈는데, 그러면 Codex 로 하던 작업을 이어받을 때 deep 이 답을 못 주고 사람·모델이
-        # 로그를 직접 뒤지게 된다 — 손 탐색에는 프로젝트 스코핑이 없어서 남의 프로젝트
-        # 세션을 직전 작업으로 오인했다(이슈 #95). --transcript 로 특정 파일을 지목한
-        # 경우는 그 파일만 보겠다는 뜻이므로 건너뛴다.
+        # ⚠️ The Codex side must always be emitted too. It used to summarize only Claude and
+        # leave Codex to a one-line hint, which meant deep had no answer when picking up
+        # Codex work and sent people and models to dig through logs by hand — hand-digging
+        # has no project scoping, so someone else's project session was mistaken for the
+        # most recent work (issue #95). When `--transcript` names a specific file, that
+        # means "look only at this one", so this is skipped.
         if not args.transcript:
             out.append("")
             out.extend(_format_codex_deep_recovery(root))
@@ -1020,20 +1060,25 @@ def cmd_load(args):
 
 
 def _live_session_excludes(root, current):
-    """현재 툴의 live 세션(지금 이 fw 를 부른 그 세션)을 배제할 식별자를 계산.
-    반대 툴은 실행 중이 아니므로 배제하지 않는다(그 최신 로그가 진짜 직전 작업).
-    반환: (claude_exclude_stem, codex_exclude_sid) — 해당 없으면 None.
+    """Compute the identifiers that exclude the current tool's live session (the very
+    session that invoked this fw). The opposite tool is not running, so it is not excluded
+    (its newest log really is the most recent work).
+    Returns: (claude_exclude_stem, codex_exclude_sid) — None where not applicable.
 
-    규칙: **live 세션을 이 프로젝트 로그에서 positive 식별할 때만 배제한다.** env 가 가리키는 id 가
-    실제 프로젝트 로그와 매칭될 때만 그 id 를 반환하고, 매칭 안 되면 (None → 아무것도 안 숨김).
-    - claude: env `CLAUDE_CODE_SESSION_ID`(=transcript 파일 stem) 가 이 프로젝트 transcript 중 하나와 일치할 때.
-    - codex : env `CODEX_THREAD_ID`(추정: rollout session_meta.id) 또는 `CODEX_SESSION_ID` 가
-      이 프로젝트 rollout 중 하나와 일치할 때.
+    Rule: **exclude only when the live session is positively identified among this
+    project's logs.** The id an env var points at is returned only when it matches an
+    actual project log; when it does not match, return None (hide nothing).
+    - claude: env `CLAUDE_CODE_SESSION_ID` (= transcript file stem) matches one of this
+      project's transcripts.
+    - codex : env `CODEX_THREAD_ID` (presumed: rollout session_meta.id) or
+      `CODEX_SESSION_ID` matches one of this project's rollouts.
 
-    왜 매칭 안 되면 '아무것도 안 숨김'인가(=최신 배제 fallback 을 쓰지 않는가): env 가 무엇을 가리키는지
-    확증 못 하는 상황(예: Codex 가 rollout id 와 다른 CODEX_THREAD_ID 를 export)에서 최신 로그를 무턱대고
-    배제하면, 그 최신이 실은 복원해야 할 **직전 작업**일 때 그걸 숨긴다(더 나쁜 실패). 반대로 안 숨기면
-    최악이라도 목록에 내 live 세션이 한 줄 더 보일 뿐이고, 이어받기는 현재 git 이 우선이라 안전하다."""
+    Why "hide nothing" on a mismatch (i.e. no fallback that excludes the newest): when we
+    cannot confirm what the env var points at (e.g. Codex exporting a CODEX_THREAD_ID that
+    differs from the rollout id), blindly excluding the newest log hides it in exactly the
+    case where that newest log is the **most recent work** to restore (the worse failure).
+    Not hiding costs, at worst, one extra line in the list for my own live session, and
+    pickup is safe because current git wins anyway."""
     claude_stem = codex_sid = None
     cur = (current or "").lower()
     if cur == "claude":
@@ -1044,9 +1089,10 @@ def _live_session_excludes(root, current):
             if env_stem in stems:
                 claude_stem = env_stem
     elif cur == "codex":
-        # 현재 Codex 는 CODEX_THREAD_ID 를 export(추정: session_meta.id). CODEX_SESSION_ID 는 보조.
-        # 두 후보를 모두 프로젝트 rollout id 와 대조한다 — `A or B` 로 하면 A 가 truthy 지만
-        # 매칭 안 될 때 B 를 아예 안 보고 short-circuit 되어, B 가 맞는 env 에서 live 세션을 놓친다.
+        # Current Codex exports CODEX_THREAD_ID (presumed: session_meta.id); CODEX_SESSION_ID
+        # is the secondary candidate. Both are checked against the project's rollout ids —
+        # `A or B` would short-circuit when A is truthy but does not match, never looking at
+        # B, and would miss the live session in environments where B is the right one.
         candidates = [c for c in (os.environ.get("CODEX_THREAD_ID"),
                                   os.environ.get("CODEX_SESSION_ID")) if c]
         if candidates:
@@ -1060,33 +1106,38 @@ def _live_session_excludes(root, current):
 
 
 def cmd_fw(args):
-    """세션 로그(Claude .jsonl / Codex rollout)에서 작업을 자동 복원 — 툴 전환 이어받기.
-    handoff-load 와 달리 명시적 save 없이도 로그로 복원한다(보조 경로). git 사실이 우선.
+    """Restore work automatically from session logs (Claude .jsonl / Codex rollout) — tool
+    switch pickup. Unlike handoff-load it restores from logs without an explicit save (the
+    supplementary path). git facts win.
 
-    소스 선택: --session(직접 지정) > --from(툴) > auto(양쪽 최신).
-    렌더된 스킬은 **반대 툴**을 --from 기본값으로 넘긴다(Claude→codex, Codex→claude) —
-    방금 켠 현재 세션 로그가 최신이라 자기 자신을 고르는 사고를 구조적으로 막는다."""
+    Source selection: --session (explicit) > --from (tool) > auto (newest of both).
+    Rendered skills pass the **opposite tool** as the --from default (Claude→codex,
+    Codex→claude) — structurally preventing the accident of picking the current session,
+    whose log is the newest one."""
     root = repo_root(getattr(args, "project_dir", None))
     src = (args.from_tool or "auto").lower()
     limit = max(1, int(getattr(args, "limit", 1) or 1))
 
     out = [
-        f"# 툴 전환 이어받기 (fw) — source: {src}",
+        f"# Tool switch pickup (fw) — source: {src}",
         "",
         *_target_lines(root, getattr(args, "project_dir", None)),
-        "> ⚠️ fw 는 **저장 안 한 세션 로그**에서 자동 복원하는 보조 경로다. 커밋된 핸드오프"
-        "(`load`)가 있으면 그게 정본이고, **현재 git 상태가 로그보다 항상 우선**이다.",
+        "> ⚠️ fw is the supplementary path that restores automatically from **unsaved session"
+        " logs**. If a committed handoff (`load`) exists, that is the source of truth, and"
+        " **the current git state always wins over the logs**.",
         "",
     ]
 
-    # live 세션 배제는 **모든 소스에 적용한다.** 예전엔 `both` 분기에서만 계산해 써서,
-    # `--from claude` 로 같은 툴 직전 세션을 찾으면 최신 = 지금 이 세션이라 자기 자신을
-    # 요약했다(이슈 #96). `--session` 으로 파일을 직접 지목한 경우만 예외 — 그건
-    # "이걸 보라"는 명시적 지시라 배제하지 않는다.
+    # Live-session exclusion applies to **every source**. It used to be computed and used
+    # only in the `both` branch, so looking for the previous session of the same tool with
+    # `--from claude` found the newest = this very session and summarized itself
+    # (issue #96). `--session` is the only exception — naming a file explicitly means "look
+    # at this one", so it is not excluded.
     claude_stem, codex_sid = _live_session_excludes(root, getattr(args, "current", None))
 
     if args.session:
-        # 포맷 자동 판별: 첫 줄이 session_meta 면 Codex rollout, 아니면 Claude .jsonl.
+        # Format auto-detection: a first line of session_meta means a Codex rollout,
+        # otherwise a Claude .jsonl.
         sid, _cwd = _codex_rollout_meta(args.session)
         if sid:
             out.extend(_format_codex_deep_recovery(root, session=args.session))
@@ -1096,21 +1147,22 @@ def cmd_fw(args):
         out.extend(_format_codex_deep_recovery(root, limit=limit, exclude_sid=codex_sid))
     elif src == "claude":
         out.extend(_format_claude_deep_recovery(root, limit=limit, exclude_stem=claude_stem))
-    elif src == "both":  # 양쪽 로그를 한 번에 — 현재 툴의 live 세션만 배제
+    elif src == "both":  # both logs at once — only the current tool's live session excluded
         out.extend(_format_codex_deep_recovery(root, limit=limit, exclude_sid=codex_sid))
         out.append("")
         out.extend(_format_claude_deep_recovery(root, limit=limit, exclude_stem=claude_stem))
-    else:  # auto — 양쪽 통틀어 최신 세션 하나
-        # 툴당 2개씩 뽑는다. 배제를 **정렬 전에** 걸어야 하고, 1개만 뽑으면 그 하나가
-        # live 세션일 때 후보가 비어 "로그 없음"으로 떨어진다 — 멀쩡한 반대 툴 로그를
-        # 두고도 못 찾는다.
+    else:  # auto — the single newest session across both tools
+        # Two per tool. The exclusion has to be applied **before** sorting, and taking only
+        # one would leave the candidate list empty when that one is the live session,
+        # falling through to "no logs" — failing to find a perfectly good log from the
+        # opposite tool.
         cand = [("claude",) + r for r in
                 _recent_claude_transcripts(root, limit=2, exclude_stem=claude_stem)]
         cand += [("codex",) + r for r in
                  _recent_codex_rollouts(root, limit=2, exclude_sid=codex_sid)]
         cand.sort(key=lambda t: t[1], reverse=True)  # t[1]=mtime
         if not cand:
-            out.append("## 🧩 이 프로젝트의 최근 세션 로그 없음 (Claude·Codex 양쪽, 이 머신 한정)")
+            out.append("## 🧩 No recent session log for this project (neither Claude nor Codex, this machine only)")
         elif cand[0][0] == "codex":
             out.extend(_format_codex_deep_recovery(root, session=cand[0][3]))
         else:
@@ -1118,69 +1170,77 @@ def cmd_fw(args):
 
     out.append("")
     out.append("---")
-    out.extend(_facts_lines(git_facts(root), "## 🔎 현재 git 사실 (로그와 대조 — git 우선)"))
+    out.extend(_facts_lines(git_facts(root), "## 🔎 Current git facts (cross-check against the logs — git wins)"))
     print("\n".join(out))
     return 0
 
 
 def main():
-    p = argparse.ArgumentParser(description="작업 핸드오프 (save/load/fw/history)")
+    p = argparse.ArgumentParser(description="Work handoff (save/load/fw/history)")
     sub = p.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("save", help="현재 작업 상태를 핸드오프 파일로 저장")
+    s = sub.add_parser("save", help="Save the current work state to a handoff file")
     s.add_argument("--agent", default=os.environ.get("HANDOFF_AGENT", "unknown"),
-                   help="작성 에이전트 (claude|codex|사람이름). 기본 env HANDOFF_AGENT")
-    s.add_argument("--summary", help="한두 줄 작업 요약")
-    s.add_argument("--done", help="완료한 것 (마크다운 불릿 가능)")
-    s.add_argument("--next", dest="next", help="남은 것/다음 액션 (마크다운 불릿 가능)")
-    s.add_argument("--verify", help="검증 상태 (테스트/빌드/리뷰 결과)")
+                   help="Authoring agent (claude|codex|person-name). Defaults to env HANDOFF_AGENT")
+    s.add_argument("--summary", help="One or two line work summary")
+    s.add_argument("--done", help="What is done (markdown bullets allowed)")
+    s.add_argument("--next", dest="next", help="Remaining work / next actions (markdown bullets allowed)")
+    s.add_argument("--verify", help="Verification status (test/build/review results)")
     s.add_argument("--project-dir", dest="project_dir",
-                   help="핸드오프를 저장할 사용자 프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR "
-                        "env → cwd 의 git 루트 순. 스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
+                   help="Absolute path of the user project root to save the handoff in. If "
+                        "omitted: CLAUDE_PROJECT_DIR env → git root of cwd. Must be given "
+                        "explicitly when running from a skill folder (plugin cache).")
     s.set_defaults(func=cmd_save)
 
-    l = sub.add_parser("load", help="현재 브랜치 핸드오프 + git 사실 출력")
+    l = sub.add_parser("load", help="Print the current branch's handoff plus git facts")
     l.add_argument("--deep", action="store_true",
-                   help="같은 머신의 최근 Claude Code JSONL 을 짧게 요약해 이어받기 단서를 함께 출력")
+                   help="Also print pickup clues by briefly summarizing recent Claude Code "
+                        "JSONL from the same machine")
     l.add_argument("--transcript",
-                   help="직접 지정한 Claude Code JSONL 경로를 요약 (세션 UUID 대신 전체 경로 권장)")
+                   help="Summarize a Claude Code JSONL at an explicitly given path (a full "
+                        "path is recommended over a session UUID)")
     l.add_argument("--project-dir", dest="project_dir",
-                   help="핸드오프를 찾을 사용자 프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR "
-                        "env → cwd 의 git 루트 순. 스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
+                   help="Absolute path of the user project root to look the handoff up in. "
+                        "If omitted: CLAUDE_PROJECT_DIR env → git root of cwd. Must be given "
+                        "explicitly when running from a skill folder (plugin cache).")
     l.set_defaults(func=cmd_load)
 
-    fw = sub.add_parser("fw", help="세션 로그에서 작업 자동 복원 — 툴 전환 이어받기(저장 안 했어도)")
+    fw = sub.add_parser("fw", help="Restore work automatically from session logs — tool switch pickup (even without a save)")
     fw.add_argument("--from", dest="from_tool", default="auto",
                     choices=["claude", "codex", "auto", "both"],
-                    help="복원 소스 툴. 렌더된 스킬은 반대 툴을 기본 지정(Claude→codex, Codex→claude). "
-                         "같은 툴에서 세션이 끊겼으면(재부팅·컨텍스트 소진) 그 툴을 직접 지정한다 "
-                         "— live 세션은 --current 로 배제되므로 자기 자신을 고르지 않는다. "
-                         "auto=양쪽 최신 하나. both=양쪽 로그를 함께.")
+                    help="Source tool to restore from. Rendered skills default to the "
+                         "opposite tool (Claude→codex, Codex→claude). If the session broke "
+                         "within the same tool (reboot, context exhaustion), name that tool "
+                         "directly — the live session is excluded via --current, so it will "
+                         "not pick itself. auto=the single newest of both. both=both logs "
+                         "together.")
     fw.add_argument("--current", choices=["claude", "codex"],
-                    help="지금 fw 를 실행 중인 툴. 이 툴의 live 세션(방금 켠 현재 세션)을 직전 "
-                         "작업으로 오인하지 않게 **모든 --from 값에서** 배제한다. 렌더된 스킬이 "
-                         "자동으로 넘긴다.")
+                    help="The tool running fw right now. Its live session (the one just "
+                         "started) is excluded **for every --from value** so it is not "
+                         "mistaken for the most recent work. Rendered skills pass this "
+                         "automatically.")
     fw.add_argument("--session",
-                    help="특정 세션 로그 경로 직접 지정 (Claude .jsonl 또는 Codex rollout). "
-                         "포맷은 자동 판별.")
-    fw.add_argument("--limit", type=int, default=1, help="요약할 최근 세션 수 (기본 1)")
+                    help="Path to a specific session log (Claude .jsonl or Codex rollout). "
+                         "The format is detected automatically.")
+    fw.add_argument("--limit", type=int, default=1, help="Number of recent sessions to summarize (default 1)")
     fw.add_argument("--project-dir", dest="project_dir",
-                    help="프로젝트 루트 절대경로. 생략 시 CLAUDE_PROJECT_DIR env → cwd 의 git 루트 순. "
-                         "스킬 폴더(플러그인 캐시)에서 실행할 땐 필수로 명시.")
+                    help="Absolute path of the project root. If omitted: CLAUDE_PROJECT_DIR "
+                         "env → git root of cwd. Must be given explicitly when running from "
+                         "a skill folder (plugin cache).")
     fw.set_defaults(func=cmd_fw)
 
-    history = sub.add_parser("history", help="Claude·Codex 세션 로그 읽기 전용 목록·검색")
+    history = sub.add_parser("history", help="Read-only listing/search of Claude and Codex session logs")
     history.add_argument("--from", dest="from_tool", default="both",
                          choices=["claude", "codex", "both"],
-                         help="조회할 툴 (기본 both)")
-    history.add_argument("--limit", type=int, default=20, help="최대 결과 수 (기본 20)")
-    history.add_argument("--since", default="30d", help="조회 기간: 30m, 12h, 7d, 2w (기본 30d)")
-    history.add_argument("--grep", help="후보 JSONL 전체에서 대소문자 무시 키워드 검색")
+                         help="Tool to list (default both)")
+    history.add_argument("--limit", type=int, default=20, help="Maximum number of results (default 20)")
+    history.add_argument("--since", default="30d", help="Lookback window: 30m, 12h, 7d, 2w (default 30d)")
+    history.add_argument("--grep", help="Case-insensitive keyword search across the whole candidate JSONL")
     history.add_argument("--no-content", action="store_true",
-                         help="프롬프트 snippet을 숨기고 경로·메타데이터만 출력")
-    history.add_argument("--json", action="store_true", help="JSON 출력")
+                         help="Hide prompt snippets and print only paths and metadata")
+    history.add_argument("--json", action="store_true", help="JSON output")
     history.add_argument("--project-dir", dest="project_dir",
-                         help="프로젝트 루트 절대경로. 플러그인 캐시에서 실행할 때 필수.")
+                         help="Absolute path of the project root. Required when running from a plugin cache.")
     history.set_defaults(func=cmd_history)
 
     args = p.parse_args()

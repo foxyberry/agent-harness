@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
 """
-SessionStart hook: 프로젝트 공유 메모리 인덱스(.claude/memory/INDEX.md)를 세션
-초반에 노출한다.
+SessionStart hook: surfaces the project's shared memory index (.claude/memory/INDEX.md) early in
+the session.
 
-목표는 memory 본문 전체를 밀어 넣는 것이 아니라, "어떤 공유 메모리가 있는지"를
-에이전트가 놓치지 않게 하는 것이다. 실제 세부 규칙은 기존 memory-search 훅이
-편집 파일에 맞춰 주입한다.
+The goal is not to push the full memory bodies in, but to make sure the agent does not miss
+"which shared memories exist". The detailed rules themselves are injected by the existing
+memory-search hook, matched to the file being edited.
 
-설정(선택): $CLAUDE_PROJECT_DIR/.claude/memory/index-load.json
+Configuration (optional): $CLAUDE_PROJECT_DIR/.claude/memory/index-load.json
   {
     "enabled": true,
     "max_chars": 12000
   }
 
-기본값은 enabled=true, max_chars=12000. .claude/memory/INDEX.md 가 없으면 no-op.
-어떤 예외에도 조용히 통과(fail-open)한다.
+Defaults are enabled=true, max_chars=12000. No-op when .claude/memory/INDEX.md is absent.
+Passes silently on any exception (fail-open).
 """
 import json
 import os
 import sys
 
-# hook_io 는 build.sh 가 이 훅과 같은 디렉토리에 co-locate 하는 **필수 의존**이다.
-# project_dir 해석 정본까지 여기 있으므로 누락된 깨진 설치본에서 로컬 fallback 으로 계속
-# 실행하면 훅마다 계약이 다시 갈린다. core 소스 트리에서 직접 실행할 때만 ../scripts 를 본다.
+# hook_io is a **required dependency** that build.sh co-locates in the same directory as this hook.
+# The canonical project_dir resolution lives there too, so continuing to run via a local fallback on
+# a broken install with the file missing would let the contract diverge per hook again. Only when
+# running directly from the core source tree do we look at ../scripts.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(1, os.path.join(os.path.dirname(_HERE), "scripts"))
@@ -33,10 +34,10 @@ MAX_CAP = 50000
 
 
 def _safe_child_path(parent, name):
-    """parent/name 이 parent 안에 머무는 경우에만 반환한다.
+    """Return parent/name only when it stays inside parent.
 
-    INDEX.md 는 SessionStart 에 자동 주입되므로, untrusted repo 가 symlink 로
-    .claude/memory 밖 로컬 파일을 모델 컨텍스트에 넣는 경로 탈출을 막는다.
+    INDEX.md is auto-injected at SessionStart, so this blocks the path escape where an untrusted repo
+    symlinks a local file outside .claude/memory into the model's context.
     """
     if os.path.sep in name or (os.path.altsep and os.path.altsep in name):
         return None
@@ -48,9 +49,9 @@ def _safe_child_path(parent, name):
 
 
 def _safe_memory_dir(project_dir):
-    """프로젝트 내부의 .claude/memory 만 허용한다.
+    """Allow only a .claude/memory that lives inside the project.
 
-    프로젝트가 아닌 위치로 symlink 된 memory 디렉터리는 자동 주입 대상에서 제외한다.
+    A memory directory symlinked to a location outside the project is excluded from auto-injection.
     """
     project = os.path.realpath(project_dir)
     memory = os.path.realpath(os.path.join(project_dir, ".claude/memory"))

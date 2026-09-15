@@ -1,3 +1,6 @@
+"""`history` listing/search behaviour: candidate selection, grep, redaction and
+robustness against unparsable logs.
+"""
 import json
 import os
 import pathlib
@@ -67,6 +70,9 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(rows[0]["snippet"], "update docs")
         self.assertIn("--session", rows[0]["resume_command"])
         report = handoff._render_history(str(self.root), rows)
+        # Pins the rendered label too, so the `--no-content` test below (which asserts the
+        # label is absent) cannot pass just because the wording drifted.
+        self.assertIn("Last user input", report)
         self.assertIn("fw", report)
         self.assertIn("--session", report)
         self.assertIn(str(self.codex), report)
@@ -95,8 +101,14 @@ class HistoryTest(unittest.TestCase):
 
         report = handoff._render_history(str(self.root), rows, no_content=True)
         self.assertNotIn("payment retry", report)
-        self.assertNotIn("마지막 사용자 입력", report)
+        self.assertNotIn("Last user input", report)
         self.assertIn(str(self.claude), report)
+
+    def test_empty_result_names_the_project_it_searched(self):
+        """With no rows, "wrong target" and "genuinely nothing" have to stay distinct."""
+        report = handoff._render_history(str(self.root), [])
+        self.assertIn(str(self.root), report)
+        self.assertIn("No Claude/Codex session log", report)
 
     def test_since_validation(self):
         for value in ("", "30", "0d", "-1d", "1y", "4000d"):

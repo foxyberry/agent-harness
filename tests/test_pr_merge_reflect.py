@@ -1,3 +1,6 @@
+"""Behaviour of the PR merge retrospection hook: state handling, the local exclude file,
+the Korean/English merge-announcement matcher, and the English reminder text it emits.
+"""
 import builtins
 import importlib.util
 import os
@@ -287,7 +290,7 @@ class PrMergeReflectTest(unittest.TestCase):
                 )
                 self.assertEqual(0, ignored.returncode, ignored.stderr)
 
-                # literal prefix가 비슷한 형제 경로까지 glob으로 삼키면 안 된다.
+                # A literal prefix must not glob-swallow a similarly named sibling path.
                 sibling_name = name.replace("*", "X").replace("?", "Z").replace("[1]", "1")
                 if sibling_name != name:
                     sibling = root / sibling_name / "api" / ".claude" / ".cache" / "reflect.log"
@@ -320,3 +323,120 @@ class PrMergeReflectTest(unittest.TestCase):
             with patch("builtins.open", side_effect=deny_exclude):
                 pr_merge_reflect._ensure_local_cache_exclude(str(root))
             self.assertEqual(exclude.read_text(), before)
+
+
+class MergeDoneMatcherTest(unittest.TestCase):
+    """The user-input matcher that says "a merge already happened".
+
+    This is the one place in the hook that reads **user input** rather than producing output. The
+    harness now speaks English, but users of it announce merges in Korean, so the Korean
+    alternatives in `MERGE_DONE` are deliberate legacy support and must keep matching. The negative
+    cases are the ones with teeth: the pattern claims to match only the completed form, so a
+    proposal, a question or a negation must not fire a reminder.
+    """
+
+    def matches(self, prompt):
+        return bool(pr_merge_reflect.MERGE_DONE.search(prompt))
+
+    def test_korean_completed_forms_still_match(self):
+        for prompt in ("머지했어", "머지 했어요", "방금 병합 완료했습니다", "머지를 끝냈다",
+                       "PR 머지됐어", "병합되었습니다"):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(self.matches(prompt),
+                                "a Korean merge announcement stopped being recognised")
+
+    def test_korean_proposals_questions_and_negations_do_not_match(self):
+        for prompt in ("머지하자", "머지 언제해?", "머지하지마", "병합할까요?"):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(self.matches(prompt),
+                                 "a proposal/question/negation was read as a completed merge")
+
+    def test_english_completed_forms_match(self):
+        for prompt in ("merge done", "the merge is done", "merge completed",
+                       "it's merged", "PR #42 is merged"):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(self.matches(prompt))
+
+    def test_english_questions_and_negations_do_not_match(self):
+        for prompt in ("is this merged?", "not merged yet", "should we merge this?"):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(self.matches(prompt),
+                                 "a question/negation was read as a completed merge")
+
+
+class ReminderTextTest(unittest.TestCase):
+    """The text the hook injects into the session.
+
+    Nothing pinned this before, so a rewrite of the reminder could silently drop the commands it
+    exists to deliver. The assertions target the actionable content -- the two slash commands and
+    the PR detail slot -- not the prose around them.
+    """
+
+    def _project(self, tmp, draft_count=0):
+        pending = pathlib.Path(tmp, ".claude", "memory", "_pending")
+        pending.mkdir(parents=True)
+        for i in range(draft_count):
+            (pending / f"draft-{i}.md").write_text("draft", encoding="utf-8")
+        return tmp
+
+    def test_reminder_names_both_follow_up_commands_and_the_prs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            text = pr_merge_reflect._remind_text(self._project(tmp), " — #42 fix the thing")
+
+        self.assertIn("#42 fix the thing", text, "the PR detail slot was not filled in")
+        self.assertIn("/feedback-review", text)
+        self.assertIn("/memory-update", text)
+        self.assertNotIn("{detail}", text, "the format placeholder was left unsubstituted")
+
+    def test_no_escalation_below_the_backlog_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self._project(tmp, pr_merge_reflect.DRAFT_BACKLOG_THRESHOLD - 1)
+            text = pr_merge_reflect._remind_text(project, "")
+
+        self.assertNotIn("piled up", text,
+                         "escalated below the threshold — a warning that always fires is ignored")
+
+    def test_escalation_is_added_at_the_backlog_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            n = pr_merge_reflect.DRAFT_BACKLOG_THRESHOLD
+            text = pr_merge_reflect._remind_text(self._project(tmp, n), "")
+
+        self.assertIn(f"{n} automatic reflect drafts have piled up", text)
+        self.assertIn(str(pr_merge_reflect.DRAFT_BACKLOG_THRESHOLD), text)
+        self.assertIn("/memory-update", text)
+
+
+class AnnouncePendingDraftsTest(unittest.TestCase):
+    """The SessionStart announcement for drafts left behind by an earlier job."""
+
+    def _emitted(self, project):
+        captured = {}
+
+        def fake_emit(event, text):
+            captured["event"] = event
+            captured["text"] = text
+
+        with patch.object(pr_merge_reflect, "_emit", fake_emit):
+            pr_merge_reflect._announce_pending_drafts(str(project))
+        return captured
+
+    def test_nothing_is_emitted_without_drafts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pathlib.Path(tmp, ".claude", "memory", "_pending").mkdir(parents=True)
+            self.assertEqual({}, self._emitted(pathlib.Path(tmp)))
+
+    def test_drafts_including_nested_decisions_are_announced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pending = pathlib.Path(tmp, ".claude", "memory", "_pending")
+            (pending / "decisions").mkdir(parents=True)
+            (pending / "lesson.md").write_text("x", encoding="utf-8")
+            (pending / "decisions" / "adr.md").write_text("x", encoding="utf-8")
+
+            captured = self._emitted(pathlib.Path(tmp))
+
+        self.assertEqual("SessionStart", captured["event"])
+        self.assertIn("2 self-improvement retrospection draft(s)", captured["text"],
+                      "the nested decisions/ draft was not counted")
+        self.assertIn("`.claude/memory/_pending/`", captured["text"])
+        self.assertIn("/memory-update", captured["text"])
+        self.assertIn("decisions/adr.md", captured["text"])

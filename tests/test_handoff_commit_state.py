@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""핸드오프가 **거짓으로 '커밋됨'** 이라고 말하지 않는가 (이슈 #133).
+"""Does the handoff ever falsely claim to be **committed**? (issue #133)
 
-회귀 대상: `save` 는 커밋을 하지도 않으면서 본문에 "이 파일은 **커밋됨**" 을 박제했고,
-`load` 는 파일 존재만 보고 "커밋된 핸드오프" 제목을 붙였다. untracked·staged·커밋 후 수정이
-전부 "커밋됨" 으로 보였다.
+Regression target: `save` baked "this file is **committed**" into the body without
+committing anything, and `load` titled the section "committed handoff" purely because the
+file existed. Untracked, staged and modified-after-commit all looked "committed".
 
-지키는 불변식은 셋이다:
-  1) 실제로 HEAD 와 내용이 같을 때만 '커밋됨' 이라고 말한다 (git 조회 실패는 '확인 불가').
-  2) 저장된 본문에는 커밋 전후로 거짓이 되는 상태 주장을 쓰지 않는다.
-  3) 안내하는 git 명령은 **실행 cwd 와 무관하게** 대상 저장소에서 돈다.
+Three invariants are protected:
+  1) Say 'committed' only when the content really matches HEAD (a failed git lookup is
+     'cannot tell').
+  2) The saved body never carries a state claim that turns false on either side of a commit.
+  3) The git commands we print run against the target repository **regardless of cwd**.
 
-테스트는 진짜 임시 git 저장소 위에서 돈다. 반대로 바깥 세계(gh PR 조회 = 네트워크,
-`~/.claude`·`~/.codex` = 사용자 세션 로그)는 전부 막는다 — 남의 로그를 열거나 네트워크를
-타면 결과가 환경에 따라 흔들린다.
+The tests run on a real temporary git repository. The outside world is blocked instead:
+gh PR lookups (network) and `~/.claude`/`~/.codex` (the user's own session logs) — reading
+someone else's logs or touching the network would make results depend on the environment.
 """
 import importlib.util
 import os
+import re
 import shlex
 import subprocess
 import tempfile
@@ -32,16 +34,59 @@ SPEC = importlib.util.spec_from_file_location(
 handoff = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(handoff)
 
-COMMITTED_CLAIMS = ("커밋됨", "커밋된 핸드오프")
+# Derived from the labels themselves so a reworded label cannot silently slip past this
+# guard. Substring matching on the bare word "committed" would be useless — "not committed"
+# contains it — so the **whole** label is what must be absent.
+COMMITTED_LABELS = tuple(
+    handoff.HANDOFF_STATE_LABELS[key]
+    for key in ("committed-clean", "committed-modified", "committed-untracked")
+)
+# Plus one literal phrase, so a relabel that keeps the dict consistent but starts calling
+# uncommitted files "committed handoff" still fails.
+COMMITTED_CLAIMS = COMMITTED_LABELS + ("committed handoff",)
+
+# A banner an older version baked into saved files. Kept verbatim in Korean: this is
+# historical file content that still exists in real repositories, not generated output.
 LEGACY_BANNER = "> ⚠️ 이 파일은 **커밋됨**. 이어받는 사람/툴은 먼저 이걸 읽고"
+
+
+def _strip_emphasis(text):
+    """Flatten Markdown decoration so a status claim cannot hide inside it.
+
+    The #133 claim shipped as `이 파일은 **커밋됨**`, and its direct English form is
+    `This file is **committed**`. A raw substring search for the sentence misses both,
+    because the emphasis markers sit between the words. Blockquote markers and line
+    wrapping can split a claim the same way, so those are flattened too.
+    """
+    lines = [re.sub(r"^\s*>+\s?", "", line) for line in (text or "").splitlines()]
+    flat = re.sub(r"[*_`~]", "", " ".join(lines))
+    return re.sub(r"\s+", " ", flat).strip().lower()
+
+
+# Status assertions that go stale the moment the file is (or is not) committed. Matched
+# against the emphasis-stripped body. Instructions ("it has to be committed and pushed")
+# and pointers ("check git for the real state") are deliberately absent from this list —
+# they stay true on both sides of a commit.
+FORBIDDEN_STATUS_CLAIMS = (
+    "this file is committed",
+    "this file is not committed",
+    "this file is uncommitted",
+    "this file is already committed",
+    "this file has been committed",
+    "this file was committed",
+    "not committed",
+    "already committed",
+    "이 파일은 커밋됨",       # the original #133 claim, emphasis stripped
+    "이 파일은 커밋되",        # covers 커밋되었다 / 커밋되지 않았다 phrasings
+)
 
 FAKE_FACTS = {
     "branch": "fake",
-    "status": "(없음)",
-    "stat_unstaged": "(없음)",
-    "stat_staged": "(없음)",
-    "ahead": "(없음)",
-    "pr": "(없음 또는 조회 불가)",
+    "status": "(none)",
+    "stat_unstaged": "(none)",
+    "stat_staged": "(none)",
+    "ahead": "(none)",
+    "pr": "(none, or lookup failed)",
 }
 
 
@@ -51,7 +96,7 @@ def _git(args, cwd):
 
 
 class _Args:
-    """argparse.Namespace 대용 — cmd_save/cmd_load 가 읽는 속성만."""
+    """Stand-in for argparse.Namespace — only the attributes cmd_save/cmd_load read."""
 
     def __init__(self, **kw):
         self.project_dir = None
@@ -67,7 +112,8 @@ class HandoffCommitStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = os.path.realpath(self.tmp.name)
-        # repo 밖 cwd 겸 가짜 HOME. 실제 사용자 홈을 절대 건드리지 않게 한다.
+        # A cwd outside the repo that doubles as a fake HOME, so the real user home is
+        # never touched.
         self.outside = tempfile.TemporaryDirectory()
         self.elsewhere = os.path.realpath(self.outside.name)
         _git(["init", "-b", "main"], self.repo)
@@ -103,9 +149,9 @@ class HandoffCommitStateTest(unittest.TestCase):
         _git(["add", "."], self.repo)
         _git(["commit", "-m", "init"], self.repo)
 
-    def _save(self, summary="요약"):
+    def _save(self, summary="summary"):
         return self._run_cmd(handoff.cmd_save, _Args(
-            summary=summary, done="- 한 것", next="- 할 것", verify="테스트 통과"))
+            summary=summary, done="- did this", next="- to do", verify="tests pass"))
 
     def _load(self):
         return self._run_cmd(handoff.cmd_load, _Args())
@@ -128,26 +174,27 @@ class HandoffCommitStateTest(unittest.TestCase):
         _git(["commit", "-m", "handoff"], self.repo)
 
     def _write_handoff(self, body):
-        """save 를 거치지 않고 파일을 직접 만든다 (예전 버전이 남긴 파일 재현용)."""
+        """Write the file directly, bypassing save (reproduces files left by older versions)."""
         path = self._target()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         Path(path).write_text(body, encoding="utf-8")
         return path
 
-    # ---------- 상태 판정 경계 ----------
+    # ---------- state detection boundaries ----------
 
     def test_missing_file(self):
         self._commit_something()
         self.assertEqual(self._state(), "missing")
 
     def test_untracked_after_save(self):
-        """save 직후 — 커밋은커녕 `git add` 도 안 된 상태."""
+        """Right after save — not committed, not even `git add`ed."""
         self._commit_something()
         self._save()
         self.assertEqual(self._state(), "untracked")
 
     def test_staged_new_is_not_committed(self):
-        """`git add` 만 하면 tracked 이지만 **커밋은 아니다**. ls-files 로만 보면 놓친다."""
+        """A bare `git add` makes it tracked but **not committed**. Looking only at
+        ls-files misses that."""
         self._commit_something()
         self._save()
         self._add()
@@ -159,34 +206,36 @@ class HandoffCommitStateTest(unittest.TestCase):
         self.assertEqual(self._state(), "committed-clean")
 
     def test_committed_then_modified(self):
-        """커밋 뒤 다시 save — 출력되는 본문은 HEAD 내용이 아니다."""
+        """Saving again after a commit — the printed body is no longer the HEAD content."""
         self._commit_something()
         self._save_add_commit()
-        self._save(summary="새 요약")
+        self._save(summary="new summary")
         self.assertEqual(self._state(), "committed-modified")
 
     def test_committed_then_modified_stays_modified_when_staged(self):
-        """수정을 `git add` 해도 여전히 '커밋 후 수정됨'. staged 라고 HEAD 에 든 게 아니다."""
+        """`git add`ing the modification keeps it 'modified after commit'. Staged does not
+        mean it is in HEAD."""
         self._commit_something()
         self._save_add_commit()
-        self._save(summary="새 요약")
+        self._save(summary="new summary")
         self._add()
         self.assertEqual(self._state(), "committed-modified")
 
     def test_assume_unchanged_modification_is_still_modified(self):
-        """`assume-unchanged` 는 `git diff` 를 속인다 — 그래서 내용을 직접 비교한다.
+        """`assume-unchanged` fools `git diff` — which is why contents are compared directly.
 
-        diff 기반 판정이면 여기서 committed-clean 이 나와 #133 의 거짓 표시가 재발한다.
+        With diff-based detection this would come out committed-clean, reviving the false
+        claim from #133.
         """
         self._commit_something()
         self._save_add_commit()
         _git(["update-index", "--assume-unchanged", "--", self._rel()], self.repo)
         with open(self._target(), "a", encoding="utf-8") as f:
-            f.write("\n손으로 덧붙인 줄 — HEAD 에는 없다\n")
-        # 전제 확인: diff 는 정말로 '차이 없음' 이라고 말한다
+            f.write("\nhand-appended line — not present in HEAD\n")
+        # Premise check: diff really does report 'no difference'
         diff = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", self._rel()],
                               cwd=self.repo)
-        self.assertEqual(diff.returncode, 0, "전제 실패: assume-unchanged 가 안 먹었다")
+        self.assertEqual(diff.returncode, 0, "premise failed: assume-unchanged had no effect")
         self.assertEqual(self._state(), "committed-modified")
 
     def test_skip_worktree_modification_is_still_modified(self):
@@ -194,46 +243,51 @@ class HandoffCommitStateTest(unittest.TestCase):
         self._save_add_commit()
         _git(["update-index", "--skip-worktree", "--", self._rel()], self.repo)
         with open(self._target(), "a", encoding="utf-8") as f:
-            f.write("\n또 다른 손수정\n")
+            f.write("\nanother hand edit\n")
         self.assertEqual(self._state(), "committed-modified")
 
     def test_removed_from_index_after_commit(self):
-        """`git rm --cached` — HEAD 엔 있지만 지금 파일은 추적 밖."""
+        """`git rm --cached` — present in HEAD, but the current file is untracked."""
         self._commit_something()
         self._save_add_commit()
         _git(["rm", "--cached", "--", self._rel()], self.repo)
         self.assertEqual(self._state(), "committed-untracked")
 
     def test_unborn_head_is_not_committed(self):
-        """커밋이 하나도 없는 새 저장소 — 'HEAD 조회 실패' 를 커밋됨으로 오인하면 안 된다.
+        """A fresh repository with no commits — a 'HEAD lookup failed' must not be mistaken
+        for committed.
 
-        (cmd_save 는 unborn HEAD 를 DETACHED 로 보고 거부하므로 파일을 직접 만든다. 이 경로로
-        들어오는 건 예전에 저장됐다 커밋 없이 옮겨온 파일 등이다.)
+        (cmd_save treats an unborn HEAD as DETACHED and refuses, so the file is written
+        directly. Files arriving through this path are e.g. saved elsewhere and moved over
+        without a commit.)
         """
-        path = self._write_handoff("# 핸드오프\n")
+        path = self._write_handoff("# Handoff\n")
         self.assertEqual(handoff.handoff_sync_state(self.repo, path), "untracked")
         _git(["add", "--", self._rel()], self.repo)
         self.assertEqual(handoff.handoff_sync_state(self.repo, path), "staged-new")
 
     def test_non_git_directory_is_unknown_not_committed(self):
-        """git 저장소가 아닌 곳 — 모킹 없이 진짜 git 을 돌려서 unknown 이 나와야 한다."""
+        """Somewhere that is not a git repository — real git runs here, no mocking, and the
+        answer must be unknown."""
         path = os.path.join(self.elsewhere, handoff.HANDOFF_DIR, "x.md")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         Path(path).write_text("# x\n", encoding="utf-8")
         self.assertEqual(handoff.handoff_sync_state(self.elsewhere, path), "unknown")
 
     def test_git_failure_is_unknown(self):
-        """git 실행 자체가 실패하면 '확인 불가' — 절대 committed 로 떨어지지 않는다."""
+        """If git itself fails to run, the answer is 'cannot tell' — never committed."""
         self._commit_something()
         self._save()
         with patch.object(handoff, "probe", lambda cmd, cwd=None: (None, False)):
             self.assertEqual(self._state(), "unknown")
-        self.assertNotIn("커밋됨", handoff.handoff_state_label("unknown"))
+        # Case-insensitive: the unknown label must not contain the word at all, in any case.
+        self.assertNotIn("committed", handoff.handoff_state_label("unknown").lower())
 
     def test_abnormal_exit_is_unknown_not_absence(self):
-        """조회가 128 로 죽는 건 '부재' 가 아니다 — `!= 0` 으로 뭉개면 안 된다.
+        """A lookup dying with 128 is not 'absent' — it must not be flattened with `!= 0`.
 
-        커밋까지 끝난 파일인데 ls-files 가 비정상 종료하면 답은 untracked 가 아니라 unknown.
+        For a fully committed file whose ls-files exits abnormally, the answer is unknown,
+        not untracked.
         """
         self._commit_something()
         self._save_add_commit()
@@ -247,12 +301,14 @@ class HandoffCommitStateTest(unittest.TestCase):
             self.assertEqual(self._state(), "unknown")
 
     def test_line_ending_difference_is_reported_modified(self):
-        """줄끝만 다른 파일을 `committed-modified` 라 부르는 건 **의도한 선택**이다.
+        """Calling a file that differs only in line endings `committed-modified` is a
+        **deliberate choice**.
 
-        비교는 HEAD blob 과의 바이트 비교라 autocrlf 체크아웃·clean/smudge 필터가 걸리면
-        내용이 같아도 modified 로 나온다. 여기서 정규화를 넣으면 CRLF 로 커밋된 blob 과
-        LF 워킹트리가 같다고 나와, HEAD 에 없는 내용을 clean 이라 부르는 길이 열린다 —
-        #133 이 바로 그 오류 방향이다. 의심하는 쪽으로 틀리는 게 맞다.
+        The comparison is byte-for-byte against the HEAD blob, so an autocrlf checkout or a
+        clean/smudge filter shows up as modified even when the content matches. Normalizing
+        here would make a CRLF-committed blob equal an LF working tree, opening the path to
+        calling content that is missing from HEAD clean — which is exactly the direction
+        #133 got wrong. Erring toward suspicion is correct.
         """
         self._commit_something()
         self._save_add_commit()
@@ -262,95 +318,156 @@ class HandoffCommitStateTest(unittest.TestCase):
         self.assertEqual(self._state(), "committed-modified")
 
     def test_head_blob_read_failure_is_unknown(self):
-        """HEAD 내용을 못 꺼내면 같다고도 다르다고도 하지 않는다."""
+        """If the HEAD content cannot be read, claim neither same nor different."""
         self._commit_something()
         self._save_add_commit()
         with patch.object(handoff, "head_blob", lambda root, rel: None):
             self.assertEqual(self._state(), "unknown")
 
-    # ---------- 출력 ----------
+    # ---------- output ----------
 
     def test_load_labels_uncommitted_states_honestly(self):
         self._commit_something()
         self._save()
         out = self._load()
-        self.assertIn("커밋 안 됨", out)
-        # 출력 **전체**를 본다. 앞에서 '커밋 안 됨' 이라 보고해 놓고 뒤쪽 "깊은 복구" 줄에서
-        # "커밋된 핸드오프로만 진행" 이라고 지시하면 같은 출력 안에서 모순이다.
+        self.assertIn("not committed", out)
+        # Look at the **whole** output. Reporting 'not committed' up front and then telling
+        # the reader to "proceed from the committed handoff" further down, in the deep
+        # recovery line, would contradict itself within one output.
         for claim in COMMITTED_CLAIMS:
-            self.assertNotIn(claim, out, f"커밋 안 한 핸드오프에 '{claim}' 표기")
+            self.assertNotIn(claim, out, f"uncommitted handoff labelled '{claim}'")
 
     def test_load_says_committed_only_when_head_matches(self):
         self._commit_something()
         self._save_add_commit()
         out = self._load()
-        self.assertIn("커밋됨", out)
-        self.assertIn("푸시 여부는 별개", out, "로컬 커밋을 원격 공유로 주장하면 안 된다")
+        self.assertIn(handoff.HANDOFF_STATE_LABELS["committed-clean"], out)
+        self.assertIn("pushed state is separate", out,
+                      "a local commit must not be claimed as shared with the remote")
 
-        self._save(summary="새 요약")
+        self._save(summary="new summary")
         out2 = self._load()
-        self.assertIn("커밋 후 수정됨", out2)
-        self.assertIn("워킹트리", out2)
+        self.assertIn("modified after commit", out2)
+        self.assertIn("working tree", out2)
 
     def test_load_does_not_contradict_itself_when_clean(self):
-        """committed-clean 인데 '커밋된 내용이 아님' 이라 덧붙이면 스스로와 모순이다.
+        """Adding 'this is not the committed content' while committed-clean contradicts
+        itself.
 
-        본문 줄이 말해야 하는 건 **출처**(워킹트리 파일을 읽었다)뿐이다.
+        The body line must state **provenance** only (the working-tree file was read).
         """
         self._commit_something()
         self._save_add_commit()
         out = self._load()
-        self.assertIn("커밋됨 — HEAD 커밋 내용과 현재 파일이 동일", out)
-        self.assertNotIn("HEAD 에 커밋된 내용이 아님", out)
-        self.assertIn("워킹트리 파일을 읽은 내용", out, "출처는 계속 밝혀야 한다")
+        self.assertIn("committed — the current file matches the HEAD commit", out)
+        self.assertNotIn("not the content committed in HEAD", out)
+        self.assertIn("working-tree file as read from disk", out,
+                      "provenance still has to be stated")
 
     def test_legacy_banner_does_not_win_over_real_state(self):
-        """예전 버전이 본문에 박아둔 '이 파일은 **커밋됨**' 이 남아 있어도, 읽는 쪽이 그
-        문장을 만나기 **전에** 실제 상태를 보게 해야 한다."""
+        """Even when an older version's baked-in 'this file is **committed**' banner is
+        still in the body, the reader has to see the real state **before** running into
+        that sentence."""
         self._commit_something()
         self._write_handoff(
             "# 작업 핸드오프 — main\n\n" + LEGACY_BANNER + "\n\n## 요약\n옛날 파일\n")
         out = self._load()
-        self.assertIn(LEGACY_BANNER, out, "본문은 그대로 보여준다 (검열하지 않는다)")
-        self.assertIn("커밋 안 됨", out)
-        self.assertLess(out.index("커밋 안 됨"), out.index(LEGACY_BANNER),
-                        "실제 상태가 구버전 배너보다 먼저 나와야 한다")
+        self.assertIn(LEGACY_BANNER, out, "the body is shown as-is (never censored)")
+        self.assertIn("not committed", out)
+        self.assertLess(out.index("not committed"), out.index(LEGACY_BANNER),
+                        "the real state has to come before the old version's banner")
+
+    def test_legacy_korean_body_is_reproduced_in_full(self):
+        """Old Korean handoff files must still load with their body intact.
+
+        Translating the generated output must not filter, rewrite or drop anything from a
+        file written by an earlier version — `load` echoes the working-tree file verbatim,
+        and the only thing that changes is the English state header above it.
+        """
+        self._commit_something()
+        legacy = (
+            "# 작업 핸드오프 — main\n\n"
+            "> 갱신: 2026-01-02T03:04:05+09:00 · 에이전트: codex · 머신: 비공개\n\n"
+            "## 요약\n지난 세션에서 훅 경로를 고쳤다\n\n"
+            "## 완료한 것\n- routes.json 매핑 추가\n\n"
+            "## 남은 것 / 다음 액션\n- 회귀 테스트 작성\n\n"
+            "## 검증 상태\n테스트 3개 통과\n"
+        )
+        self._write_handoff(legacy)
+        out = self._load()
+
+        for chunk in ("## 요약", "지난 세션에서 훅 경로를 고쳤다",
+                      "## 완료한 것", "- routes.json 매핑 추가",
+                      "## 남은 것 / 다음 액션", "- 회귀 테스트 작성",
+                      "## 검증 상태", "테스트 3개 통과",
+                      "에이전트: codex", "머신: 비공개"):
+            self.assertIn(chunk, out, f"legacy body lost: {chunk}")
+        self.assertLess(out.index("not committed"), out.index("## 요약"),
+                        "the computed state has to precede the legacy body")
 
     def test_load_missing_file_does_not_claim_commit(self):
         self._commit_something()
         out = self._load()
-        self.assertIn("핸드오프 파일: 없음", out)
+        self.assertIn("Handoff file: none", out)
         for claim in COMMITTED_CLAIMS:
             self.assertNotIn(claim, out)
 
     def test_saved_body_has_no_commit_status_claim(self):
-        """본문은 커밋 전후 어느 쪽에서도 거짓이 되면 안 된다 — 상태를 박제하지 않는다."""
+        """The body must not be false on either side of a commit — no state is baked in.
+
+        The claim is matched **after stripping Markdown emphasis**. The original #133 bug
+        shipped as `이 파일은 **커밋됨**`, and its most direct English form is
+        `This file is **committed**` — a plain substring check for "this file is committed"
+        walks straight past both, because the asterisks sit between the words.
+
+        Instructions stay legal: "it has to be committed and pushed", "check git for the
+        real state". Those remain true on both sides of a commit; a status assertion does
+        not.
+        """
         self._commit_something()
         self._save()
         body = Path(self._target()).read_text(encoding="utf-8")
+
+        # The exact historical claim, verbatim and unnormalized — this is the string the
+        # original test rejected, and it must keep being rejected.
         self.assertNotIn("이 파일은 **커밋됨**", body)
-        self.assertNotIn("커밋 안 됨", body)
+
+        flat = _strip_emphasis(body)
+        for claim in FORBIDDEN_STATUS_CLAIMS:
+            self.assertNotIn(claim, flat,
+                             f"the saved body asserts a commit state: {claim!r}")
+        for label in COMMITTED_LABELS:
+            self.assertNotIn(_strip_emphasis(label), flat)
+
+        self.assertIn("check git, not this body", flat,
+                      "the body must still point the reader at git for the real state")
+        self.assertIn("committed and pushed", flat,
+                      "the instruction to commit and push must stay — it is not a status claim")
 
     def test_saved_body_has_no_absolute_path(self):
-        """본문은 머신을 넘어 이식되는 정본 — 이 머신의 절대경로를 넣으면 안 된다."""
+        """The body is the portable source of truth across machines — no absolute paths
+        from this machine."""
         self._commit_something()
         self._save()
         self.assertNotIn(self.repo, Path(self._target()).read_text(encoding="utf-8"))
 
     def test_saved_body_keeps_narrative_sections(self):
-        """상태 배너를 고치면서 사람이 쓴 서술 섹션을 잃지 않는다."""
+        """Fixing the state banner must not lose the sections a human wrote."""
         self._commit_something()
-        self._save(summary="이번 요약")
+        self._save(summary="this summary")
         body = Path(self._target()).read_text(encoding="utf-8")
-        for chunk in ("## 요약", "이번 요약", "## 완료한 것", "- 한 것",
-                      "## 남은 것 / 다음 액션", "- 할 것", "## 검증 상태", "테스트 통과"):
+        for chunk in ("## Summary", "this summary", "## Done", "- did this",
+                      "## Remaining / next actions", "- to do",
+                      "## Verification status", "tests pass"):
             self.assertIn(chunk, body)
 
     def test_save_prints_command_that_runs_from_any_cwd(self):
-        """안내한 명령을 **repo 밖 cwd 에서** 그대로 붙여넣어도 대상 저장소에 먹혀야 한다.
+        """The printed command must work on the target repository even when pasted **from a
+        cwd outside the repo**.
 
-        `--project-dir` 나 Codex 스킬 폴더 실행처럼 cwd ≠ 대상 저장소인 경우가 정상 경로다.
-        셸 메타문자가 있는 브랜치에서도 인용이 깨지지 않는지 같이 본다.
+        cwd ≠ target repository is the normal path with `--project-dir` or a Codex
+        skill-folder run. This also checks that quoting survives a branch name containing
+        shell metacharacters.
         """
         self._commit_something()
         _git(["checkout", "-b", "fix/it's-$weird"], self.repo)
@@ -360,18 +477,22 @@ class HandoffCommitStateTest(unittest.TestCase):
         self.assertEqual(add[:5], ["git", "-C", self.repo, "add", "--"])
         self.assertEqual(add[5], self._rel())
 
-        # 실제로 먹히는지까지 확인 — repo 밖에서 실행한다 (인용·-C 가 깨졌으면 여기서 죽는다)
+        # Check it actually works — run it from outside the repo (broken quoting or a
+        # missing -C dies right here)
         done = subprocess.run(add, cwd=self.elsewhere, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self._state(), "staged-new")
 
-        commit = next(l for l in lines if " commit" in l).strip()
+        # Match on the printed command itself, not on the word "commit" — the state line
+        # above it ("not committed — …") contains that word too.
+        commit = next(l.strip() for l in lines
+                      if l.strip().startswith("git -C") and " commit" in l)
         self.assertEqual(shlex.split(commit.split("#")[0])[:4],
                          ["git", "-C", self.repo, "commit"])
 
     def test_save_reports_current_state(self):
         self._commit_something()
-        self.assertIn("현재 git 상태: 커밋 안 됨", self._save())
+        self.assertIn("Current git state: not committed", self._save())
 
 
 if __name__ == "__main__":

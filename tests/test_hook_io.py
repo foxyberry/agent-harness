@@ -1,9 +1,17 @@
-"""편집 훅 입력 정규화 — Claude 와 Codex 를 같은 모델로 (이슈 #85 1단계).
+"""Edit-hook input normalization — one model for Claude and Codex (issue #85, step 1).
 
-Codex 픽스처는 **실측 원문**이다(codex-cli 0.145.0). 앞선 판들이 rollout 로그를 역추론해
-도구 이름을 `exec` 로 잘못 알았던 전례가 있어서, 여기서는 실제로 관측된 입력을 그대로 쓴다.
+The Codex fixtures are **raw measured input** (codex-cli 0.145.0). Earlier revisions
+inferred the tool name from rollout logs and got it wrong (`exec`), so here we use the
+input exactly as it was observed.
+
+Korean fixture content is deliberate: it is the only non-ASCII payload flowing through the
+normalizer, and it pins down that multibyte content survives unchanged. Do not translate
+it — the explanatory prose is English, the payloads are data.
 """
+import contextlib
 import importlib.util
+import io
+import json
 import os
 import pathlib
 import tempfile
@@ -19,7 +27,7 @@ SPEC.loader.exec_module(hook_io)
 
 EditedFile = hook_io.EditedFile
 
-# 이슈 #85 본문의 실측 입력 그대로.
+# The measured input from the body of issue #85, verbatim.
 CODEX_ADD = {
     "hook_event_name": "PreToolUse",
     "tool_name": "apply_patch",
@@ -56,6 +64,8 @@ class CodexPatchTest(unittest.TestCase):
         )
 
     def test_removed_and_context_lines_are_not_added_content(self):
+        # Korean payload on purpose: "removed line" / "unchanged line" / "added line".
+        # Only the added one may come back, and it must come back byte-identical.
         data = {"tool_input": {"command": "\n".join([
             "*** Begin Patch",
             "*** Update File: x.py",
@@ -69,7 +79,7 @@ class CodexPatchTest(unittest.TestCase):
         self.assertEqual("넣은 줄", hook_io.edited_files(data)[0].added)
 
     def test_move_to_destination_becomes_the_path(self):
-        """내용이 최종적으로 사는 곳은 목적지다."""
+        """The content ends up living at the destination path."""
         data = {"tool_input": {"command": "\n".join([
             "*** Begin Patch",
             "*** Update File: old/name.py",
@@ -82,25 +92,25 @@ class CodexPatchTest(unittest.TestCase):
                          hook_io.edited_files(data))
 
     def test_delete_is_listed_with_no_content(self):
-        """memory-search 는 삭제도 '건드린 파일'로 봐야 한다. reflection 은 내용이 없어 건너뛴다."""
+        """memory-search must treat a deletion as a 'touched file' too; reflection skips it for lack of content."""
         data = {"tool_input": {"command":
                                "*** Begin Patch\n*** Delete File: gone.py\n*** End Patch"}}
 
         self.assertEqual([EditedFile("gone.py", "")], hook_io.edited_files(data))
 
     def test_code_starting_with_two_plus_signs_survives(self):
-        """`++counter;` 는 패치에서 `+++counter;` 가 된다.
+        """`++counter;` becomes `+++counter;` inside a patch.
 
-        이걸 unified diff 헤더로 오인해 버리면 그 코드가 품질 검사에서 조용히 빠진다.
-        apply_patch 는 파일을 `*** ... File:` 마커로 표시하고 `+++ b/path` 헤더를 쓰지 않으므로,
-        `+++` 를 헤더로 볼 이유가 애초에 없다.
+        Mistaking that for a unified diff header silently drops the code from the quality
+        checks. apply_patch marks files with `*** ... File:` markers and never writes a
+        `+++ b/path` header, so there is no reason to read `+++` as a header at all.
         """
         data = {"tool_input": {"command": "\n".join([
             "*** Begin Patch",
             "*** Update File: x.c",
             "@@",
-            " int counter = 0;",   # context (앞이 공백)
-            "+++counter;",         # 추가된 `++counter;`
+            " int counter = 0;",   # context line (leading space)
+            "+++counter;",         # the added `++counter;`
             "*** End Patch",
         ])}}
 
@@ -119,6 +129,7 @@ class ClaudeShapeTest(unittest.TestCase):
                          hook_io.edited_files(data))
 
     def test_multiedit_joins_every_new_string(self):
+        # Korean payload on purpose: "first" / "second", joined in order.
         data = {"tool_input": {"file_path": "/repo/a.kt", "edits": [
             {"new_string": "첫째"}, {"new_string": "둘째"},
         ]}}
@@ -136,6 +147,7 @@ class FailOpenTest(unittest.TestCase):
             {"tool_name": "Bash", "tool_input": {"command": "echo hello"}}))
 
     def test_garbage_returns_empty(self):
+        # `"문자열"` is a bare string where a dict is expected — a wrong-type payload.
         for junk in (None, {}, {"tool_input": None}, {"tool_input": "문자열"},
                      {"tool_input": {"file_path": 42}}):
             self.assertEqual([], hook_io.edited_files(junk), junk)
@@ -143,6 +155,7 @@ class FailOpenTest(unittest.TestCase):
 
 class ConvenienceTest(unittest.TestCase):
     def test_paths_and_content_helpers(self):
+        # Korean payload on purpose: "one" / "two", one added line per file.
         data = {"tool_input": {"command": "\n".join([
             "*** Begin Patch",
             "*** Add File: a.py",
@@ -154,6 +167,40 @@ class ConvenienceTest(unittest.TestCase):
 
         self.assertEqual(["a.py", "b.py"], hook_io.edited_paths(data))
         self.assertEqual("하나\n둘", hook_io.added_content(data))
+
+
+class EmitContextTest(unittest.TestCase):
+    """The injection payload: both keys, and non-ASCII text passed through intact.
+
+    Now that the hooks generate English text, nothing in the default path exercises
+    non-ASCII output any more. But injected context still carries whatever the project's
+    memory files and the user's own content say, which is frequently not ASCII. This pins
+    `ensure_ascii=False` so that content is not silently mangled into `\\uXXXX` escapes.
+    """
+
+    def _emit(self, text):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            hook_io.emit_context("PreToolUse", text)
+        return buffer.getvalue()
+
+    def test_both_the_nested_and_top_level_keys_are_emitted(self):
+        """Claude reads the nested key; the Codex docs are ambiguous — emit both."""
+        payload = json.loads(self._emit("hello"))
+        self.assertEqual("hello", payload["additionalContext"])
+        self.assertEqual("hello", payload["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual("PreToolUse", payload["hookSpecificOutput"]["hookEventName"])
+
+    def test_non_ascii_context_survives_unescaped(self):
+        korean = "메모리 규칙: 커밋 전에 ./build.sh 를 돌릴 것"
+        raw = self._emit(korean)
+        self.assertIn(korean, raw, "non-ASCII context was escaped instead of written as is")
+        self.assertEqual(korean, json.loads(raw)["additionalContext"])
+
+    def test_empty_text_emits_nothing(self):
+        """An empty injection must stay silent — otherwise a hollow JSON line gets emitted."""
+        self.assertEqual("", self._emit(""))
+        self.assertEqual("", self._emit(None))
 
 
 class ProjectDirTest(unittest.TestCase):

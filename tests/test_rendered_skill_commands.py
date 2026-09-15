@@ -1,21 +1,25 @@
-"""렌더된 SKILL.md 가 **존재하지 않는 명령**을 안내하지 않는지 검사한다.
+"""Checks that rendered SKILL.md files never advertise a **command that does not exist**.
 
-없는 명령을 안내하면 사용자는 쳐도 아무 일이 안 일어나고, 모델은 안내를 따르지 못해
-결국 로그를 손으로 뒤진다. 손 탐색에는 프로젝트 스코핑이 없다(이슈 #95).
+Advertising a missing command means the user types it and nothing happens, and the model
+cannot follow the instruction either, so it ends up digging through logs by hand.
+Hand-digging has no project scoping (issue #95).
 
-이 검사가 필요한 이유는 같은 실수가 **두 번** 났기 때문이다: `/fw-claude`·`/continue-claude`
-가 `handoff.py` 의 힌트 문구와 `build.sh` 의 `DEEP_RECOVERY` 렌더값 **양쪽**에 있었고,
-한쪽만 고쳤다. 같은 사실이 여러 곳에 있으면 사람 눈으로는 반드시 하나를 놓친다.
+This check exists because the same mistake happened **twice**: `/fw-claude` and
+`/continue-claude` appeared **both** in the hint text of `handoff.py` and in the
+`DEEP_RECOVERY` render value of `build.sh`, and only one side was fixed. When the same fact
+lives in several places, human eyes are guaranteed to miss one.
 
-그 뒤로 다시 두 번 났다.
+Then it happened twice more.
 
-- PR #105: 스킬 다섯을 저장소에서 빼면서 `docs/overview.html` 을 놓쳤다. README 가 "그림이
-  있는 설계 개요"로 링크하는 문서라, 따라간 사람은 **없는 명령의 사용법**을 읽게 된다.
-  원인은 참조를 훑은 grep 이 `--include` 로 `.html` 을 빼놨던 것.
-- 같은 PR: **이 파일의 회귀 가드 자체도** 확장자를 `{md, py, sh, json}` 으로 걸러
-  `.html` 을 안 보고 있었다. 이 실수를 막으려고 만든 가드가 같은 맹점을 갖고 있었다.
+- PR #105: five skills were removed from the repository but `docs/overview.html` was
+  missed. README links it as the "illustrated design overview", so anyone following that
+  link reads **usage instructions for commands that do not exist**. The cause was that the
+  grep used to sweep the references excluded `.html` via `--include`.
+- The same PR: **the regression guard in this very file** also filtered extensions down to
+  `{md, py, sh, json}` and therefore never looked at `.html`. The guard built to prevent
+  this mistake had the same blind spot.
 
-그래서 이제 **확장자로 거르지 않는다.** 텍스트로 읽히는 파일은 전부 본다.
+So it now **does not filter by extension.** Every file that reads as text is inspected.
 """
 import pathlib
 import re
@@ -26,14 +30,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "core" / "skills"
 RENDERED = [ROOT / "plugins" / "harness" / "skills", ROOT / "plugins" / "codex" / "skills"]
 
-# 백틱으로 감싼 슬래시 명령만 본다: `/fw`, `/memory-update`.
-# 경로(`/Users/x`, `~/.codex/sessions`)는 이름 뒤에 닫는 백틱이 바로 오지 않아 안 잡힌다.
+# Only backtick-wrapped slash commands are inspected: `/fw`, `/memory-update`.
+# Paths (`/Users/x`, `~/.codex/sessions`) are not matched, because no closing backtick
+# follows the name directly.
 COMMAND = re.compile(r"`/([a-z][a-z0-9-]*)`")
 
-# 스킬이 아니지만 실제로 존재하는 것들 — 호스트 툴의 내장 명령.
+# Not skills, but they really do exist — the host tool's built-in commands.
 BUILTIN = {"clear", "hooks", "plugin", "compact", "help", "config", "codex"}
 
-# 문서용: Markdown 백틱과 HTML <code> 를 둘 다 받는다. overview.html 이 <code> 를 쓴다.
+# For docs: accepts both Markdown backticks and HTML <code>. overview.html uses <code>.
 DOC_COMMAND = re.compile(r"(?:`|<code>)/([a-z][a-z0-9-]*)(?:`|</code>)")
 
 
@@ -53,15 +58,16 @@ class RenderedSkillCommandTest(unittest.TestCase):
 
         self.assertEqual(
             [], unknown,
-            "존재하지 않는 명령을 안내하고 있다 — 스킬을 추가했거나 이름을 바꿨다면 "
-            f"양쪽 어댑터를 함께 확인하라. 알려진 스킬: {sorted(known)}",
+            "a command that does not exist is being advertised — if a skill was added or "
+            f"renamed, check both adapters together. Known skills: {sorted(known)}",
         )
 
     def test_the_two_names_that_slipped_through_twice_are_gone(self):
-        """회귀 가드. 이 이름들은 한 번도 존재한 적 없는데 두 곳에 적혀 있었다.
+        """Regression guard. These names never existed, yet they were written in two places.
 
-        사용자에게 나가는 것만 본다(core·plugins·docs·build.sh·README). `tests/` 는 제외 —
-        "이 이름이 안 나와야 한다" 를 단언하려면 테스트는 이름을 적을 수밖에 없다.
+        Only what ships to users is inspected (core, plugins, docs, build.sh, README).
+        `tests/` is excluded — asserting "this name must not appear" forces the test itself
+        to spell the name out.
         """
         targets = [ROOT / "core", ROOT / "plugins", ROOT / "docs"]
         files = [p for base in targets for p in base.rglob("*") if p.is_file()]
@@ -69,8 +75,9 @@ class RenderedSkillCommandTest(unittest.TestCase):
 
         offenders = []
         for path in files:
-            # ⚠️ 확장자로 거르지 않는다. 예전엔 {md, py, sh, json} 만 봤고 .html 을 놓쳤다.
-            # 읽히면 본다 — 바이너리는 UnicodeDecodeError 로 알아서 빠진다.
+            # ⚠️ No extension filtering. It used to look at {md, py, sh, json} only and
+            # missed .html. If it reads, it is inspected — binaries drop out on their own
+            # via UnicodeDecodeError.
             try:
                 text = path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, OSError):
@@ -83,16 +90,16 @@ class RenderedSkillCommandTest(unittest.TestCase):
 
 
 class UserFacingDocCommandTest(unittest.TestCase):
-    """사용자가 읽는 문서가 **존재하지 않는 스킬**을 안내하지 않는지.
+    """Whether user-facing docs advertise a **skill that does not exist**.
 
-    위 검사는 렌더된 SKILL.md 만 본다. 그런데 사람이 실제로 먼저 읽는 건 README 와
-    `docs/` 다. PR #105 에서 스킬 다섯을 뺐을 때 `docs/overview.html` 이 그대로 남아
-    그 다섯을 설치된 기능으로 소개하고 있었다.
+    The check above looks only at rendered SKILL.md. But what people actually read first is
+    the README and `docs/`. When five skills were removed in PR #105, `docs/overview.html`
+    stayed behind and kept introducing those five as installed features.
 
-    HTML 은 `<code>/name</code>`, Markdown 은 `` `/name` `` 으로 쓴다 — 둘 다 잡는다.
+    HTML writes `<code>/name</code>` and Markdown writes `` `/name` `` — both are matched.
     """
 
-    # 스킬이 아니지만 실제로 존재하는 것 — 호스트 툴 내장 명령.
+    # Not skills, but they really do exist — the host tool's built-in commands.
     ALLOWED = BUILTIN
 
     def _doc_files(self):
@@ -116,8 +123,9 @@ class UserFacingDocCommandTest(unittest.TestCase):
 
         self.assertEqual(
             [], unknown,
-            "사용자가 읽는 문서가 없는 스킬을 안내하고 있다 — 스킬을 빼거나 이름을 바꿨다면 "
-            f"README·docs 도 같이 고쳐야 한다. 알려진 스킬: {sorted(known)}",
+            "user-facing docs advertise a skill that does not exist — if a skill was "
+            "removed or renamed, README and docs have to be fixed along with it. "
+            f"Known skills: {sorted(known)}",
         )
 
 

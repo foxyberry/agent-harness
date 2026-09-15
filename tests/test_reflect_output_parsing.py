@@ -1,6 +1,12 @@
-"""회고 잡이 LLM 출력과 트랜스크립트를 읽다 **조용히 잃는** 경우 (리뷰 지적).
+"""Cases where the retrospection job **silently loses** content while reading LLM output and
+transcripts (raised in review).
 
-둘 다 실패가 "초안 없음" 으로 보인다 — 뽑을 게 없었던 것과 구별이 안 된다.
+In both cases the failure looks like "no drafts" -- indistinguishable from there having been
+nothing to extract.
+
+Note on language: the payload strings below are deliberately Korean. They are transcript *content*,
+i.e. real user input, and they pin that translating the harness's own output did not start altering
+the data it carries.
 """
 import importlib.util
 import json
@@ -27,92 +33,98 @@ compact_transcript = _load("compact_transcript", "compact_transcript.py")
 
 DRAFT = """---
 name: lesson-one
-description: 한 줄
+description: one line
 type: feedback
 ---
-본문."""
+Body."""
 
 
 class NestedFenceTest(unittest.TestCase):
-    """초안 안의 코드 인용이 초안을 자르지 않는지.
+    """Does a code quote inside a draft truncate the draft?
 
-    ADR 계약이 `Evidence` 섹션을 요구하므로 코드 인용은 예외가 아니라 기본이다. 바깥 펜스와
-    안쪽 인용이 둘 다 ``` 이면 **구별할 방법이 없다** — 태그 없는 인용은 닫는 펜스와 글자까지
-    같다. 그래서 프롬프트가 바깥에 백틱 4개를 요구하고, 파서가 그걸 읽는다.
+    The ADR contract requires an `Evidence` section, so code quotes are the norm, not the exception.
+    If the outer fence and the inner quote are both ``` there is **no way to tell them apart** -- an
+    untagged quote is character-for-character identical to a closing fence. That is why the prompt
+    demands four backticks on the outside and the parser reads them.
     """
 
     def test_a_draft_quoting_untagged_code_survives_intact(self):
-        """태그 없는 ``` 인용 — 예전 파서가 여기서 잘렸다."""
-        text = f"````\n{DRAFT}\n\n## Evidence\n```\nprint(1)\n```\n끝 문장.\n````\n"
+        """An untagged ``` quote -- the old parser was truncated here."""
+        text = f"````\n{DRAFT}\n\n## Evidence\n```\nprint(1)\n```\nFinal sentence.\n````\n"
 
         drafts = reflect._split_drafts(text)
 
-        self.assertEqual(1, len(drafts), f"블록이 쪼개졌다: {drafts}")
-        self.assertIn("끝 문장", drafts[0], "안쪽 펜스에서 잘렸다")
-        self.assertIn("print(1)", drafts[0], "인용한 코드가 사라졌다")
+        self.assertEqual(1, len(drafts), f"the block was split apart: {drafts}")
+        self.assertIn("Final sentence", drafts[0], "truncated at the inner fence")
+        self.assertIn("print(1)", drafts[0], "the quoted code disappeared")
 
     def test_a_draft_quoting_tagged_code_survives_intact(self):
-        text = f"````\n{DRAFT}\n\n```python\nprint(1)\n```\n끝 문장.\n````\n"
+        text = f"````\n{DRAFT}\n\n```python\nprint(1)\n```\nFinal sentence.\n````\n"
 
         drafts = reflect._split_drafts(text)
 
         self.assertEqual(1, len(drafts))
-        self.assertIn("끝 문장", drafts[0])
+        self.assertIn("Final sentence", drafts[0])
 
     def test_two_separate_drafts_are_still_two(self):
-        """모호함을 없애다 반대로 다 이어 붙이면 안 된다."""
-        text = (f"````\n{DRAFT}\n````\n\n사이 설명\n\n"
+        """Removing the ambiguity must not glue everything together instead."""
+        text = (f"````\n{DRAFT}\n````\n\nprose in between\n\n"
                 f"````\n{DRAFT.replace('one', 'two')}\n````\n")
 
         drafts = reflect._split_drafts(text)
 
         self.assertEqual(2, len(drafts))
-        self.assertNotIn("사이 설명", drafts[0])
+        self.assertNotIn("prose in between", drafts[0])
 
     def test_a_truncated_final_block_is_kept_not_dropped(self):
-        """출력이 토큰 상한에 잘리면 닫는 펜스가 없다. 버리면 '뽑을 게 없었다' 와 구별이 안 된다."""
-        text = f"````\n{DRAFT}\n\n마지막 줄이 잘림"
+        """Output cut off at the token limit has no closing fence. Dropping it would be
+        indistinguishable from "there was nothing to extract"."""
+        text = f"````\n{DRAFT}\n\nthe last line is cut off"
 
         drafts = reflect._split_drafts(text)
 
-        self.assertEqual(1, len(drafts), "잘린 초안을 통째로 버렸다")
+        self.assertEqual(1, len(drafts), "the truncated draft was discarded wholesale")
         self.assertIn("lesson-one", drafts[0])
 
     def test_old_three_tick_output_still_parses(self):
-        """모델이 지시를 벗어나 백틱 3개로 낼 수 있다. 그 경우도 초안을 잃지 않는다."""
+        """The model may drift from the instruction and emit three backticks. No draft is lost
+        in that case either."""
         text = f"```\n{DRAFT}\n```\n"
 
         self.assertEqual(1, len(reflect._split_drafts(text)))
 
     def test_known_limit_three_tick_outer_with_nested_quote_is_ambiguous(self):
-        """**의도된 한계를 못으로 박아둔다.**
+        """**Nails down a deliberate limit.**
 
-        바깥이 3개면 안쪽 태그 없는 인용과 닫는 펜스가 같은 문자열이라 원리적으로 구별이
-        안 된다. 파서를 더 영리하게 만드는 게 아니라 **계약(백틱 4개)으로** 푼 이유다.
-        이 테스트가 깨진다면 누가 폴백 경로를 추측으로 고치려 한 것이니, 그때 다시 판단한다.
+        With a three-backtick outer fence, an untagged inner quote and the closing fence are the same
+        string, so they are indistinguishable in principle. That is why this was solved **by contract
+        (four backticks)** rather than by making the parser cleverer. If this test breaks, somebody
+        tried to fix the fallback path by guessing -- re-evaluate then.
         """
-        text = f"```\n{DRAFT}\n\n```\nprint(1)\n```\n끝 문장.\n```\n"
+        text = f"```\n{DRAFT}\n\n```\nprint(1)\n```\nFinal sentence.\n```\n"
 
         drafts = reflect._split_drafts(text)
 
         self.assertEqual(1, len(drafts))
-        self.assertNotIn("끝 문장", drafts[0], "폴백 경로가 갑자기 정확해졌다 — 확인 필요")
+        self.assertNotIn("Final sentence", drafts[0],
+                         "the fallback path suddenly became accurate — needs review")
 
     def test_garbage_without_the_required_markers_is_still_dropped(self):
-        """살리는 것과 아무거나 받는 건 다르다."""
-        self.assertEqual([], reflect._split_drafts("````\n그냥 산문\n````\n"))
-        self.assertEqual([], reflect._split_drafts("````\n닫히지 않은 산문"))
+        """Rescuing content and accepting anything are different things."""
+        self.assertEqual([], reflect._split_drafts("````\njust prose\n````\n"))
+        self.assertEqual([], reflect._split_drafts("````\nunclosed prose"))
 
 
 class CodexUserMessageTest(unittest.TestCase):
-    """Codex 롤아웃에서 **주입된 컨텍스트**를 사용자 발화로 읽지 않는지.
+    """Does a Codex rollout's **injected context** get read as a user utterance?
 
-    Codex 는 자기가 주입한 것도 `response_item` 에 `role: "user"` 로 넣는다 —
-    `<user_action>` 래퍼, 환경 정보, 프로젝트의 AGENTS.md 본문. 실측(8개 세션)에서
-    그런 항목 17건 중 8건이 주입이었다.
+    Codex puts its own injections into `response_item` with `role: "user"` too -- `<user_action>`
+    wrappers, environment info, the project's AGENTS.md body. Measured across 8 sessions, 8 of 17
+    such items were injections.
 
-    회고 재료로 쓰면 치명적이다. AGENTS.md 전문이 "사용자가 한 말" 로 들어가면 회고가 그걸
-    새 교훈으로 뽑아 승격 후보로 올린다 — **기존 규칙이 사용자 피드백으로 둔갑해 자기복제한다.**
+    Using them as retrospection material is fatal. If the whole of AGENTS.md enters as "what the
+    user said", the retrospective extracts it as a new lesson and files it for promotion -- **the
+    existing rules disguise themselves as user feedback and self-replicate.**
     """
 
     def _rollout(self, records):
@@ -143,7 +155,7 @@ class CodexUserMessageTest(unittest.TestCase):
         out = self._compact([self.INJECTED, self.REAL])
 
         self.assertIn("진짜 사용자 발화다", out)
-        self.assertNotIn("주입된 지시", out, "주입된 컨텍스트가 사용자 발화로 들어왔다")
+        self.assertNotIn("주입된 지시", out, "injected context entered as a user utterance")
 
     def test_developer_instructions_are_not_feedback_either(self):
         out = self._compact([self.DEVELOPER, self.REAL])
@@ -151,14 +163,16 @@ class CodexUserMessageTest(unittest.TestCase):
         self.assertNotIn("시스템 지시문", out)
 
     def test_assistant_text_still_survives(self):
-        """주입을 걸러내다 응답까지 날리면 회고가 결론을 못 본다."""
+        """Filtering injections must not take the replies with it, or the retrospective never sees
+        the conclusions."""
         out = self._compact([self.REAL, self.ASSISTANT])
 
         self.assertIn("진짜 사용자 발화다", out)
         self.assertIn("어시스턴트 답변", out)
 
     def test_claude_real_turns_survive(self):
-        """주 사용처다. 거르다 진짜 발화를 죽이면 회고 자체가 죽는다."""
+        """This is the primary use case. Killing real utterances while filtering kills the
+        retrospective itself."""
         out = self._compact([
             {"type": "user", "message": {"role": "user", "content": "클로드 발화"}},
             {"type": "assistant", "message": {"role": "assistant",
@@ -170,11 +184,13 @@ class CodexUserMessageTest(unittest.TestCase):
 
 
 class ClaudeInjectedTurnTest(unittest.TestCase):
-    """Claude 쪽도 `role: "user"` 자리에 주입이 온다 — Codex 와 같은 부류.
+    """On the Claude side too, injections arrive in the `role: "user"` slot -- the same family as
+    Codex.
 
-    이전 판의 테스트는 "Claude 사용자 텍스트가 **필터 없이** 살아남는다" 를 지켰다. 즉
-    결함 동작을 올바름으로 못박고 있었다. 실측: 한 트랜스크립트에서 USER 블록 9개 중 6개가
-    주입이었고, 그중엔 **스킬 본문**이 있었다 — 하네스 자신의 규칙이 사용자 발화로 둔갑한다.
+    The previous version of this test pinned "Claude user text survives **unfiltered**", i.e. it was
+    nailing down the defective behaviour as correct. Measured: 6 of 9 USER blocks in one transcript
+    were injections, and among them was a **skill body** -- the harness's own rules disguised as a
+    user utterance.
     """
 
     def _compact(self, records):
@@ -194,18 +210,18 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
     HUMAN = {"origin": {"kind": "human", "promptSource": "typed"}}
 
     def test_origin_marks_who_typed_it(self):
-        """최근 트랜스크립트는 origin 을 달고 온다. 있으면 그걸 믿는다."""
+        """Recent transcripts carry origin. When it is there, trust it."""
         out = self._compact([
             self._user("사람이 친 말", **self.HUMAN),
             self._user("도구가 넣은 것", origin={"kind": "task-notification"}),
         ])
 
         self.assertIn("사람이 친 말", out)
-        self.assertNotIn("도구가 넣은 것", out)
+        self.assertNotIn("도구가 넣은 것", out, "a tool-inserted turn survived")
 
     def test_prompt_source_is_read_from_the_record_not_from_origin(self):
-        """`promptSource` 는 레코드 최상위에 있다. origin 안에서 읽으면 죽은 조건이다
-        (실측: `origin.promptSource` 는 2616건 전부 None)."""
+        """`promptSource` lives at the record top level. Reading it inside origin is a dead
+        condition (measured: `origin.promptSource` was None in all 2616 records)."""
         out = self._compact([
             self._user("사람이 친 말", promptSource="typed"),
             self._user("자동화가 넣은 평문 프롬프트", promptSource="sdk"),
@@ -214,12 +230,12 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
 
         self.assertIn("사람이 친 말", out)
         self.assertNotIn("자동화가 넣은 평문 프롬프트", out,
-                         "SDK 프롬프트가 사용자 피드백으로 들어왔다")
+                         "an SDK prompt entered as user feedback")
         self.assertNotIn("시스템이 넣은 평문", out)
 
     def test_machine_prompts_without_a_tag_are_still_caught(self):
-        """마커 폴백으로는 못 잡는 부류다 — 평문이라 태그가 없다.
-        origin 도 없어서(실측 sdk 40건이 그렇다) promptSource 만이 유일한 신호다."""
+        """A family the marker fallback cannot catch -- it is plain text, so there is no tag.
+        There is no origin either (measured: 40 sdk records), so promptSource is the only signal."""
         out = self._compact([self._user("이 PR 을 리뷰해주세요", promptSource="sdk")])
 
         self.assertNotIn("리뷰해주세요", out)
@@ -228,8 +244,9 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertNotIn("메타", self._compact([self._user("메타 레코드", isMeta=True)]))
 
     def test_old_records_without_origin_fall_back_to_markers(self):
-        """origin 이 생기기 전 파일이 훨씬 많다(이 프로젝트 46개 중 40개).
-        엄격히 걸면 그 파일들에서 사용자 발화가 0건이 되고, '회고할 게 없었다' 와 구별이 안 된다."""
+        """Files predating origin are far more numerous (40 of this project's 46). Filtering
+        strictly yields zero user utterances in them, indistinguishable from "nothing to reflect
+        on"."""
         out = self._compact([
             self._user("옛 파일의 진짜 발화"),
             self._user("<task-notification>\n작업 알림 본문"),
@@ -239,14 +256,15 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
 
         self.assertIn("옛 파일의 진짜 발화", out)
         self.assertNotIn("작업 알림 본문", out)
-        self.assertNotIn("스킬 규칙 본문", out, "스킬 본문이 사용자 발화로 들어왔다")
+        self.assertNotIn("스킬 규칙 본문", out, "a skill body entered as a user utterance")
         self.assertNotIn("Caveat", out)
 
     def test_whole_injected_families_are_filtered_not_just_the_tags_i_thought_of(self):
-        """태그를 하나씩 적으면 반드시 빠뜨린다.
+        """Listing tags one by one guarantees missing some.
 
-        첫 판은 `<command-name>` 만 적고 `<command-message>` 를 빠뜨렸다 — 실측 corpus 에
-        6건 있었다. 같은 계열은 변형이 계속 생기므로 **계열 접두사**로 잡는다.
+        The first version listed only `<command-name>` and missed `<command-message>` -- 6 of those
+        were in the measured corpus. Variants of the same family keep appearing, so we match on the
+        **family prefix**.
         """
         families = [
             "<command-name>/plugin</command-name>",
@@ -263,10 +281,12 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertIn("진짜 발화", out)
         for i, t in enumerate(families):
             with self.subTest(family=t[:20]):
-                self.assertNotIn(f"주입된 본문 {i}", out)
+                self.assertNotIn(f"주입된 본문 {i}", out,
+                                 "an injected body from this tag family survived")
 
     def test_talking_about_a_marker_is_not_injection(self):
-        """마커를 **언급하는** 정상 발화까지 죽이면 안 된다 — 그래서 머리에서만 본다."""
+        """A normal utterance that merely **mentions** a marker must not be killed -- which is why
+        only the head is inspected."""
         out = self._compact([
             self._user("압축기가 <task-notification> 을 왜 거르는지 설명해줘"),
         ])
@@ -274,25 +294,28 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertIn("왜 거르는지", out)
 
     def test_the_fallback_announces_itself(self):
-        """폴백은 origin 기반보다 약하다. 조용히 퇴화하면 이 저장소의 그 실패 모드다."""
+        """The fallback is weaker than origin-based selection. Degrading silently is exactly this
+        repository's failure mode."""
         import contextlib, io
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self._compact([self._user("origin 없는 발화")])
 
-        self.assertIn("마커 기반", err.getvalue())
+        self.assertIn("fell back to markers", err.getvalue())
 
     def test_no_fallback_notice_when_origin_is_present(self):
-        """신호가 있으면 경고가 뜨면 안 된다 — 매번 뜨면 아무도 안 읽는다."""
+        """With a signal present the warning must not appear -- one that fires every time is read by
+        nobody."""
         import contextlib, io
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self._compact([self._user("사람이 친 말", **self.HUMAN)])
 
-        self.assertNotIn("마커 기반", err.getvalue())
+        self.assertNotIn("fell back to markers", err.getvalue())
 
     def test_retrospective_mode_refuses_unattributed_user_turns(self):
-        """복원은 fallback 을 써도 되지만, 메모리 후보는 출처 불명 턴에서 만들지 않는다."""
+        """Recovery may use the fallback, but memory candidates are never built from turns of
+        unknown origin."""
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
                                          encoding="utf-8") as fh:
             fh.write(json.dumps(self._user("옛 파일의 진짜 발화"), ensure_ascii=False) + "\n")
@@ -318,7 +341,7 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
         self.assertIn("사람이 친 말", body)
 
     def test_attributed_turn_survives_injected_marker_in_the_same_file(self):
-        """실제 파일은 사람 턴과 command 주입이 섞인다. 파일 단위로 거부하면 안 된다."""
+        """Real files mix human turns with command injections. Rejecting per file is wrong."""
         records = [
             self._user("사람이 친 말", promptSource="typed"),
             self._user("<command-name>/model</command-name>"),
@@ -379,7 +402,8 @@ class ClaudeInjectedTurnTest(unittest.TestCase):
 
 
 class TranscriptDecodeTest(unittest.TestCase):
-    """깨진 바이트 하나로 회고 잡이 죽으면, 그 세션은 이미 seen 처리돼 영영 재시도 안 된다."""
+    """If one broken byte kills the retrospection job, that session is already marked seen and is
+    never retried."""
 
     def test_an_undecodable_byte_does_not_kill_the_job(self):
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as fh:
@@ -388,13 +412,14 @@ class TranscriptDecodeTest(unittest.TestCase):
             fh.write(b'{"type":"user","message":{"role":"user","content":"after"}}\n')
             path = fh.name
         try:
-            body, n = compact_transcript.compact(path)   # 예전 판은 여기서 UnicodeDecodeError
+            body, n = compact_transcript.compact(path)   # the old version raised UnicodeDecodeError here
         finally:
             pathlib.Path(path).unlink()
 
         self.assertGreater(n, 0)
-        self.assertIn("before", body, "깨진 줄 앞이 사라졌다")
-        self.assertIn("after", body, "깨진 줄 뒤가 사라졌다 — 한 줄 때문에 나머지를 잃었다")
+        self.assertIn("before", body, "content before the broken line disappeared")
+        self.assertIn("after", body,
+                      "content after the broken line disappeared — one line cost us the rest")
 
 
 class ReflectProvenanceGateTest(unittest.TestCase):
@@ -440,7 +465,7 @@ class ReflectProvenanceGateTest(unittest.TestCase):
             ], capture_output=True, text=True)
 
             self.assertEqual(3, proc.returncode)
-            self.assertIn("회고 거부", proc.stderr)
+            self.assertIn("retrospection refused", proc.stderr)
             self.assertFalse(output.exists())
 
     def test_unknown_cli_option_fails_closed(self):

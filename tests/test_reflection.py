@@ -228,6 +228,10 @@ class ReactTimingPackTest(unittest.TestCase):
 
         output = json.loads(result.stdout)
         context = output["hookSpecificOutput"]["additionalContext"]
+        # Korean assertion on purpose: this text comes from
+        # project-template/.claude/memory/reflection-rules.json, which is deliberately Korean
+        # project data. The engine must pass a project's rule message through verbatim, whatever
+        # language it is written in.
         self.assertIn("state updater 안 부수효과 후보", context)
         self.assertIn("renderHook + rerender", context)
 

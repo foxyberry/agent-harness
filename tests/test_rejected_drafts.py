@@ -1,10 +1,16 @@
-"""폐기한 초안이 다음 세션에서 다시 생기지 않게 하는 장치 (이슈 #109).
+"""The mechanism that stops a rejected draft from being recreated in the next session (issue #109).
 
-초안을 폐기하면 `_pending/` 의 파일이 지워진다. 그러면 **거절했다는 사실이 어디에도 안
-남아서**, 다음 세션이 같은 트랜스크립트를 읽고 같은 교훈을 뽑아 같은 초안을 또 만든다.
+Rejecting a draft deletes the file in `_pending/`. **The fact that it was rejected is then recorded
+nowhere**, so the next session reads the same transcript, extracts the same lesson, and creates the
+same draft again.
 
-고침은 `_rejected.md` 를 회고 프롬프트에 넣는 것이다. `_decisions_index` 가 기존 ADR 을
-넣어 체인 제안을 시키는 것과 같은 방식 — 유사도 판단은 LLM 이 이미 한다.
+The fix is to put `_rejected.md` into the retrospection prompt -- the same approach
+`_decisions_index` uses when it feeds in existing ADRs to get chain proposals. The LLM is already
+making the similarity judgement.
+
+Note on language: the prompt text the harness *generates* is English, but `_rejected.md` is a
+user-maintained ledger that may be in any language. The parse is deliberately language-agnostic
+(lines starting with `- `), and the fixtures below keep Korean entries to pin that.
 """
 import importlib.util
 import pathlib
@@ -28,46 +34,70 @@ class RejectedIndexTest(unittest.TestCase):
         return tmp
 
     def test_no_file_is_not_an_error(self):
-        """템플릿을 안 복사한 프로젝트가 대부분이다 — 조용히 넘어가야 한다."""
-        self.assertEqual("(아직 없음)", reflect._rejected_index(self._project()))
+        """Most projects never copied the template -- this has to pass through quietly."""
+        self.assertEqual(reflect.NONE_YET, reflect._rejected_index(self._project()))
 
     def test_file_with_only_prose_counts_as_empty(self):
-        """머리말만 있고 항목이 없는 새 파일. 설명문을 항목으로 오인하면 안 된다."""
-        project = self._project("# 폐기한 초안\n\n안 남기기로 한 후보를 여기 적는다.\n")
-        self.assertEqual("(아직 없음)", reflect._rejected_index(project))
+        """A new file with only a heading and no entries. Prose must not be mistaken for entries."""
+        project = self._project("# Rejected drafts\n\nCandidates decided against are listed here.\n")
+        self.assertEqual(reflect.NONE_YET, reflect._rejected_index(project))
 
     def test_entries_are_returned_for_the_prompt(self):
+        project = self._project(
+            "# Rejected drafts\n\nExplanatory paragraph.\n\n"
+            "- `use-tabs` — .editorconfig already enforces it (2026-08-18)\n"
+            "- `short-titles` — a one-off remark (2026-08-18)\n"
+        )
+        out = reflect._rejected_index(project)
+        self.assertIn("use-tabs", out)
+        self.assertIn("short-titles", out)
+        self.assertNotIn("Explanatory paragraph", out)
+
+    def test_a_korean_ledger_still_parses(self):
+        """Legacy compatibility: ledgers written before the runtime spoke English.
+
+        The entries are user-written prose in Korean around a heading that is Korean too. The parser
+        keys on `- ` only, so these must keep flowing into the prompt verbatim -- if translation had
+        introduced any language assumption, existing projects would silently lose their whole
+        rejection history and start regenerating drafts people already threw away.
+        """
         project = self._project(
             "# 폐기한 초안\n\n설명 문단.\n\n"
             "- `use-tabs` — .editorconfig 가 이미 강제 (2026-08-18)\n"
             "- `short-titles` — 한 번뿐인 지적 (2026-08-18)\n"
         )
         out = reflect._rejected_index(project)
-        self.assertIn("use-tabs", out)
-        self.assertIn("short-titles", out)
-        self.assertNotIn("설명 문단", out)
+        self.assertIn("- `use-tabs` — .editorconfig 가 이미 강제 (2026-08-18)", out)
+        self.assertIn("- `short-titles` — 한 번뿐인 지적 (2026-08-18)", out)
+        self.assertNotIn("설명 문단", out, "prose was mistaken for an entry")
+
+    def test_a_korean_ledger_with_only_prose_is_still_empty(self):
+        """The "no entries" verdict must not depend on the language of the prose either."""
+        project = self._project("# 폐기한 초안\n\n안 남기기로 한 후보를 여기 적는다.\n")
+        self.assertEqual(reflect.NONE_YET, reflect._rejected_index(project))
 
     def test_oldest_entries_drop_first_when_capped(self):
-        """추가 전용이라 뒤쪽이 최신이다. 넘치면 **오래된 앞쪽**을 버린다 —
-        최근에 거절한 것일수록 다시 생성될 확률이 높다."""
-        rows = [f"- `lesson-{i}` — 이유 (2026-08-18)" for i in range(60)]
-        project = self._project("# 폐기\n\n" + "\n".join(rows) + "\n")
+        """The file is append-only, so the tail is newest. On overflow the **old head** is dropped
+        -- the more recently something was rejected, the likelier it is to be generated again."""
+        rows = [f"- `lesson-{i}` — reason (2026-08-18)" for i in range(60)]
+        project = self._project("# Rejected\n\n" + "\n".join(rows) + "\n")
         out = reflect._rejected_index(project)
-        self.assertNotIn("`lesson-0`", out, "가장 오래된 항목이 남았다")
-        self.assertIn("`lesson-59`", out, "가장 최근 항목이 잘렸다")
-        self.assertIn("생략", out, "잘렸다는 사실을 알리지 않았다")
+        self.assertNotIn("`lesson-0`", out, "the oldest entry survived")
+        self.assertIn("`lesson-59`", out, "the most recent entry was cut")
+        self.assertIn("older entries omitted", out, "the truncation was not announced")
 
 
 class CommentedExampleTest(unittest.TestCase):
-    """주석 안의 예시가 **진짜 폐기 기록으로 새지 않는지.**
+    """Does an example inside a comment **leak in as a real rejection record?**
 
-    파서는 `- ` 로 시작하는 줄을 항목으로 본다. 사람이 파일 안에 예시를 적을 때 자연스럽게
-    `<!-- ... -->` 로 감싸는데, **줄 단위 파서는 주석을 못 본다.** 그러면 있지도 않은 거절이
-    모든 회고 프롬프트에 주입돼, 비슷한 교훈이 조용히 막힌다.
+    The parser treats lines starting with `- ` as entries. When a person writes examples into the
+    file they naturally wrap them in `<!-- ... -->`, but **a line-oriented parser does not see
+    comments.** Rejections that never happened would then be injected into every retrospection
+    prompt, silently blocking similar lessons.
 
-    `_decisions_index` 는 이미 같은 실패를 막고 있다 — README·EXAMPLE 파일을 걸러
-    "복사한 새 프로젝트에서 예시가 실제 기존 체인으로 주입되는 걸 막는다". 새 경로에 같은
-    버그를 다시 넣지 않았는지 본다.
+    `_decisions_index` already prevents the same failure -- it filters out README and EXAMPLE files
+    to "stop examples in a freshly copied project being injected as real existing chains". This
+    checks the same bug was not reintroduced on the new path.
     """
 
     def _index(self, body):
@@ -79,21 +109,32 @@ class CommentedExampleTest(unittest.TestCase):
 
     def test_commented_out_examples_are_not_entries(self):
         out = self._index(
+            "# Rejected retrospection drafts\n\n"
+            "<!-- An example. In practice you delete this and start fresh.\n"
+            "- `use-tabs-not-spaces` — .editorconfig already enforces it (2026-08-18)\n"
+            "-->\n"
+        )
+        self.assertEqual(reflect.NONE_YET, out,
+                         f"an example inside a comment leaked in as a real record:\n{out}")
+
+    def test_commented_out_examples_in_a_korean_template_are_not_entries(self):
+        """The shipped Korean template wraps its example the same way -- keep that case covered."""
+        out = self._index(
             "# 폐기한 회고 초안\n\n"
             "<!-- 예시다. 실제로는 지우고 시작한다.\n"
             "- `use-tabs-not-spaces` — .editorconfig 가 이미 강제 (2026-08-18)\n"
             "-->\n"
         )
-        self.assertEqual("(아직 없음)", out,
-                         f"주석 안 예시가 실제 기록으로 샜다:\n{out}")
+        self.assertEqual(reflect.NONE_YET, out,
+                         f"an example inside a comment leaked in as a real record:\n{out}")
 
     def test_real_entries_around_a_comment_still_count(self):
-        """주석을 걷어내다 진짜 항목까지 날리면 안 된다."""
+        """Stripping comments must not take real entries with it."""
         out = self._index(
-            "# 폐기\n\n"
-            "- `real-one` — 실제 폐기 (2026-08-18)\n"
-            "<!-- 참고: 아래는 예시\n- `fake-one` — 예시 (2026-08-18)\n-->\n"
-            "- `real-two` — 실제 폐기 (2026-08-18)\n"
+            "# Rejected\n\n"
+            "- `real-one` — really rejected (2026-08-18)\n"
+            "<!-- note: the line below is an example\n- `fake-one` — example (2026-08-18)\n-->\n"
+            "- `real-two` — really rejected (2026-08-18)\n"
         )
         self.assertIn("real-one", out)
         self.assertIn("real-two", out)
@@ -101,11 +142,12 @@ class CommentedExampleTest(unittest.TestCase):
 
 
 class RenderedSkillTest(unittest.TestCase):
-    """대화형 경로(`/memory-update`)에도 배선됐는지.
+    """Is it wired into the interactive path (`/memory-update`) as well?
 
-    자동 회고는 기본 꺼짐이라, 실제로 초안이 재생성되는 건 **대화형 경로**다 —
-    `/memory-update` 가 매번 트랜스크립트에서 다시 뽑는다. reflect.py 만 고치면 정작
-    아픈 쪽이 그대로다. core 를 고치고 build.sh 를 안 돌린 경우도 여기서 걸린다.
+    Automatic retrospection is off by default, so the place drafts actually get regenerated is the
+    **interactive path** -- `/memory-update` re-extracts them from the transcript every time. Fixing
+    only reflect.py would leave the part that actually hurts untouched. Editing core without running
+    build.sh is also caught here.
     """
 
     ADAPTERS = ("harness", "codex")
@@ -117,13 +159,13 @@ class RenderedSkillTest(unittest.TestCase):
     def test_both_adapters_read_and_write_the_rejection_list(self):
         for adapter in self.ADAPTERS:
             text = self._rendered(adapter)
-            with self.subTest(adapter=adapter, path="읽기"):
+            with self.subTest(adapter=adapter, path="read"):
                 self.assertIn("_rejected.md", text)
                 self.assertIn("exclude it from the candidates", text,
-                              "dedup 단계에서 폐기 목록을 쓰라는 지시가 없다")
-            with self.subTest(adapter=adapter, path="쓰기"):
+                              "nothing tells the dedup step to use the rejection list")
+            with self.subTest(adapter=adapter, path="write"):
                 self.assertIn("append", text,
-                              "폐기한 것을 기록하라는 지시가 없다 — 목록이 채워지지 않는다")
+                              "nothing tells it to record rejections — the list never fills up")
 
     def test_it_is_not_presented_as_a_permanent_ban(self):
         for adapter in self.ADAPTERS:
@@ -132,24 +174,85 @@ class RenderedSkillTest(unittest.TestCase):
 
 
 class PromptWiringTest(unittest.TestCase):
-    """정규화만 되고 **프롬프트에 안 실리는** 배선 누락을 잡는다.
+    """Catches the wiring gap where normalisation happens but **nothing reaches the prompt**.
 
-    함수만 테스트하면 "읽기는 되는데 아무도 안 쓴다" 를 놓친다 — 이 저장소에서 두 번 그랬다.
+    Testing only the function misses "it reads fine but nobody uses it" -- which happened twice in
+    this repository.
     """
 
     def test_prompt_tells_the_model_to_skip_rejected_lessons(self):
-        self.assertIn("이미 폐기한 초안", reflect.PROMPT,
-                      "프롬프트가 폐기 목록을 언급하지 않는다 — 목록을 넣어도 모델이 안 본다")
+        self.assertIn(reflect.REJECTED_SECTION, reflect.PROMPT,
+                      "the prompt never names the rejection list — filling the list in would not "
+                      "make the model look at it")
+
+    def test_the_prompt_and_the_assembled_section_use_the_same_name(self):
+        """The instruction points at a section heading assembled elsewhere in main().
+
+        If the two drift apart the prompt tells the model to consult a section that does not exist
+        under that name, and the failure is invisible: the LLM just ignores the list.
+        """
+        source = SCRIPT.read_text(encoding="utf-8")
+        assembly = source[source.index("prompt = ("):source.index("text = BACKENDS[backend]")]
+        self.assertIn("REJECTED_SECTION", assembly,
+                      "the assembled heading does not use the shared constant")
+        self.assertIn("DECISIONS_SECTION", assembly,
+                      "the assembled heading does not use the shared constant")
+        self.assertIn(reflect.DECISIONS_SECTION, reflect.PROMPT + reflect.ADR_DRAFT_CONTRACT,
+                      "nothing tells the model to consult the decision chain index")
 
     def test_prompt_does_not_turn_it_into_a_permanent_ban(self):
-        """한 번 거절했다고 영원히 막으면 그게 또 버그다 — 반복돼 값어치가 생기면 다시 올려야 한다."""
-        self.assertIn("금지 목록이 아니다", reflect.PROMPT)
+        """Blocking something forever because it was rejected once is its own bug -- if it recurs
+        and gains value it has to be raisable again."""
+        self.assertIn("it is not a ban list", reflect.PROMPT)
 
     def test_rejected_index_is_assembled_into_the_prompt(self):
         source = SCRIPT.read_text(encoding="utf-8")
         assembly = source[source.index("prompt = ("):source.index("text = BACKENDS[backend]")]
         self.assertIn("_rejected_index(project_dir)", assembly,
-                      "_rejected_index 가 프롬프트 조립에 안 들어갔다")
+                      "_rejected_index never made it into the prompt assembly")
+
+
+class DraftLanguageContractTest(unittest.TestCase):
+    """Both draft generators must ask for English prose while leaving source text alone.
+
+    The harness's own runtime speaks English, but the material it reads does not: transcripts and
+    commit messages in this project are often Korean. Without an explicit instruction the model
+    mirrors the source language, and drafts land in `_pending/` in a different language from the
+    memory they will be promoted into. The other half matters more -- quoted evidence, code, paths
+    and identifiers must stay verbatim, or a draft's Evidence section stops matching the repository
+    it cites.
+
+    `reflect` and `mine` are two generators feeding one promotion path, so the contract is asserted
+    on both. Purely offline: the prompt strings are inspected, no backend is called.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        mine_spec = importlib.util.spec_from_file_location(
+            "mine", SCRIPT.parent / "mine.py")
+        cls.mine = importlib.util.module_from_spec(mine_spec)
+        mine_spec.loader.exec_module(cls.mine)
+
+    def prompts(self):
+        return {"reflect.PROMPT": reflect.PROMPT, "mine.MINE_PROMPT": self.mine.MINE_PROMPT}
+
+    def test_both_prompts_ask_for_english_draft_prose(self):
+        for name, prompt in self.prompts().items():
+            with self.subTest(prompt=name):
+                self.assertIn("in **English**", prompt,
+                              "the generator does not ask for English draft prose — drafts will "
+                              "mirror the source language")
+                self.assertIn("even when the source", prompt,
+                              "the instruction does not cover non-English source material")
+
+    def test_both_prompts_forbid_translating_quoted_source(self):
+        for name, prompt in self.prompts().items():
+            with self.subTest(prompt=name):
+                self.assertIn("do not translate them", prompt,
+                              "nothing stops the model rewriting quoted source text")
+                for kept in ("quoted evidence", "code", "file paths", "identifiers"):
+                    self.assertIn(kept, prompt,
+                                  f"the instruction does not protect {kept} from translation")
 
 
 if __name__ == "__main__":

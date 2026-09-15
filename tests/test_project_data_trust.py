@@ -1,15 +1,18 @@
-"""프로젝트가 주는 데이터를 **신뢰하지 않는지** 검사한다.
+"""Checks that data supplied by the project is **not trusted**.
 
-`.claude/memory/` 의 `routes.json` 과 그것이 가리키는 메모리 파일은 **설정이 아니라 사실상
-실행 권한**이다. 훅은 편집·셸 명령마다 돌고, 그 내용을 모델 컨텍스트에 넣는다. 사용자가
-클론한 남의 저장소일 수도 있다 — 그 저장소가 에이전트에게 말을 거는 통로가 된다.
+`routes.json` under `.claude/memory/` and the memory files it points at are **not configuration; in
+practice they are execution authority**. The hook runs on every edit and every shell command and
+puts their content into the model's context. The repository may be someone else's that the user
+cloned -- that makes it a channel for the repository to talk to the agent.
 
-여기서 지키는 것:
+What is pinned here:
 
-1. 주입 총량에 상한이 있다 (형제 훅 project-memory-index 와 같은 값)
-2. 빈 문자열 규칙이 **모든** 명령·경로에 매칭되지 않는다
-3. 주입 텍스트에 **출처 표시**가 있다 — 하네스 지시가 아니라 저장소가 준 자료라는
-4. 커밋되면 안 되는 산출물을 **엔진이** 로컬 exclude 에 넣는다 (템플릿 복사에 기대지 않고)
+1. The total injection volume is capped (the same value as the sibling hook project-memory-index)
+2. An empty-string rule does not match **every** command or path
+3. The injected text carries a **provenance marker** -- that it is material from the repository,
+   not a harness instruction
+4. **The engine** puts the artifacts that must not be committed into the local exclude file (rather
+   than relying on the template being copied)
 """
 import importlib.util
 import json
@@ -62,33 +65,38 @@ class _Project(unittest.TestCase):
 
 class InjectionBudgetTest(_Project):
     def test_a_huge_memory_file_cannot_flood_the_context(self):
-        """상한이 없으면 저장소가 임의 길이 텍스트를 매 호출에 밀어 넣을 수 있다."""
+        """Without a cap the repository could push arbitrarily long text on every call."""
         self.routes([{"command_contains": ["ls"], "memory": ["big.md"]}])
         (self.memory / "big.md").write_text("A" * 200_000, encoding="utf-8")
 
         out = self.run_search(self.bash())
 
         self.assertLess(len(out), 20_000,
-                        f"주입이 {len(out)}자 — 상한이 안 걸렸다")
-        # 무엇이 잘렸는지는 상황에 따라 다르지만(파일 하나가 넘쳤나 / 총량이 찼나),
-        # **뭔가 빠졌다는 사실**은 항상 알려야 한다. 조용히 자르면 읽는 쪽이 전부라고 믿는다.
-        self.assertIn("생략", out, "잘렸다는 사실을 알리지 않았다")
+                        f"injection was {len(out)} chars — the cap did not apply")
+        # This asserts on the **global** budget notice specifically, not the per-file one. The two
+        # markers are worded distinctly on purpose: memory-search emits `[truncated: <file> ...]`
+        # when a single file overruns and `[omitted: total injection budget ...]` when the shared
+        # budget is exhausted. Asserting on a prefix both share would let this test pass on the
+        # per-file marker and quietly stop covering the total cap.
+        self.assertIn("total injection budget", out,
+                      "the total-budget cap was not announced")
 
     def test_the_label_is_counted_too(self):
-        """본문만 세면 파일 **이름**이 예산 밖에 남는다 — 빈 파일 수천 개로 우회할 수 있다.
-        이름은 routes.json 이 정하므로 그것도 저장소가 통제하는 문자열이다."""
+        """Counting only bodies leaves the file **names** outside the budget -- thousands of empty
+        files would bypass it. The names come from routes.json, so they are repository-controlled
+        strings too."""
         names = [f"{'n' * 200}-{i}.md" for i in range(400)]
         self.routes([{"command_contains": ["ls"], "memory": names}])
         for name in names:
-            (self.memory / name).write_text("", encoding="utf-8")   # 본문 0자
+            (self.memory / name).write_text("", encoding="utf-8")   # zero-length body
 
         out = self.run_search(self.bash())
 
         self.assertLess(len(out), 20_000,
-                        f"주입이 {len(out)}자 — 라벨이 예산에 안 잡힌다")
+                        f"injection was {len(out)} chars — labels are not counted in the budget")
 
     def test_many_files_share_one_budget(self):
-        """파일당 상한이면 파일 수를 늘려 우회할 수 있다. 총량이어야 한다."""
+        """A per-file cap could be bypassed by adding more files. It has to be a total."""
         self.routes([{"command_contains": ["ls"],
                       "memory": [f"m{i}.md" for i in range(30)]}])
         for i in range(30):
@@ -97,12 +105,12 @@ class InjectionBudgetTest(_Project):
         out = self.run_search(self.bash())
 
         self.assertLess(len(out), 20_000,
-                        f"주입이 {len(out)}자 — 파일을 나누면 상한이 뚫린다")
+                        f"injection was {len(out)} chars — splitting across files breaks the cap")
 
 
 class EmptyPatternTest(_Project):
     def test_empty_command_pattern_does_not_match_everything(self):
-        """`"" in command` 는 항상 참이다. 규칙 하나로 모든 셸 명령에 주입이 걸린다."""
+        """`"" in command` is always true. One such rule would inject on every shell command."""
         self.routes([{"command_contains": [""], "memory": ["evil.md"]}])
         (self.memory / "evil.md").write_text("CANARY", encoding="utf-8")
 
@@ -119,7 +127,8 @@ class EmptyPatternTest(_Project):
         self.assertNotIn("CANARY", out)
 
     def test_a_real_pattern_still_matches(self):
-        """빈 문자열만 걸러야 한다. 정상 규칙까지 죽이면 훅이 무용지물이다."""
+        """Only empty strings should be filtered. Killing valid rules too would make the hook
+        useless."""
         self.routes([{"command_contains": ["ls"], "memory": ["ok.md"]}])
         (self.memory / "ok.md").write_text("CANARY", encoding="utf-8")
 
@@ -128,21 +137,34 @@ class EmptyPatternTest(_Project):
 
 class ProvenanceTest(_Project):
     def test_injected_text_says_where_it_came_from(self):
-        """출처 표시가 없으면 모델은 저장소가 준 텍스트를 시스템 지시와 같은 무게로 읽는다."""
+        """Without a provenance marker the model reads repository-supplied text with the same
+        weight as a system instruction.
+
+        The assertions deliberately pin the distinctive clause and the literal memory path rather
+        than a common word like "repository" -- a memory file body could contain that word by
+        accident and make this test pass on its own payload.
+        """
         self.routes([{"command_contains": ["ls"], "memory": ["m.md"]}])
+        # Korean body on purpose: a repository's memory files are arbitrary user content, and the
+        # provenance header must be emitted around them unchanged.
         (self.memory / "m.md").write_text("규칙 본문", encoding="utf-8")
 
         out = self.run_search(self.bash())
 
-        self.assertIn("저장소", out, "출처를 밝히지 않았다")
-        self.assertIn("지시가 아님", out, "지시가 아니라는 표시가 없다")
+        self.assertIn("provided by this project repository", out,
+                      "the provenance of the material was not stated")
+        self.assertIn("`.claude/memory/`", out,
+                      "the header does not name where the material came from")
+        self.assertIn("it is not instructions", out,
+                      "there is no marker saying this is not an instruction")
+        self.assertIn("규칙 본문", out, "the memory body itself was altered")
 
 
 class LocalExcludeTest(unittest.TestCase):
-    """커밋되면 안 되는 산출물을 **엔진이** 막는지.
+    """Does **the engine** block the artifacts that must not be committed?
 
-    보호가 project-template 에만 있으면, 템플릿을 복사하지 않은 사용자는 무방비다 —
-    README 는 그 복사를 선택 단계로 안내한다.
+    If the protection lived only in project-template, a user who did not copy the template would be
+    unprotected -- the README presents that copy as an optional step.
     """
 
     def _git_project(self, tmp):
@@ -163,22 +185,24 @@ class LocalExcludeTest(unittest.TestCase):
                 self.assertIn(entry, exclude)
 
     def test_the_paths_are_actually_ignored_by_git(self):
-        """exclude 에 문자열이 들어간 것과 git 이 실제로 무시하는 건 다르다."""
+        """A string being present in the exclude file and git actually ignoring it are different
+        things."""
         with tempfile.TemporaryDirectory() as tmp:
             project = self._git_project(tmp)
             pr_merge_reflect._ensure_local_cache_exclude(str(project))
             (project / ".claude" / "memory" / "_pending").mkdir(parents=True)
-            (project / ".claude" / "memory" / "_pending" / "d.md").write_text("초안")
-            (project / ".claude" / "memory" / "_rejected.md").write_text("폐기 기록")
+            (project / ".claude" / "memory" / "_pending" / "d.md").write_text("draft")
+            (project / ".claude" / "memory" / "_rejected.md").write_text("rejection ledger")
 
             status = subprocess.run(["git", "status", "--porcelain"], cwd=project,
                                     capture_output=True, text=True).stdout
 
-        self.assertNotIn("_pending", status, "회고 초안이 커밋 대상으로 잡힌다")
-        self.assertNotIn("_rejected", status, "폐기 기록이 커밋 대상으로 잡힌다")
+        self.assertNotIn("_pending", status, "retrospection drafts are staged for commit")
+        self.assertNotIn("_rejected", status, "the rejection ledger is staged for commit")
 
     def test_running_twice_does_not_duplicate_entries(self):
-        """SessionStart 마다 돈다. 매번 추가하면 exclude 가 무한히 자란다."""
+        """This runs at every SessionStart. Appending each time would grow the exclude file
+        without bound."""
         with tempfile.TemporaryDirectory() as tmp:
             project = self._git_project(tmp)
             pr_merge_reflect._ensure_local_cache_exclude(str(project))
