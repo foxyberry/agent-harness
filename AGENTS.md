@@ -82,6 +82,8 @@ and Codex logs and hands the selected log path to `fw --session`.
 - When shipping a user-facing change, bump the version in `plugins/codex/.codex-plugin/plugin.json`
   and `plugins/harness/.claude-plugin/plugin.json` **together** (keep them equal; never ask users
   to refresh a cache while leaving the version unchanged).
+- For Claude, run `claude plugin marketplace update foxyberry`, then
+  `claude plugin update agent-harness@foxyberry`. Restart Claude Code to load the updated plugin.
 - Codex currently has no `plugin update`, so the update instructions are: `marketplace upgrade`,
   then `remove`/`add` to pull a fresh cache.
 - Verify local development with `./build.sh` → `codex plugin marketplace add ./` →

@@ -61,8 +61,9 @@ Saving and loading a handoff no longer assert a commit state that the file canno
   current Git state and the exact `git -C <project root> add`/`commit` commands to run, and the
   saved text deliberately records no commit state, because that claim goes stale the moment the
   file is committed. Saved is not committed, and the skill now says so.
-- `handoff-load` prints a Git-state line above the body: not committed, committed but since
-  modified, committed and identical to `HEAD`, or not determinable. A committed result means a
+- `handoff-load` reports the file's current Git state, including whether it matches `HEAD` or
+  has changed since being committed. It also identifies uncommitted or untracked files and
+  cases where the state cannot be determined. A committed result means a
   **local commit only** — push state is not checked, so confirm that separately before treating
   a handoff as available on another machine.
 - Handoff files written by earlier versions still load with their bodies intact; the old baked-in
