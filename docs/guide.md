@@ -45,8 +45,9 @@ skills, not here.
 
 **The difference between `handoff` and `fw` is the thing to understand.**
 
-- `handoff-save/load` = a handoff file **a human deliberately saved**. It is committed, so
-  **other machines and other people** can read it. This is the canonical record.
+- `handoff-save/load` = a handoff file **a human deliberately saved**. Saving only writes it
+  locally; **commit and push it** and then **other machines and other people** can read it.
+  Once committed it is the canonical record.
 - `fw` = the rescue path for **when you didn't save**. It reconstructs from session logs
   (Claude `.jsonl` / Codex rollout). It works **only on the same machine**, and it is not
   committed.
@@ -79,8 +80,9 @@ stopped in the middle of, the next actions, and any open review findings.
 The one-line summary is optional, but write it. Later it is the only thing you see in a
 list when choosing.
 
-**`/handoff-load`** — reads the committed handoff first and **checks it against current git
-state**. If the handoff is old, it says so. Reporting the state is where it stops by
+**`/handoff-load`** — reads the saved handoff first and **checks it against current git
+state**, including whether the handoff file itself is actually committed. If the handoff is
+old or was never committed, it says so. Reporting the state is where it stops by
 default; verification, builds, and git operations have to be asked for separately.
 
 **`/fw`** — recovers from session logs even when nothing was saved. It defaults to the
