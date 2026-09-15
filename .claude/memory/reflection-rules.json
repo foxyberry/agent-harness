@@ -1,15 +1,15 @@
 {
-  "//": "reflection 훅 데이터 (agent-harness 자기 dogfooding). Python 훅 품질 규칙. 내장 TODO/FIXME 는 항상.",
+  "//": "reflection hook data (agent-harness dogfooding itself). Quality rules for Python hooks. The built-in TODO/FIXME rule always applies.",
   "rules": [
     {
       "glob": "*.py",
       "regex": "except\\s*:",
-      "message": "bare except {count}곳 — 훅은 `except Exception` 으로 fail-open 하라(세션 막지 않게)"
+      "message": "bare except in {count} place(s) — hooks should fail open with `except Exception` so they never block the session"
     },
     {
       "glob": "*.py",
       "regex": "shell\\s*=\\s*True",
-      "message": "shell=True {count}곳 — 셸 인젝션 위험, 인자 리스트로 전달 검토"
+      "message": "shell=True in {count} place(s) — shell injection risk, consider passing an argument list instead"
     }
   ]
 }

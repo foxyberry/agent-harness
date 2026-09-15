@@ -1,16 +1,19 @@
 ---
 name: review-evidence-on-target-thread
-description: 외부 리뷰 결과는 대상 PR·이슈 스레드에 원문 또는 링크로 남겨 검증 가능하게 한다
+description: Leave external review results on the target PR or issue thread, as the original text or a link, so they can be verified
 type: feedback
 ---
 
-Claude Code, Codex, 사람 리뷰어 등 외부 검토를 받았다고 보고할 때는 결과를 **대상 PR 또는 이슈의
-댓글**에 남긴다. PR 본문에 작성자가 "리뷰 통과"라고 적는 것만으로 독립 리뷰 증거를 대신하지 않는다.
+When you report that an external review happened — Claude Code, Codex, a human reviewer — leave
+the result as a **comment on the target PR or issue**. The author writing "review passed" in the
+PR body is not a substitute for evidence of an independent review.
 
-**Why:** 공개 전환 PR #72에서는 Claude Code 리뷰를 로컬에서 받았지만 PR 댓글에 남기지 않아,
-사용자가 GitHub 화면에서 리뷰 사실을 확인할 수 없었다. 후속 PR #73부터 리뷰 원문과 교차검증
-결과를 PR 댓글에 남기자 검토 주체·시점·근거를 바로 확인할 수 있었다.
+**Why:** on the public-release PR #72, the Claude Code review was done locally but never posted
+as a PR comment, so the user could not confirm from the GitHub page that a review had happened.
+From the follow-up PR #73 onward, posting the original review text and the cross-check result as
+PR comments made the reviewer, the timing and the evidence immediately checkable.
 
-**How to apply:** 교차검토가 끝나면 finding, 최종 판단, 실행한 검증을 대상 스레드에 요약한다.
-리뷰 원문이 관련 이슈 등 다른 스레드에 있다면 대상 PR에서 그 댓글을 직접 링크한다. 로컬 CLI
-출력만 있는 상태를 "PR 리뷰 완료"라고 표현하지 않는다.
+**How to apply:** when a cross-review finishes, summarize the findings, the final judgment and
+the verification you ran on the target thread. If the original review lives on another thread,
+such as a related issue, link that comment directly from the target PR. Do not describe a state
+where the only artifact is local CLI output as "PR review complete".

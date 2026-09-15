@@ -1,4 +1,5 @@
 _pending/
-# 폐기한 회고 초안 기록 — 안 남기기로 한 교훈 목록은 작업 습관·실수 이력에 가깝다.
-# 커밋하려면 그 항목이 팀에 공유돼도 되는지 먼저 판단할 것.
+# Record of discarded retrospective drafts — a list of lessons you chose not to keep is
+# closer to work habits and mistake history. Before committing it, decide whether those
+# entries are safe to share with the team.
 _rejected.md

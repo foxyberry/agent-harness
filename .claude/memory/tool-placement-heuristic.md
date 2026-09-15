@@ -1,39 +1,50 @@
 ---
 name: tool-placement-heuristic
-description: 새 훅·도구 배치 결정 = 범용 엔진이면 하네스 core / 취향·규약 의존이면 개인 ~/.claude(내 습관) 또는 repo 커밋(팀 공유). 훅은 core 에 넣지 말 것
+description: Placing a new hook or tool = generic data-driven engine → harness core / taste- or convention-dependent → personal ~/.claude (my habits) or a repo commit (team-shared). Keep the project-specific content out of core, not the hook itself
 type: feedback
 ---
 
-새 훅·스킬·도구를 어디에 둘지 결정할 때 매번 재도출하지 말고 이 기준을 쓴다.
+Use this rule instead of re-deriving the decision every time you place a new hook, skill or tool.
 
-| 성격 | 위치 | 이유 |
+| Character | Location | Why |
 |---|---|---|
-| **범용 엔진** (툴·프로젝트 무관, 데이터로 동작) | 하네스 **core/** → build.sh → 어댑터 배포 | 설치자 모두에게 재사용. 단 "무엇을"은 하드코딩 말고 프로젝트 데이터로([[engine-data-separation]]) |
-| **내 개인 습관** (이 유저와 일하는 방식, 브랜치 규약 의존) | 개인 **`~/.claude/hooks`** + settings | 내 모든 repo 즉시 적용, 커밋 불필요, 팀 공유 안 됨 |
-| **팀 규칙** (팀원·타 머신도 따라야) | 각 **repo 에 커밋** (`.claude/hooks` + settings, `$CLAUDE_PROJECT_DIR` 상대참조 / 또는 git `.githooks`) | 클론하는 모두가 따름. 넣을 repo 마다 작업 |
+| **Generic engine** (tool- and project-independent, driven by data) | harness **core/** → build.sh → shipped to the adapters | reusable for every installer. But do not hardcode "what to do" — keep it in project data ([[engine-data-separation]]) |
+| **My personal habits** (how I work with this user, dependent on branch conventions) | personal **`~/.claude/hooks`** + settings | applies to all my repos immediately, no commit needed, not shared with the team |
+| **Team rules** (teammates and other machines must follow too) | **committed to each repo** (`.claude/hooks` + settings, referenced relative to `$CLAUDE_PROJECT_DIR`, or git `.githooks`) | everyone who clones follows it. Work required in every repo you add it to |
 
-**Why:** 2026-07-23 PR-이슈 연결 훅(그리고 그 전 서명 훅)에서 사용자가 매번 "하네스에 넣을지,
-각 repo 에 넣을지 고민된다"를 반복해 물었다. 결정 기준이 없어 그때그때 재논의됨.
+**Why:** on 2026-07-23, with the PR-to-issue linking hook (and the signing hook before it), the
+user kept asking the same question — "should this go in the harness or in each repo?" With no
+decision rule, it was re-argued every time.
 
-## 스킬은 한 단계 앞에서 먼저 거른다 (2026-08-17)
+## Skills get filtered one step earlier (2026-08-17)
 
-위 표는 "어디에 둘까"를 정한다. 그 전에 **"애초에 하네스 일인가"** 를 묻는다.
+The table above decides "where to put it". Before that, ask **"is this harness work at all?"**
 
-> 에이전트가 만들어낸 상태(세션 로그·메모리·훅)를 다루면 하네스.
-> git·GitHub 만 다루면 일반 도구다 — 아무리 쓸모 있어도 여기가 아니다.
+> If it deals with state the agent produced (session logs, memory, hooks), it is harness work.
+> If it only deals with git and GitHub, it is a general tool — however useful, it does not
+> belong here.
 
-`merge-cleanup`·`prettier-guard`·`stale-scan`·`review-ledger`·`verify-regression` 다섯이
-이 걸름망을 통과하지 못해 2026-08-17 개인 스코프로 나갔다(#105). 전부 잘 동작했고 실제로
-쓰이고 있었다 — **동작 여부가 기준이 아니다.**
+Five of them — `merge-cleanup`, `prettier-guard`, `stale-scan`, `review-ledger`,
+`verify-regression` — did not pass this filter and moved to personal scope on 2026-08-17 (#105).
+They all worked and were actually in use — **working is not the criterion.**
 
-`verify-regression` 이 경계선이었다. 에이전트가 통과만 하는 빈 테스트를 잘 쓴다는, 에이전트
-특유의 실패를 잡는 도구다. 그래도 내보냈다. **예외를 하나 두면 선이 다시 흐려진다.**
+`verify-regression` was the borderline case. It catches an agent-specific failure: agents are
+good at writing empty tests that only pass. It went out anyway. **One exception and the line
+blurs again.**
 
 **How to apply:**
-- **하네스 core 판단 기준**: 브랜치명 규약·팀 취향에 의존하면 core 아님(범용성 깨짐). 게다가 하네스 훅은
-  현재 Claude 전용(Codex 훅 defer) — 훅은 웬만하면 core 에 넣지 말고 개인/ repo 로.
-- **개인 vs repo 커밋**: "나만 지키면 됨" → 개인. "팀원·다른 머신도 강제" → repo 커밋(서명 훅 방식).
-- **애매하면 사용자에게 한 번 물어** 개인/repo/하네스 중 고르게 한다(반복 갈림길이라 확인 값어치 있음).
-- 병렬 작업 중인 repo 에 커밋할 땐 **git worktree 로 비침습** 처리(다른 AI 워킹트리 안 건드림).
+- **Judging harness core**: if it depends on branch naming conventions or team taste, it is not
+  core — that breaks the generic property. Hooks themselves do belong in core when they are
+  generic, data-driven engines; the harness ships hooks to both Claude and Codex today, with
+  Codex coverage still partial (`pr-merge-reflect` is registered only for SessionStart and
+  PostToolUse/Bash — see `docs/codex-hooks.md`). What stays out of core is the project- or
+  convention-specific *content*: put that in project data (`.claude/memory/*.json`) or in a
+  personal / per-repo hook.
+- **Personal vs repo commit**: "only I have to follow it" → personal. "teammates and other
+  machines must follow it too" → commit to the repo (the way the signing hook was done).
+- **When it is unclear, ask the user once** and let them pick personal / repo / harness (it is a
+  recurring fork, so the check is worth it).
+- When committing to a repo that has parallel work in progress, use a **git worktree** to stay
+  non-invasive (do not touch another AI's working tree).
 
-관련: [[engine-data-separation]], [[build-drift]], [[branch-name-issue-number]]
+Related: [[engine-data-separation]], [[build-drift]]

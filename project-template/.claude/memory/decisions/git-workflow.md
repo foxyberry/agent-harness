@@ -1,13 +1,13 @@
 ---
 name: git-workflow
-description: 이 프로젝트 git 작업 규칙 (예시 — 네 프로젝트에 맞게 교체)
+description: git workflow rules for this project (example — replace with your own)
 type: project
 ---
 
-<예시 파일이다. routes.json 의 `contains: ["git"]` 규칙이 이 파일을 주입한다 — 내용을 네 팀 규칙으로 교체하라.>
+<This is an example file. The `contains: ["git"]` rule in routes.json injects it — replace the content with your team's rules.>
 
-- main 직접 푸시 금지 — 브랜치 + PR.
-- 커밋 전 사용자 승인. 머지 후 `/feedback-review` · `/memory-update` 회고.
+- Never push directly to main — use a branch and a PR.
+- Get user approval before committing. After a merge, run `/feedback-review` and `/memory-update`.
 
-**Why:** 리뷰 없이 main 에 들어간 변경이 롤백 비용을 만든다.
-**How to apply:** git 관련 작업(커밋·머지·푸시) 전에 이 규칙을 우선 적용한다.
+**Why:** changes that land on main without review create rollback costs.
+**How to apply:** apply this rule first for any git work (commit, merge, push).

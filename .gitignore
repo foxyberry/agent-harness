@@ -5,12 +5,13 @@ __pycache__/
 # OS
 .DS_Store
 
-# 로컬 실험/설치 산출물
+# Local experiments / install output
 *.local
 
-# 자기개선 훅 런타임 산출물 (커밋 금지 — governance/머신별 상태)
+# Self-improvement hook runtime output (never commit — governance and per-machine state)
 .claude/memory/_pending/
 .claude/.cache/
-# 폐기한 회고 초안 기록. **개인 tier** 다 — 안 남기기로 한 교훈 목록은 곧 작업 습관·실수
-# 이력이고, AGENTS.md 의 메모리 tier 규칙상 그건 커밋하지 않는다(이 저장소는 공개다).
+# Record of discarded retrospective drafts. This is the **personal tier** — a list of lessons
+# deliberately not kept is really a record of work habits and mistakes, and the memory tier rule
+# in AGENTS.md says that does not get committed (this repository is public).
 .claude/memory/_rejected.md

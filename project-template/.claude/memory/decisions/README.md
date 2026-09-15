@@ -1,33 +1,36 @@
-# decisions/ — 결정 기록 (ADR)
+# decisions/ — decision records (ADR)
 
-이 폴더는 **"왜 그렇게 결정했나"** 를 한 건씩 남기는 곳이다. 코드는 "무엇을 했나"만 보여준다 —
-6개월 뒤 "이거 왜 이렇게 했지"가 사람 머릿속에서 증발하는 걸 막는 게 ADR(Architecture Decision
-Record)이다. 회고 루프가 초안을 만들고(`_pending/decisions/`), 사람이 `/memory-update` 로 승격한다.
+This folder holds one record per **"why we decided it that way"**. Code shows only *what* was
+done — an ADR (Architecture Decision Record) is what stops "why is this like this?" from
+evaporating out of someone's head six months later. The retrospective loop writes drafts into
+`_pending/decisions/`, and a person promotes them with `/memory-update`.
 
-## 스키마는 여기 없다
+## The schema is not here
 
-**정본은 `memory-update` 스킬 본문(§1.6)에 있다.** 이 파일은 폴더가 뭐 하는 곳인지 알려주는
-안내이고, 스키마를 여기 옮겨 적지 않는다.
+**The canonical copy lives in the `memory-update` skill body (§1.6).** This file only explains
+what the folder is for; it does not restate the schema.
 
-이유는 이 파일이 실제로 겪은 일이다. 예전에는 스킬이 이 파일을 "스키마 정본"이라고 가리켰는데,
-플러그인에는 `project-template/` 이 안 실린다. 그래서 이 팩을 복사하지 않았거나 ADR 기능이
-생기기 전에 복사한 프로젝트에서는 **정본이 존재하지 않는 파일을 가리켰고**, 승격이 막혔다
-(이슈 #132). 스키마는 프로젝트마다 다른 게 아니라 하네스가 정하는 형식이므로, 하네스와 함께
-배포되는 곳에 있어야 한다.
+The reason is something this very file caused. The skill used to point at this file as the
+"canonical schema", but the plugin does not ship `project-template/`. So in a project that had
+not copied this pack — or had copied it before the ADR feature existed — **the canonical copy
+pointed at a file that did not exist**, and promotion was blocked (issue #132). The schema is a
+format the harness defines, not something that varies per project, so it has to live where it
+ships with the harness.
 
-- **스키마·게이트·링크 규칙** → `memory-update` 스킬 §1.6 (플러그인과 함께 배포됨)
-- **이 폴더의 실제 결정 파일** → 프로젝트가 소유. 커밋해서 팀이 공유한다
+- **Schema, gates and link rules** → `memory-update` skill §1.6 (shipped with the plugin)
+- **The actual decision files in this folder** → owned by the project. Commit them so the team shares them
 
-## 예시
+## Example
 
-`adr-EXAMPLE-positive-only-exclusion.md` 가 한 건 들어 있다. 형식을 눈으로 보라고 둔 것이고,
-회고 자동화는 파일명에 `EXAMPLE` 이 있으면 **입력에서 제외**한다 — 예시가 "실제 기존 결정"으로
-LLM 에 주입돼 supersedes 후보로 제안되는 걸 막기 위해서다.
+One example is included, `adr-EXAMPLE-positive-only-exclusion.md`. It is there so you can see the
+format, and the retrospective automation **excludes it from its input** whenever `EXAMPLE` appears
+in the file name — this keeps the example from being fed to the LLM as a "real existing decision"
+and proposed as a supersedes candidate.
 
-새 프로젝트에서 이 예시는 지워도 되고 남겨둬도 된다.
+In a new project you may delete this example or keep it.
 
-## 무엇을 ADR 로 남기나
+## What belongs in an ADR
 
-`## Alternatives`(안 고른 대안)와 `## Consequence`(결과)를 **둘 다** 쓸 수 있는 것만 ADR 이다.
-못 쓰겠으면 그건 결정이 아니라 교훈·규칙이므로 `patterns/` 나 일반 메모리로 보낸다.
-아무 선택이나 ADR 로 만들면 검색이 무너진다.
+Something is an ADR only if you can write **both** `## Alternatives` (the options you did not take)
+and `## Consequence` (the outcome). If you cannot, it is not a decision but a lesson or a rule, so
+send it to `patterns/` or to ordinary memory. Turning every choice into an ADR destroys search.

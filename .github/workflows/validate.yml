@@ -10,44 +10,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # JSON 매니페스트 문법 검증 (claude CLI 미설치 환경 대비 최소 가드)
+      # JSON manifest syntax check (minimal guard for environments without the claude CLI)
       - name: Validate JSON manifests (Claude + Codex)
         run: |
           for f in .claude-plugin/marketplace.json plugins/*/.claude-plugin/plugin.json \
                    .agents/plugins/marketplace.json plugins/codex/.codex-plugin/plugin.json; do
             echo "checking $f"; python3 -m json.tool "$f" > /dev/null
           done
-          # 필수 필드 최소 가드 (Codex validator 미설치 CI 대비)
+          # Minimal required-field guard (for CI without the Codex validator installed)
           python3 - <<'PY'
           import json,sys
           m=json.load(open('.agents/plugins/marketplace.json'))
-          assert isinstance(m.get('name'),str) and m['name'], "Codex marketplace: top-level 'name' 필요"
+          assert isinstance(m.get('name'),str) and m['name'], "Codex marketplace: top-level 'name' is required"
           p=json.load(open('plugins/codex/.codex-plugin/plugin.json')); i=p.get('interface',{})
           h=json.load(open('plugins/harness/.claude-plugin/plugin.json'))
-          assert i.get('longDescription'), "Codex plugin: interface.longDescription 필요"
-          assert i.get('defaultPrompt'), "Codex plugin: interface.defaultPrompt 필요"
+          assert i.get('longDescription'), "Codex plugin: interface.longDescription is required"
+          assert i.get('defaultPrompt'), "Codex plugin: interface.defaultPrompt is required"
           assert p.get('version') == h.get('version'), (
-              f"Claude/Codex plugin version 불일치: {h.get('version')} != {p.get('version')}"
+              f"Claude/Codex plugin version mismatch: {h.get('version')} != {p.get('version')}"
           )
-          print("Codex manifest 필수 필드 OK")
+          print("Codex manifest required fields OK")
           PY
 
-      # core 스크립트·훅 문법
+      # Syntax of the core scripts and hooks
       - name: py_compile core scripts+hooks
         run: python3 -m py_compile core/scripts/*.py core/hooks/*.py
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
 
-      # 정본(core)과 생성물(plugins/harness) 동기화 확인 — build.sh 안 돌린 채 커밋 방지
+      # Check the canonical source (core) against both generated adapters (plugins/harness and plugins/codex) — stops commits made without running build.sh
       - name: core↔adapter in sync (build.sh drift check)
         run: |
           ./build.sh
           if ! git diff --quiet; then
-            echo "::error::plugins/harness 가 core 와 어긋남 — ./build.sh 후 커밋하세요"; git --no-pager diff --stat; exit 1
+            echo "::error::plugins/harness or plugins/codex is out of sync with core - run ./build.sh before committing"; git --no-pager diff --stat; exit 1
           fi
 
-      # claude CLI 있으면 공식 검증도 (없으면 skip)
+      # Run the official validation too when the claude CLI is present (skip otherwise)
       - name: claude plugin validate (if available)
         run: |
-          if command -v claude >/dev/null 2>&1; then claude plugin validate .; else echo "claude CLI 없음 — skip"; fi
+          if command -v claude >/dev/null 2>&1; then claude plugin validate .; else echo "claude CLI not found - skip"; fi

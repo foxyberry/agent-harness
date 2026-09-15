@@ -1,15 +1,18 @@
 ---
 name: skill-command-examples
-description: SKILL.md 의 필수 인자는 각주가 아니라 복붙되는 명령 예시 자체에 넣는다
+description: Put a required SKILL.md argument in the command example people copy and paste, not in a footnote
 type: feedback
 ---
 
-스킬 지침에서 어떤 인자가 필수면, 각주("반드시 X 를 넘겨라")로만 안내하지 말고 **fenced 명령
-예시 자체에** 그 인자를 넣어라. 에이전트·사용자는 주 예시를 그대로 복붙하지 각주를 반영하지 않는다.
+If an argument is required in a skill's instructions, do not explain it only in a footnote
+("always pass X") — put it **in the fenced command example itself**. Agents and users copy and
+paste the main example; they do not apply the footnote.
 
-**Why:** 이슈 #3 수정 1차에서 `--project-dir` 를 PATH_NOTE 각주로만 안내했더니, 렌더된 명령
-예시엔 인자가 빠져 Codex 리뷰가 "복붙 시 여전히 누락 → 버그 잔존"으로 P2 지적했다.
+**Why:** in the first fix for issue #3, `--project-dir` was documented only in a PATH_NOTE
+footnote, so the rendered command example was missing the argument. The Codex review flagged it
+as a P2: "copy and paste and it is still missing — the bug survives."
 
-**How to apply:** build.sh 처럼 어댑터별로 예시가 갈리면 placeholder(예: `{{PROJECT_DIR_ARG}}`)
-로 예시 안에 인자를 렌더하고, 필요 없는 어댑터는 빈 값으로 둔다. 각주는 "왜/무엇으로 바꿔라"
-설명 보조로만. 관련: [[adapter-cross-project-testing]], [[build-drift]].
+**How to apply:** when the example differs per adapter, as with build.sh, render the argument
+inside the example through a placeholder (for example `{{PROJECT_DIR_ARG}}`) and leave it empty
+for the adapters that do not need it. Footnotes are only for explaining why or what to replace it
+with. Related: [[adapter-cross-project-testing]], [[build-drift]].

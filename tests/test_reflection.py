@@ -206,6 +206,11 @@ class ReactTimingPackTest(unittest.TestCase):
             memory.mkdir(parents=True)
             data = json.loads(CONFIG.read_text())
             data["packs"][0]["enabled"] = True
+            # Project-authored messages may use any language, even though the shipped
+            # template is English. Keep that compatibility independent of its wording.
+            data["packs"][0]["rules"][0]["message"] = (
+                "state updater 안 부수효과 후보 {count}곳 — renderHook + rerender로 재현"
+            )
             Path(memory, "reflection-rules.json").write_text(json.dumps(data))
             payload = {
                 "tool_input": {
@@ -228,12 +233,9 @@ class ReactTimingPackTest(unittest.TestCase):
 
         output = json.loads(result.stdout)
         context = output["hookSpecificOutput"]["additionalContext"]
-        # Korean assertion on purpose: this text comes from
-        # project-template/.claude/memory/reflection-rules.json, which is deliberately Korean
-        # project data. The engine must pass a project's rule message through verbatim, whatever
-        # language it is written in.
-        self.assertIn("state updater 안 부수효과 후보", context)
-        self.assertIn("renderHook + rerender", context)
+        self.assertIn(
+            "state updater 안 부수효과 후보 1곳 — renderHook + rerender로 재현", context
+        )
 
 
 if __name__ == "__main__":
