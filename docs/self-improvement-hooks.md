@@ -264,9 +264,55 @@ missing.
 - `commit_messages`: skip if any listed substring occurs, case-insensitively.
 - `"defaults": false`: clear the built-in defaults for **all keys**, using only project data.
 
-These mechanisms already exist. Broader questions about which retrospective-generated rules
-and documentation should be excluded remain tracked in
-[#130](https://github.com/foxyberry/agent-harness/issues/130).
+#### Adopting the skip rules in an existing project
+
+**A plugin update never adopts this configuration.** The plugin ships the engine and a read-only
+reference copy of the template's `.claude/memory/`; it does not write into a project. A project
+that adopted `project-template/` before `reflect-skip.json` existed keeps the engine defaults —
+memory-only PRs are skipped, a memory PR carrying one `.gitignore` line is not — until someone
+copies the file in. That is per-project opt-in by design ([#132](https://github.com/foxyberry/agent-harness/issues/132)),
+not an oversight.
+
+The manual recipe, which never overwrites an existing file:
+
+1. Run `/template-check` in the project. It reports a status per reference file and prints the
+   **reference directory**; a file's reference copy is that directory joined with the path after
+   the leading `.claude/memory/`. `/template-check` has not been released yet — the latest
+   published plugin is 0.12.2 and the command landed after it — so until the next release, use
+   `project-template/.claude/memory/reflect-skip.json` from a source checkout as the reference.
+2. **missing** — copy the reference to `.claude/memory/reflect-skip.json`, then edit it. The
+   template's `paths` list is one project's judgement, not a default.
+3. **differs** — do not overwrite. Merge by key. The loader **extends** the engine defaults, so a
+   key you omit keeps its default instead of emptying; `"defaults": false` is the explicit opt-out
+   that clears every key first. If the project already set `"defaults": false`, that is a
+   deliberate decision — keep it, and merge the template's values into the project's own lists
+   rather than reinstating the defaults.
+4. **skipped** — the file was not compared, so there is nothing to act on. Do not copy over it;
+   fix the reason the check could not read it first.
+5. Decide `paths` deliberately. Skipping `AGENTS.md` or `CLAUDE.md` means a rule change gets no
+   retrospective and says so nowhere. Where a rule document is boilerplate, adopt it; where a rule
+   change can redefine what the project is, leave it out and mark the occasional
+   retrospective-output PR with `[skip reflect]` or a `skip-reflect` label — both are engine
+   defaults needing no configuration.
+6. `ignore_paths` fixes the reported loop and is empty in the engine. List only files that are
+   incidental **in this project**, and prefer exact paths: a `**/.gitignore` glob also matches
+   ignore files that are shipped or generated content, and removing those from the verdict hides
+   real changes.
+
+This repository's `.claude/memory/reflect-skip.json` adopts `ignore_paths` only, and only the root
+`.gitignore`. The nested ignore files under `project-template/` and `plugins/*/…/template-reference/`
+are shipped or generated product, so they stay in the verdict. `AGENTS.md` and `CLAUDE.md` are left
+out for the reason above — [#105](https://github.com/foxyberry/agent-harness/issues/105) was an
+`AGENTS.md` change that narrowed the harness's scope, and `project-template/AGENTS.md` ships to
+users — so a rule-promotion PR here uses the commit marker.
+`tests/test_reflect_skip_adoption.py` pins the resulting matrix against the committed file,
+separately from the generic engine and template layers in `tests/test_reflect_skip_scope.py`.
+
+Still open: every other project that adopted the template early has to run the recipe above by
+hand, which is what [#132](https://github.com/foxyberry/agent-harness/issues/132) and
+[#130](https://github.com/foxyberry/agent-harness/issues/130) track. The markers are also matched
+as plain substrings anywhere in a commit message, so a commit that merely *writes about*
+`[skip reflect]` skips its own PR — PR #134 in this repository did exactly that.
 
 ### reflect.py and compact_transcript.py — automatic retrospective jobs
 
