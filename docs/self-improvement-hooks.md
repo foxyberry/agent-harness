@@ -226,8 +226,9 @@ relevant changed files match any of these patterns:
 - `.claude/handoff/**`
 - `.agents/skills/**`
 
-It is also skipped if a PR label matches `skip-reflect` or `no-reflect`, or a commit message
-contains `[skip reflect]`, `skip-reflect`, or `no-reflect`.
+It is also skipped if a PR label matches `skip-reflect` or `no-reflect`, or if any commit in the PR
+**carries** `[skip reflect]`, `skip-reflect`, or `no-reflect` as a directive — see
+[Where a commit marker counts](#where-a-commit-marker-counts) for the two positions that count.
 
 **`CLAUDE.md`, `AGENTS.md`, and `.gitignore` are not built-in exclusions.** Lessons can be
 promoted into those files, but they belong to the project, and the significance of a change
@@ -261,8 +262,59 @@ missing.
   incidental. If removing these files leaves none, the path test does not skip the PR; there
   is no remaining evidence for that decision.
 - `labels`: skip if any label matches, using case-insensitive `fnmatch`.
-- `commit_messages`: skip if any listed substring occurs, case-insensitively.
+- `commit_messages`: skip if any commit in the PR carries one of these as a **directive**,
+  case-insensitively. Position matters — see below.
 - `"defaults": false`: clear the built-in defaults for **all keys**, using only project data.
+
+#### Where a commit marker counts
+
+A marker is read as a directive in exactly two positions:
+
+1. **anywhere in the subject** (the commit's first line) — the familiar `[skip ci]` convention:
+   `docs: promote lesson [skip reflect]`; or
+2. on a **standalone body line** whose entire content is the marker:
+
+   ```
+   docs: promote lesson
+
+   Closes #130.
+
+   [skip reflect]
+   ```
+
+**In the body, prose is ignored**: a sentence that mentions the marker, a backticked mention on its
+own line, a `> ` quoted line and a fenced example all leave the PR reflectable. A fenced block ends
+only at a line with the **same fence character**, a run **at least as long** as the opener and
+nothing but whitespace after it, so `~~~` inside a ` ``` ` block, ` ``` ` inside a ` ```` ` block,
+and ` ``` not a closing fence ` do not release it; a fence that is never closed hides the rest of
+the body.
+
+**In the subject there is no prose exemption** — that is the cost of following the `[skip ci]`
+convention. `docs: document [skip reflect] positions` skips, even though the sentence is only
+talking about the marker. The one exception is an exactly backticked occurrence
+(``docs: explain `[skip reflect]` ``), which is a quotation. Writing about a marker in the subject
+is rare; writing about one in a body is what PR #134 did. Nothing here infers intent from natural
+language.
+
+Matching is case-insensitive, and non-bracketed markers still need word boundaries, so
+`no-reflection` does not trigger `no-reflect`. Patterns are used exactly as configured: a pattern
+stored with padding (`"  [no-retro]  "`) keeps the padding, so it can match in the subject but
+never equals a trimmed standalone body line.
+
+This is narrower than the original rule, which matched the markers as plain substrings anywhere in
+the message. That inverted the feature: PR
+[#134](https://github.com/foxyberry/agent-harness/pull/134) — the PR that introduced these rules,
+16 files of hook engine, adapters, skills and docs — skipped its own retrospective because one body
+line *explained* `[skip reflect]`. A silently lost retrospective is the failure this rule set exists
+to prevent.
+
+**The narrowing applies to project-supplied `commit_messages` patterns too, not only the
+defaults.** Position, not pattern, is what separates a mark from a mention; a split rule would leave
+a project's own `[no-retro]` carrying the bug while the built-in marker is immune. Every position
+that still skips is one the old substring rule also matched, so the compatibility cost is
+one-directional: a project that relied on its pattern matching mid-body-prose now gets **more**
+retrospectives, never fewer. `tests/test_reflect_marker_intent.py` pins both directions against all
+three engine copies.
 
 #### Adopting the skip rules in an existing project
 
@@ -292,8 +344,8 @@ The manual recipe, which never overwrites an existing file:
 5. Decide `paths` deliberately. Skipping `AGENTS.md` or `CLAUDE.md` means a rule change gets no
    retrospective and says so nowhere. Where a rule document is boilerplate, adopt it; where a rule
    change can redefine what the project is, leave it out and mark the occasional
-   retrospective-output PR with `[skip reflect]` or a `skip-reflect` label — both are engine
-   defaults needing no configuration.
+   retrospective-output PR with `[skip reflect]` in the commit **subject** (or on its own body
+   line) or a `skip-reflect` label — both are engine defaults needing no configuration.
 6. `ignore_paths` fixes the reported loop and is empty in the engine. List only files that are
    incidental **in this project**, and prefer exact paths: a `**/.gitignore` glob also matches
    ignore files that are shipped or generated content, and removing those from the verdict hides
@@ -310,9 +362,12 @@ separately from the generic engine and template layers in `tests/test_reflect_sk
 
 Still open: every other project that adopted the template early has to run the recipe above by
 hand, which is what [#132](https://github.com/foxyberry/agent-harness/issues/132) and
-[#130](https://github.com/foxyberry/agent-harness/issues/130) track. The markers are also matched
-as plain substrings anywhere in a commit message, so a commit that merely *writes about*
-`[skip reflect]` skips its own PR — PR #134 in this repository did exactly that.
+[#130](https://github.com/foxyberry/agent-harness/issues/130) track.
+
+The markers used to be matched as plain substrings anywhere in a commit message, so a commit that
+merely *wrote about* `[skip reflect]` skipped its own PR — PR #134 did exactly that. They are now
+read only in the two directive positions described in
+[Where a commit marker counts](#where-a-commit-marker-counts).
 
 ### reflect.py and compact_transcript.py — automatic retrospective jobs
 

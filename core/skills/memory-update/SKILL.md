@@ -202,7 +202,7 @@ Determine storage by **scope, separately from type**:
 
 Shared-tier changes **require a commit through a branch and PR, never directly on main**. Personal-tier changes under `~/.claude` do not. State "Shared changes require a commit/PR" in the completion report.
 
-For retrospective-result PRs, include **`[skip reflect]`** in commit messages. Path-based skip rules are the first filter, but mixed rules and supporting files have escaped them (#130). The marker provides a fallback independent of file paths and prevents another retrospective being requested for the retrospective's own output.
+For retrospective-result PRs, put **`[skip reflect]`** in the commit **subject line** (or on a line of its own in the body — those are the only two positions the hook reads as a directive). In the **body**, a marker inside a sentence, a quoted line or a fenced example is prose and does not skip; in the **subject** there is no such exemption — anything but an exactly backticked `` `[skip reflect]` `` counts, so do not write about the marker in a subject line. Path-based skip rules are the first filter, but mixed rules and supporting files have escaped them (#130). The marker provides a fallback independent of file paths and prevents another retrospective being requested for the retrospective's own output.
 
 ### 3. Storage rules
 
