@@ -1,0 +1,29 @@
+{
+  "//": "The engine default only knows .claude/memory, handoff and .agents/skills. CLAUDE.md, AGENTS.md and ignore_paths are a project judgement call, so they are supplied here — remove an entry if changes to that file are worth a retrospective.",
+  "paths": [
+    ".claude/memory/**",
+    ".claude/handoff/**",
+    ".agents/skills/**",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "**/CLAUDE.md",
+    "**/AGENTS.md",
+    ".claude/agents/**",
+    ".claude/skills/**"
+  ],
+  "ignore_paths": [
+    ".gitignore",
+    "**/.gitignore",
+    ".gitattributes",
+    "**/.gitattributes"
+  ],
+  "labels": [
+    "skip-reflect",
+    "no-reflect"
+  ],
+  "commit_messages": [
+    "[skip reflect]",
+    "skip-reflect",
+    "no-reflect"
+  ]
+}

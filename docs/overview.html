@@ -322,6 +322,7 @@ cat /tmp/hook-trace.jsonl</code></pre>
   <table><thead><tr><th>Command</th><th>When to use it</th><th>What it does</th></tr></thead><tbody>
     <tr><td><code>/feedback-review</code></td><td>After a merge or during a retrospective</td><td>Reviews feedback for possible rules or skills. Includes waiting <code>_pending</code> drafts; past and opposite-tool sessions enter only when a human selects them.</td></tr>
     <tr><td><code>/memory-update</code></td><td>When lessons or drafts are ready</td><td>Reviews and promotes durable knowledge to personal or shared memory, including waiting drafts.</td></tr>
+    <tr><td><code>/template-check</code></td><td>After a plugin update</td><td>Read-only comparison of the project's <code>.claude/memory/</code> with the template reference the plugin ships. Differences may be deliberate customizations. Unreleased; not in 0.12.2.</td></tr>
   </tbody></table>
 
   <h2>Architecture Decision Records <span class="em">(ADRs)</span></h2>
@@ -440,7 +441,7 @@ Core lesson + Why + How to apply</code></pre></div>
   <p><b>Claude Code:</b></p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(seven skills, four hooks; merge detection and queueing only)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(seven skills in 0.12.2, four hooks; merge detection and queueing only)</span>:</p>
   <pre><code>codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # Or register a local checkout: codex plugin marketplace add ./</code></pre>
@@ -449,7 +450,8 @@ codex plugin add agent-harness@foxyberry
     Review and trust them in the post-install review screen; <code>/hooks</code> lets you revisit that choice.
     Skills remain usable without trusting hooks. Changed hook content in a later version requires renewed review.</div>
   <p class="muted">For either tool, selectively copy and adapt <code>project-template/</code>:
-    the project instructions and example <code>.claude/memory/</code> data are an optional opinion pack.</p>
+    the project instructions and example <code>.claude/memory/</code> data are an optional opinion pack.
+    From the release after 0.12.2, the plugins ship a read-only copy of that <code>.claude/memory/</code> part, used by <code>/template-check</code>.</p>
   <p class="muted"><b>Updates:</b> the documented Codex CLI flow uses <code>marketplace upgrade</code>, then
     <code>plugin remove</code> and <code>plugin add</code> to refresh the installed cache. Update for a new release,
     not for every local development change. See <a href="../README.md">README installation and update commands</a>.</p>
@@ -469,8 +471,8 @@ codex plugin add agent-harness@foxyberry
     <div class="node core"><b>core/</b><span>Canonical hooks, skills, scripts, and memory contracts</span></div>
     <div class="flow">▼ &nbsp;<code>./build.sh</code> copies and renders portable files; no symlinks</div>
     <div class="split">
-      <div class="node"><b>plugins/harness/</b><span>Claude: seven skills and four hooks; <code>hooks.json</code> discovered automatically</span></div>
-      <div class="node"><b>plugins/codex/</b><span>Codex: seven skills and four hooks; merge detection and queueing only</span></div>
+      <div class="node"><b>plugins/harness/</b><span>Claude: eight skills and four hooks; <code>hooks.json</code> discovered automatically</span></div>
+      <div class="node"><b>plugins/codex/</b><span>Codex: eight skills and four hooks; merge detection and queueing only</span></div>
     </div>
     <div class="flow">▼ &nbsp;Each tool's marketplace installation</div>
     <div class="node use"><b>User project</b><span>Adapt <code>project-template/</code> → project data in <code>.claude/memory/</code></span></div>
@@ -487,9 +489,9 @@ codex plugin add agent-harness@foxyberry
 │  │  ├─ reflect.py              <span class="c">lesson and ADR drafting job</span>
 │  │  ├─ mine.py                 <span class="c">commit-message decision mining</span>
 │  │  └─ compact_transcript.py   <span class="c">transcript compaction</span>
-│  ├─ <span class="d">skills/</span>                   <span class="c">seven SKILL.md sources</span>
+│  ├─ <span class="d">skills/</span>                   <span class="c">eight SKILL.md sources</span>
 │  │  ├─ handoff-save · handoff-load · fw · fw-both
-│  │  └─ history · feedback-review · memory-update
+│  │  └─ history · feedback-review · memory-update · template-check
 │  └─ <span class="d">scripts/</span>                  <span class="c">shared executables/helpers</span>
 │     ├─ handoff.py              <span class="c">handoff and log recovery</span>
 │     ├─ hook_io.py              <span class="c">normalized hook input/output</span>
@@ -518,6 +520,7 @@ codex plugin add agent-harness@foxyberry
   <h2>Implementation status <span class="muted">(0.12.2 baseline)</span></h2>
   <ul class="status">
     <li><span class="badge done">DONE</span> Seven skills in both adapters and four hooks, with partial Codex merge support.</li>
+    <li><span class="badge soon">UNRELEASED</span> <code>/template-check</code>, an eighth skill on <code>main</code> after 0.12.2: a read-only comparison of the project's <code>.claude/memory/</code> with a bundled template reference.</li>
     <li><span class="badge done">DONE</span> Marketplace installation and installed-skill checks on both tools, including loading a Claude-written handoff in Codex. These are recorded checks, not a guarantee for every installation.</li>
     <li><span class="badge done">POC</span> ADR drafting, manual commit-message mining in the Claude adapter, and a shared promotion workflow. The schema now ships inside <code>memory-update</code> for both tools.</li>
     <li><span class="badge done">DONE</span> Codex memory-index injection observed in a real session, with enabled/disabled comparisons to distinguish injection from the model reading files itself.</li>

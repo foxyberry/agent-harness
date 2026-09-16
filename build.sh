@@ -7,11 +7,12 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # Replace {{PLACEHOLDER}} in SKILL.md with the per-adapter value (sed delimiter | — values may contain /)
-render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE PERSONAL_TIER_NOTE PROJECT_DIR_ARG PROJECT_ROOT PROJECT_ROOT_NOTE)
+render() { # $1=src  $2=dst   (env: AGENT RULES_FILE HANDOFF DEEP_RECOVERY PATH_NOTE PERSONAL_TIER_NOTE PROJECT_DIR_ARG PROJECT_ROOT PROJECT_ROOT_NOTE TEMPLATE_CHECK)
   sed -e "s|{{AGENT}}|$AGENT|g" \
       -e "s|{{RULES_FILE}}|$RULES_FILE|g" \
       -e "s|{{HANDOFF}}|$HANDOFF|g" \
       -e "s|{{COMPACT}}|$COMPACT|g" \
+      -e "s|{{TEMPLATE_CHECK}}|$TEMPLATE_CHECK|g" \
       -e "s|{{DEEP_RECOVERY}}|$DEEP_RECOVERY|g" \
       -e "s|{{PATH_NOTE}}|$PATH_NOTE|g" \
       -e "s|{{PERSONAL_TIER_NOTE}}|$PERSONAL_TIER_NOTE|g" \
@@ -39,6 +40,16 @@ hook_command() {  # $1 = hook script filename → shell command, escaped for a J
 
 SKILLS=$(cd core/skills && ls -d */ | sed 's#/##')
 
+# Only the .claude/memory/ part of the opinion pack ships, and only as a read-only comparison
+# reference for template-check (#132). AGENTS.md, CLAUDE.md and .github/ are the project's own
+# rules and are expected to differ. `cp -R` keeps the dotfiles (.gitignore); .DS_Store is
+# local Finder noise that git never tracks, so a local build must not ship it either.
+TEMPLATE_REFERENCE=project-template/.claude/memory
+copy_template_reference() {  # $1 = destination directory (must not exist yet)
+  cp -R "$TEMPLATE_REFERENCE" "$1"
+  find "$1" -name .DS_Store -delete
+}
+
 # ── Claude adapter: plugins/harness ────────────────────────────
 # Scripts are shared through bin/ (registered on PATH while the plugin is active — verified).
 rm -rf plugins/harness/skills plugins/harness/bin plugins/harness/hooks
@@ -50,9 +61,14 @@ cp core/scripts/repo_identity.py plugins/harness/bin/repo_identity.py
 # candidates (originals are several MB). The hooks bundle the same file, but skills do not
 # reference hooks/ — same co-location convention as repo_identity.
 cp core/hooks/compact_transcript.py plugins/harness/bin/compact_transcript.py
+# template-check finds its reference at dirname(__file__)/template-reference — co-located too.
+cp core/scripts/template_check.py plugins/harness/bin/agent-template-check
+copy_template_reference plugins/harness/bin/template-reference
 # ⚠️ chmod comes **after** cp. chmod on a missing file stops build.sh right there.
-chmod +x plugins/harness/bin/agent-handoff plugins/harness/bin/compact_transcript.py
+chmod +x plugins/harness/bin/agent-handoff plugins/harness/bin/compact_transcript.py \
+         plugins/harness/bin/agent-template-check
 AGENT=claude; RULES_FILE=CLAUDE.md; HANDOFF=agent-handoff; COMPACT=compact_transcript.py
+TEMPLATE_CHECK=agent-template-check
 DEEP_RECOVERY='`/fw --from claude` or `/fw-both`'   # only commands that really exist (naming a non-existent one invites manual digging — issue #95)
 PATH_NOTE=''   # Claude: bin/ is on PATH, so the cwd does not matter
 PERSONAL_TIER_NOTE=''   # Claude: auto-memory loads the personal tier by itself — no note needed
@@ -108,6 +124,7 @@ chmod +x plugins/harness/hooks/*.py
 rm -rf plugins/codex/skills plugins/codex/bin
 AGENT=codex; RULES_FILE=AGENTS.md; HANDOFF='python3 scripts/handoff.py'
 COMPACT='python3 scripts/compact_transcript.py'
+TEMPLATE_CHECK='python3 scripts/template_check.py'
 # The old value was "the most recent session log in `~/.codex/sessions`" — that tells the
 # user to dig through the folder by hand. Manual digging has no project scoping, so it can
 # pick up a session from someone else's project (issue #95).
@@ -133,12 +150,17 @@ FW_FROM_DEFAULT='claude'   # Codex fw restores the other tool's (claude) logs �
 PERSONAL_TIER_NOTE='  > In Codex, this personal-tier path belongs to **Claude auto-memory**; this harness does not automatically reload it into later Codex sessions. If Codex also needs an item, assess whether it belongs in shared committed memory with an INDEX.md entry. Respect the project privacy and tier rules; do not publish personal information merely to make it available across tools.'
 for s in $SKILLS; do
   mkdir -p "plugins/codex/skills/$s/scripts"
-  # Every remaining skill uses handoff.py (the exceptions, merge-cleanup and prettier-guard,
-  # moved to personal scope).
-  cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
-  # handoff.py imports it from the same folder — ship it wherever handoff.py is bundled.
-  cp core/scripts/repo_identity.py "plugins/codex/skills/$s/scripts/repo_identity.py"
-  cp core/hooks/compact_transcript.py "plugins/codex/skills/$s/scripts/compact_transcript.py"
+  if [ "$s" = template-check ]; then
+    # Standalone: needs only its script and the reference, not handoff.py and friends.
+    cp core/scripts/template_check.py "plugins/codex/skills/$s/scripts/template_check.py"
+    copy_template_reference "plugins/codex/skills/$s/scripts/template-reference"
+  else
+    # Every other skill uses handoff.py.
+    cp core/scripts/handoff.py "plugins/codex/skills/$s/scripts/handoff.py"
+    # handoff.py imports it from the same folder — ship it wherever handoff.py is bundled.
+    cp core/scripts/repo_identity.py "plugins/codex/skills/$s/scripts/repo_identity.py"
+    cp core/hooks/compact_transcript.py "plugins/codex/skills/$s/scripts/compact_transcript.py"
+  fi
   render "core/skills/$s/SKILL.md" "plugins/codex/skills/$s/SKILL.md"
 done
 

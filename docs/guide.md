@@ -64,9 +64,15 @@ prints the command that hands your chosen session to `fw`.
 | Decide whether this round's feedback should become a rule | `/feedback-review` |
 | Persist what you learned into memory | `/memory-update` |
 
+### After a plugin update
+
+| Situation | Reach for |
+|---|---|
+| Does this project lack files the template has gained since you copied it? | `/template-check` |
+
 ---
 
-## 2. The seven skills
+## 2. The eight skills
 
 ### The ones you reach for often
 
@@ -92,6 +98,11 @@ the current session from picking *itself* as "the previous work".
 **`/memory-update`** — promotes what this session learned into memory. It separates the
 personal and shared tiers; the shared tier needs a commit. Any waiting `_pending` drafts
 are reviewed at the same time.
+
+**`/template-check`** *(unreleased — not in 0.12.2)* — compares the project's `.claude/memory/` with the template reference the
+plugin ships, and lists files that are missing or differ. It is read-only. A differing file can be
+your own customization — the check cannot tell that apart from an older copy — and a missing
+example can be missing on purpose.
 
 ## 3. Why the unused skills went unused
 
@@ -210,7 +221,7 @@ description — adding a hook to Codex means editing **`build.sh`**.
 
 | | Claude | Codex |
 |---|---|---|
-| Skills | 7 | 7 |
+| Skills | 8 (0.12.2: 7) | 8 (0.12.2: 7) |
 | Hooks | all 4 | **4** (`pr-merge-reflect` at the detect/queue stage) |
 | How they trigger | slash commands | `description` matching |
 | Hook trust | not needed | **required** — without it they silently do nothing |
