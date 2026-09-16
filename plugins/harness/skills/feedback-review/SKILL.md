@@ -131,4 +131,4 @@ Propose adding a rule to `$CLAUDE_PROJECT_DIR/CLAUDE.md`, creating a skill, or u
 - Prefer general principles over overly specific rules.
 - Do not modify `CLAUDE.md` or skills without user approval.
 - Use [[memory-update]] to persist feedback selected for promotion as memory.
-- Include **`[skip reflect]`** in commit messages for promoted retrospective results. Otherwise the resulting PR can trigger another retrospective. This is the fallback when path-based skip rules miss the change (#130).
+- Put **`[skip reflect]`** in the commit **subject line** (or on a line of its own in the body) for promoted retrospective results — those two positions are the directive. In the **body**, a mention inside a sentence, a quoted line or a fenced example is prose and does not skip; the **subject** has no prose exemption, so a subject that merely writes about the marker still skips. Otherwise the resulting PR can trigger another retrospective. This is the fallback when path-based skip rules miss the change (#130).

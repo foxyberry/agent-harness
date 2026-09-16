@@ -398,7 +398,10 @@ def _pr_details(project_dir, num):
             msg = c.get("messageHeadline") or ""
             body = c.get("messageBody") or ""
             if msg or body:
-                messages.append((msg + "\n" + body).strip())
+                # Not stripped: the skip verdict reads line 0 as the **subject**, so an empty
+                # headline has to stay an empty first line rather than promoting the body's
+                # first line into subject position.
+                messages.append(msg + "\n" + body)
         return {"files": files, "labels": labels, "commit_messages": messages}
     except Exception:
         return None
@@ -408,15 +411,105 @@ def _matches_any(value, patterns):
     return any(fnmatch.fnmatch(value, p) for p in patterns)
 
 
+# A commit marker only counts as a **directive** when it stands in a directive position. Matched as
+# a plain substring anywhere in the message, a commit that merely *writes about* the marker skips
+# its own PR -- PR #134 here was a 16-file source change that skipped itself because one body line
+# explained `[skip reflect]` in prose (#130 follow-up).
+#
+# Two positions, and only these two:
+#   1. anywhere in the **subject** (the first line) -- the familiar `[skip ci]` convention; and
+#   2. a **standalone body line** whose entire stripped content is the marker.
+# In the body that leaves prose out: surrounding words, a `>` quote prefix, backticks, a fenced
+# example. The subject keeps no prose exemption beyond an exactly backticked occurrence -- that is
+# the price of the `[skip ci]` convention, and writing about a marker in a subject line is rare. No
+# step here infers intent from natural language; only position decides.
+_FENCE_CHARS = ("`", "~")
+
+
+def _fence_run(line):
+    """`(char, length, tail)` when the line opens with a fence run of 3+, else None."""
+    stripped = line.strip()
+    for char in _FENCE_CHARS:
+        if stripped.startswith(char * 3):
+            length = len(stripped) - len(stripped.lstrip(char))
+            return char, length, stripped[length:]
+    return None
+
+
+def _directive_lines(message):
+    """The lines that may carry a directive, as `(text, is_subject)` pairs.
+
+    Fenced blocks are dropped: a fenced example of the marker is documentation, not an instruction.
+    Only the CommonMark closing rule is implemented -- a fence closes on the **same character**, a
+    run at least as long as the opener, and nothing but whitespace after it. A boolean toggle was
+    tried first and was wrong in all three of the ways that rule exists to prevent: a `~~~` line
+    inside a ``` block, a ``` line inside a ```` block, and ``` ``` not a closing fence ``` all
+    counted as closures and released the rest of the block, so a documented example skipped a real
+    PR.
+
+    Everything else about fences is deliberately left out (no indentation limit, no info-string
+    validation, no list nesting) -- this is not a Markdown parser. An unclosed fence still swallows
+    every later line, which can only produce *more* retrospectives, the direction this module
+    chooses to fail in.
+    """
+    lines = message.split("\n")
+    out = [(lines[0], True)]
+    opener = None  # (char, length) of the fence currently open
+    for line in lines[1:]:
+        fence = _fence_run(line)
+        if opener is None:
+            if fence is not None:
+                opener = (fence[0], fence[1])
+                continue
+            out.append((line, False))
+        elif (fence is not None and fence[0] == opener[0] and fence[1] >= opener[1]
+                and not fence[2].strip()):
+            opener = None
+        # Lines inside the fence, and the closing line itself, are never directives.
+    return out
+
+
+def _subject_matches(subject, pattern):
+    """The pre-existing matching rules, now applied to the subject only.
+
+    Bracketed patterns are plain substrings (word boundaries do not work around `[`/`]`); every
+    other pattern still needs non-word, non-hyphen boundaries so `no-reflect` does not match
+    `no-reflection`.
+    """
+    if pattern.startswith("[") and pattern.endswith("]"):
+        matches = re.finditer(re.escape(pattern), subject)
+    else:
+        matches = re.finditer(rf"(?<![\w-]){re.escape(pattern)}(?![\w-])", subject)
+    for m in matches:
+        # A backticked occurrence is the marker being quoted: "docs: explain `[skip reflect]`"
+        # writes about the marker, it does not ask for it.
+        if subject[m.start() - 1:m.start()] == "`" and subject[m.end():m.end() + 1] == "`":
+            continue
+        return True
+    return False
+
+
 def _message_matches_any(message, patterns):
+    """True when the commit message carries a skip directive for one of `patterns`.
+
+    `message` and `patterns` come in lowercased from the caller -- matching stays case-insensitive.
+
+    Patterns are used exactly as the project stored them; this gate never trims them. A standalone
+    body line is compared **trimmed line against literal pattern**, so a padded pattern such as
+    `"  [no-retro]  "` can only match from the subject. Trimming the pattern here would let it match
+    body lines the old substring rule never matched -- a new skip, the one direction this change is
+    not allowed to move in.
+    """
+    lines = _directive_lines(message)
     for pattern in patterns:
         if not pattern:
             continue
-        if pattern.startswith("[") and pattern.endswith("]"):
-            if pattern in message:
+        for text, is_subject in lines:
+            if is_subject:
+                if _subject_matches(text, pattern):
+                    return True
+            elif text.strip() == pattern:
                 return True
-        elif re.search(rf"(?<![\w-]){re.escape(pattern)}(?![\w-])", message):
-            return True
     return False
 
 
