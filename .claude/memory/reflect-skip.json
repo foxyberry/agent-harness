@@ -1,0 +1,8 @@
+{
+  "//": "agent-harness's own retrospective skip rules (#130). Adoption is per project: the plugin ships the mechanism and a reference copy, but an upgrade never writes this file. See docs/self-improvement-hooks.md.",
+  "//paths": "No path is added. The engine defaults (.claude/memory/**, .claude/handoff/**, .agents/skills/**) already cover what this repository produces as retrospective output. The template's broader list is deliberately NOT adopted here: an AGENTS.md or CLAUDE.md change can redefine the harness's scope (#105), and project-template/AGENTS.md is shipped product, so both are worth a retrospective. Mark a rule-promotion PR with a [skip reflect] commit message or a skip-reflect label instead -- both are engine defaults.",
+  "//ignore_paths": "Only the root .gitignore is incidental when paired with retrospective output (#130). Nested ignore files in project-template/ and plugins/ are shipped product and must remain in the verdict.",
+  "ignore_paths": [
+    ".gitignore"
+  ]
+}
