@@ -51,6 +51,64 @@ content; it is read-only.
 
 ---
 
+## 0.13.0
+
+Contains [#146](https://github.com/foxyberry/agent-harness/pull/146),
+[#149](https://github.com/foxyberry/agent-harness/pull/149), and
+[#150](https://github.com/foxyberry/agent-harness/pull/150). Both adapters now ship **8 skills**.
+
+### New skill: `/template-check` ([#146](https://github.com/foxyberry/agent-harness/pull/146))
+
+The plugins now ship a read-only reference copy of `project-template/.claude/memory/`.
+`/template-check` compares your project's `.claude/memory/` with it and reports missing,
+different, identical, and skipped files. It **never writes**: nothing is copied or overwritten, and your
+project configuration stays yours. A differing file may be a deliberate customization — no record
+of the template version you copied exists, so the check cannot tell the two apart.
+
+### Retrospective skip rules: adoption stays per project ([#149](https://github.com/foxyberry/agent-harness/pull/149))
+
+This repository adopted a `.claude/memory/reflect-skip.json` whose only rule is `ignore_paths`
+for the root `.gitignore`. That file belongs to **this repository only**. The update does not
+write it, or any other skip configuration, into your project. A project that copied the template
+before `reflect-skip.json` existed keeps the engine defaults until someone adds the file by hand.
+[self-improvement-hooks.md](self-improvement-hooks.md#adopting-the-skip-rules-in-an-existing-project)
+gives the manual recipe, starting with `/template-check`.
+
+### Commit skip markers count only as directives ([#150](https://github.com/foxyberry/agent-harness/pull/150))
+
+`[skip reflect]`, `skip-reflect`, and `no-reflect` used to match anywhere in a commit message, so a
+commit that only *explained* a marker skipped its own retrospective. A marker now counts only in
+two places:
+
+- **the subject line**, unless that exact occurrence is wrapped in backticks, which is ignored
+  as a quotation; or
+- **a body line that contains only the marker**, outside fenced code blocks.
+
+Other mentions in the body are ignored, including prose, backticked or `> ` quoted lines, and
+fenced examples. Label matching and `paths`/`ignore_paths` behave as before.
+
+The same rule applies to custom `commit_messages` patterns in your `reflect-skip.json`. If a
+project relied on its pattern matching in the middle of body text, it now gets **more**
+retrospectives, never fewer. To keep skipping those PRs, put the pattern in the subject. Putting it
+on its own body line also works, unless the pattern was stored with surrounding spaces. Details:
+[Where a commit marker counts](self-improvement-hooks.md#where-a-commit-marker-counts).
+
+### Unchanged in this release
+
+- **Project files.** An update still never overwrites `AGENTS.md`, `CLAUDE.md`, `.github/`, or
+  `.claude/memory/`; `project-template/` changes are merged by hand.
+- **Privacy and human approval.** Drafted lessons still go through
+  `_pending → human approval → committed`, and the automatic retrospective stays off until you set
+  `HARNESS_AUTO_REFLECT=1`.
+- **Codex hook scope.** `pr-merge-reflect` remains registered on Codex for merge detection and
+  shared queue updates only. The UserPromptSubmit reminder and the automatic LLM retrospective stay
+  unregistered there ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+- **Update commands.** Close your Codex sessions before updating. For Claude Code, run
+  `claude plugin marketplace update foxyberry`, then `claude plugin update agent-harness@foxyberry`,
+  then restart Claude Code. See [Updating](#updating).
+
+---
+
 ## 0.12.2
 
 Contains [#140](https://github.com/foxyberry/agent-harness/pull/140)–[#144](https://github.com/foxyberry/agent-harness/pull/144).

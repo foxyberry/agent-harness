@@ -99,8 +99,8 @@ the current session from picking *itself* as "the previous work".
 personal and shared tiers; the shared tier needs a commit. Any waiting `_pending` drafts
 are reviewed at the same time.
 
-**`/template-check`** *(unreleased — not in 0.12.2)* — compares the project's `.claude/memory/` with the template reference the
-plugin ships, and lists files that are missing or differ. It is read-only. A differing file can be
+**`/template-check`** *(since 0.13.0)* — compares the project's `.claude/memory/` with the
+template reference the plugin ships, and lists files that are missing or differ. It is read-only. A differing file can be
 your own customization — the check cannot tell that apart from an older copy — and a missing
 example can be missing on purpose.
 
@@ -221,7 +221,7 @@ description — adding a hook to Codex means editing **`build.sh`**.
 
 | | Claude | Codex |
 |---|---|---|
-| Skills | 8 (0.12.2: 7) | 8 (0.12.2: 7) |
+| Skills | 8 | 8 |
 | Hooks | all 4 | **4** (`pr-merge-reflect` at the detect/queue stage) |
 | How they trigger | slash commands | `description` matching |
 | Hook trust | not needed | **required** — without it they silently do nothing |
