@@ -175,7 +175,7 @@
     and hooks that surface project memory while you work.
   </p>
   <p class="muted">New here? Start with the <a href="guide.md">usage guide</a> to choose a command by situation.
-    This page explains the design and implementation, based on release <b>0.12.2</b> (reviewed 2026-09-15).</p>
+    This page explains the design and implementation, based on release <b>0.13.0</b> (reviewed 2026-09-17).</p>
 
   <h2>What the harness connects</h2>
   <ul>
@@ -322,7 +322,7 @@ cat /tmp/hook-trace.jsonl</code></pre>
   <table><thead><tr><th>Command</th><th>When to use it</th><th>What it does</th></tr></thead><tbody>
     <tr><td><code>/feedback-review</code></td><td>After a merge or during a retrospective</td><td>Reviews feedback for possible rules or skills. Includes waiting <code>_pending</code> drafts; past and opposite-tool sessions enter only when a human selects them.</td></tr>
     <tr><td><code>/memory-update</code></td><td>When lessons or drafts are ready</td><td>Reviews and promotes durable knowledge to personal or shared memory, including waiting drafts.</td></tr>
-    <tr><td><code>/template-check</code></td><td>After a plugin update</td><td>Read-only comparison of the project's <code>.claude/memory/</code> with the template reference the plugin ships. Differences may be deliberate customizations. Unreleased; not in 0.12.2.</td></tr>
+    <tr><td><code>/template-check</code></td><td>After a plugin update</td><td>Read-only comparison of the project's <code>.claude/memory/</code> with the template reference the plugin ships. Differences may be deliberate customizations.</td></tr>
   </tbody></table>
 
   <h2>Architecture Decision Records <span class="em">(ADRs)</span></h2>
@@ -367,7 +367,7 @@ cat /tmp/hook-trace.jsonl</code></pre>
     <div class="flow">▼ &nbsp;git <b>commit · push</b> &nbsp;(<code>.claude/handoff/&lt;branch&gt;.md</code>; git facts collected automatically)</div>
     <div class="node use"><b>Session B</b><span>Pull on another machine or switch tools, then use <code>/handoff-load</code></span></div>
   </div>
-  <div class="note warn"><b>Known limitation in 0.12.2:</b> saving does not commit or push, and the reported commit state
+  <div class="note warn"><b>Known limitation in 0.13.0:</b> saving does not commit or push, and the reported commit state
     covers a local commit only — push state is not checked, so confirm it separately before relying on a handoff elsewhere.
     Save and load now report the file's state at the time they run, which closes the mislabeling in
     <a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>.
@@ -441,7 +441,7 @@ Core lesson + Why + How to apply</code></pre></div>
   <p><b>Claude Code:</b></p>
   <pre><code>/plugin marketplace add foxyberry/agent-harness
 /plugin install agent-harness@foxyberry</code></pre>
-  <p><b>Codex</b> <span class="muted">(seven skills in 0.12.2, four hooks; merge detection and queueing only)</span>:</p>
+  <p><b>Codex</b> <span class="muted">(eight skills, four hooks; merge detection and queueing only)</span>:</p>
   <pre><code>codex plugin marketplace add foxyberry/agent-harness
 codex plugin add agent-harness@foxyberry
 # Or register a local checkout: codex plugin marketplace add ./</code></pre>
@@ -451,7 +451,7 @@ codex plugin add agent-harness@foxyberry
     Skills remain usable without trusting hooks. Changed hook content in a later version requires renewed review.</div>
   <p class="muted">For either tool, selectively copy and adapt <code>project-template/</code>:
     the project instructions and example <code>.claude/memory/</code> data are an optional opinion pack.
-    From the release after 0.12.2, the plugins ship a read-only copy of that <code>.claude/memory/</code> part, used by <code>/template-check</code>.</p>
+    Since 0.13.0, the plugins ship a read-only copy of that <code>.claude/memory/</code> part, used by <code>/template-check</code>.</p>
   <p class="muted"><b>Updates:</b> the documented Codex CLI flow uses <code>marketplace upgrade</code>, then
     <code>plugin remove</code> and <code>plugin add</code> to refresh the installed cache. Update for a new release,
     not for every local development change. See <a href="../README.md">README installation and update commands</a>.</p>
@@ -517,10 +517,10 @@ codex plugin add agent-harness@foxyberry
 ├─ .agents/plugins/marketplace.json   <span class="c">Codex distribution</span>
 └─ AGENTS.md · README.md
 </pre>
-  <h2>Implementation status <span class="muted">(0.12.2 baseline)</span></h2>
+  <h2>Implementation status <span class="muted">(0.13.0 baseline)</span></h2>
   <ul class="status">
-    <li><span class="badge done">DONE</span> Seven skills in both adapters and four hooks, with partial Codex merge support.</li>
-    <li><span class="badge soon">UNRELEASED</span> <code>/template-check</code>, an eighth skill on <code>main</code> after 0.12.2: a read-only comparison of the project's <code>.claude/memory/</code> with a bundled template reference.</li>
+    <li><span class="badge done">DONE</span> Eight skills in both adapters and four hooks, with partial Codex merge support.</li>
+    <li><span class="badge done">DONE</span> <code>/template-check</code>, the eighth skill (0.13.0): a read-only comparison of the project's <code>.claude/memory/</code> with a bundled template reference.</li>
     <li><span class="badge done">DONE</span> Marketplace installation and installed-skill checks on both tools, including loading a Claude-written handoff in Codex. These are recorded checks, not a guarantee for every installation.</li>
     <li><span class="badge done">POC</span> ADR drafting, manual commit-message mining in the Claude adapter, and a shared promotion workflow. The schema now ships inside <code>memory-update</code> for both tools.</li>
     <li><span class="badge done">DONE</span> Codex memory-index injection observed in a real session, with enabled/disabled comparisons to distinguish injection from the model reading files itself.</li>

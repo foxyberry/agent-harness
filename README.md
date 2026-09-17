@@ -71,7 +71,7 @@ say **when to use the skill**, not just what it does.
 
 | | Claude Code | Codex |
 |---|---|---|
-| Skills | 8 (0.12.2: 7) | 8 (0.12.2: 7) |
+| Skills | 8 | 8 |
 | Hooks | 4 | **4** (`pr-merge-reflect` detection/queue phase) |
 
 The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
@@ -100,7 +100,7 @@ smoke test; prompt injection and background LLM paths remain disabled until that
 | `history` | Browse and search local sessions by time |
 | `feedback-review` | Decide whether review feedback should become a project rule or a skill |
 | `memory-update` | Promote `_pending` drafts to shared memory after human review |
-| `template-check` | Compare your `.claude/memory/` with the template reference bundled in the plugin, read-only *(unreleased — not in 0.12.2)* |
+| `template-check` | Compare your `.claude/memory/` with the template reference bundled in the plugin, read-only |
 
 ## The self-improvement loop
 
@@ -178,8 +178,8 @@ An update replaces the plugin, not your project. Your `AGENTS.md`, `CLAUDE.md`, 
 `.claude/memory/` are never overwritten, so changes to `project-template/` reach a project you
 already set up **only if you merge them in by hand**.
 
-The plugin does not ship `project-template/` itself. From the release after 0.12.2, it ships a
-read-only copy of its `.claude/memory/` part as a reference, and `/template-check` lists which of those files your
+The plugin does not ship `project-template/` itself. Since 0.13.0 it ships a read-only copy of
+its `.claude/memory/` part as a reference, and `/template-check` lists which of those files your
 project lacks or has with different content. It changes nothing, and a difference can be your own
 customization: no record of the template version you copied exists, so it cannot tell which.
 
@@ -199,11 +199,10 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.12.2`
+- Plugin version: `0.13.0`
 - Public marketplace installation verified for both Claude Code and Codex (measured on earlier
   releases, not re-run for every version)
-- 7 skills on both adapters in 0.12.2; the unreleased `template-check` makes 8 on `main`. Cross-tool
-  handoff verified (saved by one, loaded by the other)
+- 8 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
 - Codex ships four hooks; `pr-merge-reflect` is registered for detect/queue only until its

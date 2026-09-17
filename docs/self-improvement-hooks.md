@@ -329,9 +329,9 @@ The manual recipe, which never overwrites an existing file:
 
 1. Run `/template-check` in the project. It reports a status per reference file and prints the
    **reference directory**; a file's reference copy is that directory joined with the path after
-   the leading `.claude/memory/`. `/template-check` has not been released yet — the latest
-   published plugin is 0.12.2 and the command landed after it — so until the next release, use
-   `project-template/.claude/memory/reflect-skip.json` from a source checkout as the reference.
+   the leading `.claude/memory/`. `/template-check` ships from 0.13.0; on an older install, update
+   the plugin first or use `project-template/.claude/memory/reflect-skip.json` from a source
+   checkout as the reference.
 2. **missing** — copy the reference to `.claude/memory/reflect-skip.json`, then edit it. The
    template's `paths` list is one project's judgement, not a default.
 3. **differs** — do not overwrite. Merge by key. The loader **extends** the engine defaults, so a

@@ -1,6 +1,6 @@
 {
   "name": "agent-harness",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "Handoff, self-improving retrospective and workflow skills plus hooks (Claude adapter). Generated from the canonical core/ of the repo.",
   "author": { "name": "foxyberry" },
   "homepage": "https://github.com/foxyberry/agent-harness",
