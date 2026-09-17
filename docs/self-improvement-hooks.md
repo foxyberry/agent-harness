@@ -301,6 +301,17 @@ Matching is case-insensitive, and non-bracketed markers still need word boundari
 stored with padding (`"  [no-retro]  "`) keeps the padding, so it can match in the subject but
 never equals a trimmed standalone body line.
 
+**Long subjects (unreleased, after 0.13.0).** `gh pr view` shortens a long headline mid-character
+and moves the rest into the body (`[ski…` / `…p reflect]`), which split the marker
+([#148](https://github.com/foxyberry/agent-harness/issues/148)). When a headline comes back
+shortened, the hook now fetches the full messages once from
+`gh api repos/{owner}/{repo}/pulls/<n>/commits?per_page=100` and uses them only for commits whose
+SHA it lists. If that call fails, or does not list the commit, the shortened form is kept, so a
+marker split by the cut can still be missed; other markers, labels and path rules still apply.
+
+Separately, and unchanged by this: `gh pr view --json commits` returns only a PR's first 100
+commits, so commits after the 100th are not checked for markers at all.
+
 This is narrower than the original rule, which matched the markers as plain substrings anywhere in
 the message. That inverted the feature: PR
 [#134](https://github.com/foxyberry/agent-harness/pull/134) — the PR that introduced these rules,

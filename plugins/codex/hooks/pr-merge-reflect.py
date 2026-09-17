@@ -83,7 +83,8 @@ REMIND = (
 # now".
 DRAFT_BACKLOG_THRESHOLD = 8
 
-# PR details cost one `gh pr view` per PR (up to 8 seconds). To avoid blocking SessionStart and
+# PR details cost one `gh pr view` per PR (up to 8 seconds), plus one `gh api` call (up to 8 more)
+# when a commit headline came back truncated. To avoid blocking SessionStart and
 # UserPromptSubmit for long, only some are processed per run and the rest continue on the next hook
 # invocation.
 PR_SCAN_MAX_PER_RUN = 3
@@ -392,6 +393,7 @@ def _pr_details(project_dir, num):
             if isinstance(l, dict) and isinstance(l.get("name"), str)
         ]
         messages = []
+        truncated = []  # indexes into messages, with the commit sha
         for c in data.get("commits", []) or []:
             if not isinstance(c, dict):
                 continue
@@ -401,10 +403,59 @@ def _pr_details(project_dir, num):
                 # Not stripped: the skip verdict reads line 0 as the **subject**, so an empty
                 # headline has to stay an empty first line rather than promoting the body's
                 # first line into subject position.
+                if msg.endswith(_ELLIPSIS) or body.startswith(_ELLIPSIS):
+                    truncated.append((len(messages), c.get("oid")))
                 messages.append(msg + "\n" + body)
+        if truncated:
+            full = _full_commit_messages(project_dir, num)
+            for index, sha in truncated:
+                if isinstance(sha, str) and sha in full:
+                    messages[index] = full[sha]
         return {"files": files, "labels": labels, "commit_messages": messages}
     except Exception:
         return None
+
+
+# GitHub cuts a long subject at a **character** boundary and puts U+2026 on both sides of the cut,
+# so `[skip reflect]` came back as `[ski…` / `…p reflect]` and never matched (#148). The ellipsis
+# is only a trigger to fetch the real message -- never rejoined, because a rejoin cannot tell a cut
+# subject from a body that happens to start with `…`, and guessing wrong promotes body prose into
+# subject position.
+_ELLIPSIS = "…"
+
+
+def _full_commit_messages(project_dir, num):
+    """`{sha: full message}` for the PR's commits from the REST API; `{}` on any failure.
+
+    Fetched only when a headline was truncated, so the common path costs no extra request. Keyed by
+    sha, not position: `{owner}/{repo}` is resolved by `gh` from project_dir, not necessarily the
+    same way as `gh pr view`, so a commit this call does not list keeps its truncated form.
+
+    One page, no `--paginate`: `gh pr view --json commits` only returns a PR's first 100 commits,
+    and the first REST page of 100 lists the same commits in the same order, so a later page could
+    only add commits the verdict never sees -- and a failure there would discard this page.
+    """
+    try:
+        r = subprocess.run(
+            ["gh", "api",
+             f"repos/{{owner}}/{{repo}}/pulls/{int(num)}/commits?per_page=100",
+             "--jq", ".[] | {sha, message: .commit.message}"],
+            cwd=project_dir, capture_output=True, text=True, timeout=8,
+        )
+        if r.returncode != 0:
+            return {}
+        out = {}
+        # --jq prints one compact object per line.
+        for line in r.stdout.splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if (isinstance(row, dict) and isinstance(row.get("sha"), str)
+                    and isinstance(row.get("message"), str)):
+                out[row["sha"]] = row["message"]
+        return out
+    except Exception:
+        return {}
 
 
 def _matches_any(value, patterns):
