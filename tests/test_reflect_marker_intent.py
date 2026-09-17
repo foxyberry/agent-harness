@@ -401,5 +401,162 @@ class PrDetailsProductionPathTest(unittest.TestCase):
                     self.assertFalse(engine._should_skip_reflect(str(self.dir), 1))
 
 
+class TruncatedHeadlineTest(unittest.TestCase):
+    """A long subject splits the marker in `gh pr view` output (#148).
+
+    GitHub cuts `messageHeadline` at a character boundary and puts `…` on both sides, so the join in
+    `_pr_details` read `[ski…` / `…p reflect]` and a retrospective-output PR asked for its own
+    retrospective. The fix fetches the untruncated `commit.message` from the REST API, keyed by sha.
+
+    The fixture is study-words PR #445 (commit a353ca8), quoted verbatim from `gh pr view 445 --json
+    commits` and `gh api repos/{owner}/{repo}/pulls/445/commits`, cut after the first bullet — the
+    rest is a list and a footer naming the author's machine, which does not belong in a public repo.
+    """
+
+    SHA = "a353ca8ddf56ca2550db92ec3ccc7293019dcf9d"
+    SUBJECT = ("[docs/memory-retrospective-20260916] docs: 회고 결과를 규칙과 공유 메모리로 반영 "
+               "[skip reflect]")
+    BULLET = "- git-pr 에 리뷰 게이트(2.5) 추가 — #433·#435·#440 에서 네 번 되물음"
+    VIEW_COMMIT = {
+        "oid": SHA,
+        "messageHeadline": ("[docs/memory-retrospective-20260916] docs: 회고 결과를 규칙과 공유 "
+                            "메모리로 반영 [ski…"),
+        "messageBody": "…p reflect]\n\n" + BULLET,
+    }
+    FULL_MESSAGE = SUBJECT + "\n\n" + BULLET + "\n"
+
+    class _Result:
+        def __init__(self, stdout, returncode=0):
+            self.stdout = stdout
+            self.returncode = returncode
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self._tmp.name)
+        (self.dir / ".claude" / "memory").mkdir(parents=True)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _gh(self, commits, api_rows=(), api_rc=0, api_stdout=None):
+        """Fake `subprocess.run` for both `gh` calls; records the argv of every call."""
+        calls = []
+        view = json.dumps({"files": [{"path": p} for p in SOURCE_FILES], "labels": [],
+                           "commits": commits})
+        # `gh api --jq` prints one compact object per line.
+        api = api_stdout if api_stdout is not None else "".join(
+            json.dumps(row, ensure_ascii=False) + "\n" for row in api_rows)
+
+        def run(cmd, **_kw):
+            calls.append(cmd)
+            if cmd[:2] == ["gh", "api"]:
+                return self._Result(api, api_rc)
+            return self._Result(view)
+        return run, calls
+
+    def _each_engine(self, commits, api_rows=(), api_rc=0, api_stdout=None):
+        for name, engine in ENGINES.items():
+            run, calls = self._gh(commits, api_rows, api_rc, api_stdout)
+            with self.subTest(engine=name):
+                with patch.object(engine.subprocess, "run", side_effect=run):
+                    yield engine, calls
+
+    def test_the_fixture_is_actually_split(self):
+        joined = self.VIEW_COMMIT["messageHeadline"] + "\n" + self.VIEW_COMMIT["messageBody"]
+        self.assertNotIn("[skip reflect]", joined)
+
+    def test_pr445_is_skipped_through_the_full_message(self):
+        rows = [{"sha": self.SHA, "message": self.FULL_MESSAGE}]
+        for engine, calls in self._each_engine([self.VIEW_COMMIT], rows):
+            self.assertTrue(engine._should_skip_reflect(str(self.dir), 445))
+            api = [c for c in calls if c[:2] == ["gh", "api"]]
+            self.assertEqual(1, len(api))
+            # One page covers every commit `gh pr view` returns (its first 100); paginating
+            # would only let a later-page failure discard this one.
+            self.assertNotIn("--paginate", api[0])
+            self.assertIn("repos/{owner}/{repo}/pulls/445/commits?per_page=100", api[0])
+
+    def test_rows_are_matched_by_sha_not_position(self):
+        """Several rows on the one page: the truncated commit is replaced by its own row, and an
+        unrelated commit listed after it does not overwrite that replacement."""
+        other = "chore: unrelated commit listed last\n"
+        rows = [{"sha": "0" * 40, "message": "chore: listed first\n"},
+                {"sha": self.SHA, "message": self.FULL_MESSAGE},
+                {"sha": "1" * 40, "message": other}]
+        for engine, _calls in self._each_engine([self.VIEW_COMMIT], rows):
+            details = engine._pr_details(str(self.dir), 445)
+            self.assertEqual([self.FULL_MESSAGE], details["commit_messages"])
+            self.assertTrue(engine._should_skip_reflect(str(self.dir), 445))
+
+    def test_an_untruncated_pr_makes_no_extra_request(self):
+        commit = {"oid": self.SHA, "messageHeadline": "docs: short [skip reflect]",
+                  "messageBody": ""}
+        for engine, calls in self._each_engine([commit]):
+            self.assertTrue(engine._should_skip_reflect(str(self.dir), 1))
+            self.assertEqual([], [c for c in calls if c[:2] == ["gh", "api"]])
+
+    def test_an_api_failure_keeps_the_truncated_form_and_reflects(self):
+        for engine, _calls in self._each_engine([self.VIEW_COMMIT], api_rc=1):
+            self.assertFalse(engine._should_skip_reflect(str(self.dir), 445))
+
+    def test_unparseable_api_output_reflects(self):
+        for engine, _calls in self._each_engine([self.VIEW_COMMIT], api_stdout="not json\n"):
+            self.assertFalse(engine._should_skip_reflect(str(self.dir), 445))
+
+    def test_a_sha_the_api_does_not_list_is_not_replaced(self):
+        """A commit the lookup does not list (say, another repo's PR) is not replaced."""
+        rows = [{"sha": "f" * 40, "message": self.FULL_MESSAGE}]
+        for engine, _calls in self._each_engine([self.VIEW_COMMIT], rows):
+            details = engine._pr_details(str(self.dir), 445)
+            self.assertEqual(
+                self.VIEW_COMMIT["messageHeadline"] + "\n" + self.VIEW_COMMIT["messageBody"],
+                details["commit_messages"][0])
+            self.assertFalse(engine._should_skip_reflect(str(self.dir), 445))
+
+    def test_the_full_message_is_still_position_gated(self):
+        """A long subject whose full body only *explains* the marker stays reflectable, and an empty
+        first line from the full message is not filled in from the body (#150)."""
+        cases = [
+            ("fix: " + "x" * 80 + "\n\nCommits should carry [skip reflect] when promoting.\n",
+             "fix: " + "x" * 60 + "…", "…" + "x" * 20),
+            ("\n[skip reflect] is what this PR documents, in a sentence.\n",
+             "", "…"),
+            ("docs: " + "y" * 80 + "\n\n```\n[skip reflect]\n```\n",
+             "docs: " + "y" * 60 + "…", "…" + "y" * 20),
+        ]
+        for full, headline, body in cases:
+            commit = {"oid": self.SHA, "messageHeadline": headline, "messageBody": body}
+            rows = [{"sha": self.SHA, "message": full}]
+            for engine, _calls in self._each_engine([commit], rows):
+                details = engine._pr_details(str(self.dir), 1)
+                self.assertEqual(full, details["commit_messages"][0])
+                self.assertFalse(engine._should_skip_reflect(str(self.dir), 1))
+
+    def test_a_standalone_body_marker_in_the_full_message_skips(self):
+        full = "docs: " + "z" * 80 + "\n\nPromotes lessons.\n\n[skip reflect]\n"
+        commit = {"oid": self.SHA, "messageHeadline": "docs: " + "z" * 60 + "…",
+                  "messageBody": "…" + "z" * 20 + "\n\nPromotes lessons."}
+        rows = [{"sha": self.SHA, "message": full}]
+        for engine, _calls in self._each_engine([commit], rows):
+            self.assertTrue(engine._should_skip_reflect(str(self.dir), 1))
+
+
+class TruncatedHeadlineCustomPatternTest(TruncatedHeadlineTest):
+    """The same repair serves a project's own `commit_messages` pattern (#149 config)."""
+
+    SUBJECT = "chore: " + "w" * 80 + " [no-retro]"
+    VIEW_COMMIT = {"oid": TruncatedHeadlineTest.SHA,
+                   "messageHeadline": "chore: " + "w" * 80 + " [no-r…",
+                   "messageBody": "…etro]"}
+    FULL_MESSAGE = SUBJECT + "\n"
+
+    def setUp(self):
+        super().setUp()
+        (self.dir / ".claude" / "memory" / "reflect-skip.json").write_text(
+            json.dumps({"commit_messages": ["[no-retro]"]}), encoding="utf-8")
+
+    def test_the_fixture_is_actually_split(self):
+        joined = self.VIEW_COMMIT["messageHeadline"] + "\n" + self.VIEW_COMMIT["messageBody"]
+        self.assertNotIn("[no-retro]", joined)
+
+
 if __name__ == "__main__":
     unittest.main()
