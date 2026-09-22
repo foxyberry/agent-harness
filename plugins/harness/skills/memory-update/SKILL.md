@@ -81,9 +81,13 @@ compact_transcript.py <selected-session-path> --require-attributed-user
 For multiple selections, run the command for each and **label which session each candidate came from**.
 If the compactor refuses retrospective input because no reliably attributed user turn exists, exclude that session. Do not use unattributed user turns to justify memory promotion. Missing some old feedback is preferable to mistaking injected rules for user feedback.
 
-### 1.6 Promote decision (ADR) drafts — `$CLAUDE_PROJECT_DIR/.claude/memory/_pending/decisions/`
+### 1.6 Promote decisions (ADRs)
 
-Handle `type: decision` drafts separately from lessons. **The canonical schema is defined below**. If a project has `$CLAUDE_PROJECT_DIR/.claude/memory/decisions/README.md`, that file is a human-readable guide, not the canonical schema. Projects copied from an older template may lack it entirely; promotion must still work.
+Two sources feed this step, and both use the steps below unchanged:
+- **Draft files** in `$CLAUDE_PROJECT_DIR/.claude/memory/_pending/decisions/`, written by a retrospective job or by decision mining. Step 6 deletes them once processed.
+- **Session candidates** from the `decision` category in section 2. There is no draft file to delete, so step 6 does not apply; everything else — the gate, the chain question, the ID, the INDEX entry — is identical. Hold the candidate to the same sourcing rule: an alternative that was never stated anywhere is not an alternative.
+
+Handle `type: decision` candidates separately from lessons. **The canonical schema is defined below**. If a project has `$CLAUDE_PROJECT_DIR/.claude/memory/decisions/README.md`, that file is a human-readable guide, not the canonical schema. Projects copied from an older template may lack it entirely; promotion must still work.
 
 Each ADR contains exactly one decision. Split drafts containing multiple decisions before promotion, and confirm each `chain`. Link deliverables through `artifacts` rather than pasting them into the body.
 
@@ -135,7 +139,7 @@ Supporting session, commit, PR, and issue links.
    - Require useful `keywords`; improve weak ones to support retrieval.
 4. **Apply one-way supersession**: if this ADR replaces an existing decision, put the old ID only in the new file's `supersedes`. **Do not edit the old file**. At read time, an ID referenced by another ADR's `supersedes` is treated as superseded, avoiding edits and conflicts in older files.
 5. **Register in INDEX**: add `[<id>](decisions/<name>.md) — [chain: <chain>] <one-line-summary>` to the ADR section in `$CLAUDE_PROJECT_DIR/.claude/memory/INDEX.md`. The link target stays relative to that INDEX. Reuse an existing ADR section, including one whose heading is still in the project's original language. If absent (first ADR or older INDEX), append `## Decision records (ADR)` and the entry.
-6. Delete processed drafts from `$CLAUDE_PROJECT_DIR/.claude/memory/_pending/decisions/`. These are **shared-tier records and require a commit through a branch and PR**.
+6. Delete processed drafts from `$CLAUDE_PROJECT_DIR/.claude/memory/_pending/decisions/` (draft files only; a session candidate has none). Either way the promoted ADR is a **shared-tier record and requires a commit through a branch and PR**.
 
 Discarded drafts are recorded in `$CLAUDE_PROJECT_DIR/.claude/memory/_rejected.md` for retrospective jobs and this skill to consult. Draft generators preserve existing files by adding numeric suffixes when slugs collide; they do not deduplicate equivalent content. Merge or reject duplicate proposals during review.
 
@@ -153,6 +157,13 @@ Discarded drafts are recorded in `$CLAUDE_PROJECT_DIR/.claude/memory/_rejected.m
 
 **reference (new external resources)**
 - New documentation, dashboards, channels, and similar resources.
+
+**decision (ADR candidates from this session)**
+- A choice between options where the **rejected option and the reason** were stated: "do X instead of Y", "we are not doing Z because …", a direction reversed mid-session.
+- A choice that is expensive to reverse: a schema, a path convention, a public interface, a default that other work will build on.
+- Take these to **section 1.6** and promote them there. Do not file them as `feedback` or `project` memory: those tiers have no `chain`, no `supersedes` and no INDEX entry, so a decision stored that way cannot be superseded later.
+- **Only what was actually said.** Write `## Alternatives` from options rejected in this session, in the PR or issue text, or in a code comment — and cite where each came from in `## Evidence`. If no alternative was rejected, the candidate fails the 1.6 gate: propose ordinary memory or discard it. **Never fill the section to pass the gate.** Drafts mined from commit messages have listed alternatives that appear in no source (#153); a promoted ADR then asserts a decision history that never happened, and later `supersedes` chains build on it.
+- 0-3 per session, one decision each. Most sessions have none, and that is the normal outcome.
 
 ### 2.4 Classify lifetime before choosing where to save
 
