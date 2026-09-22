@@ -27,5 +27,6 @@ read it directly.
 ## Decision records (ADR)
 
 Register each promoted ADR on one line: `[<id>](decisions/<name>.md) — [chain: <chain>] <one line>`.
-(The schema is in the `memory-update` skill §1.6, which ships with the plugin. No real ADR has
-been promoted yet.)
+(The schema is in the `memory-update` skill §1.6, which ships with the plugin.)
+
+- [adr-20260922-001](decisions/fetch-full-commit-messages-on-truncated-headline.md) — [chain: commit-message-parsing] On a truncated `gh pr view` headline, refetch full commit messages once from the REST endpoint and match by SHA; keep the truncated form on failure
