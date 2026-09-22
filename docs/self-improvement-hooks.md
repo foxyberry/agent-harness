@@ -301,7 +301,7 @@ Matching is case-insensitive, and non-bracketed markers still need word boundari
 stored with padding (`"  [no-retro]  "`) keeps the padding, so it can match in the subject but
 never equals a trimmed standalone body line.
 
-**Long subjects (unreleased, after 0.13.0).** `gh pr view` shortens a long headline mid-character
+**Long subjects (since 0.14.0).** `gh pr view` shortens a long headline mid-character
 and moves the rest into the body (`[ski…` / `…p reflect]`), which split the marker
 ([#148](https://github.com/foxyberry/agent-harness/issues/148)). When a headline comes back
 shortened, the hook now fetches the full messages once from

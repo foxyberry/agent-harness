@@ -51,6 +51,39 @@ content; it is read-only.
 
 ---
 
+## 0.14.0
+
+Contains [#152](https://github.com/foxyberry/agent-harness/pull/152) and
+[#155](https://github.com/foxyberry/agent-harness/pull/155). Both adapters still ship **8 skills**.
+
+### Retrospective skip markers survive a long commit subject ([#152](https://github.com/foxyberry/agent-harness/pull/152))
+
+`gh pr view` cuts a long commit subject mid-character and moves the rest into the body, so
+`[skip reflect]` arrived as `[ski…` / `…p reflect]` and never matched: the merged PR kept being
+asked for a retrospective ([#148](https://github.com/foxyberry/agent-harness/issues/148)). When a
+headline comes back truncated, the hook now fetches the full messages once from the REST commits
+endpoint and uses them only for commits it can match by SHA. If that call fails the truncated form
+is kept, so the marker can still be missed — no worse than before, and no new failure mode. The
+pre-existing limit is unchanged: only a PR's first 100 commits are examined.
+
+### `/memory-update` captures decisions from the session ([#155](https://github.com/foxyberry/agent-harness/pull/155))
+
+Candidate extraction collected `feedback`, `project` and `reference` only, so a session that made
+a decision produced no ADR candidate. The only writers of ADR drafts were the opt-in retrospective
+job and the manual mining CLI, which is why the schema shipped in 0.12.x and nothing was ever
+promoted ([#153](https://github.com/foxyberry/agent-harness/issues/153)).
+
+`/memory-update` now extracts `decision` candidates from the session and routes them to its
+promotion step, and `/feedback-review` hands a decision over instead of storing it as a rule — a
+rule has no `chain` and no `id`, so it cannot be superseded later.
+
+Every alternative listed in a promoted ADR must come from something that was actually said, with
+its source named in Evidence. If nothing was rejected, the candidate does not become an ADR. This
+is a real failure, not a precaution: a mined draft listed two alternatives that appear in no
+source, because the gate requires the section and the model filled it in.
+
+---
+
 ## 0.13.0
 
 Contains [#146](https://github.com/foxyberry/agent-harness/pull/146),
