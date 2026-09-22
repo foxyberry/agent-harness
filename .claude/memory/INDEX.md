@@ -30,3 +30,5 @@ Register each promoted ADR on one line: `[<id>](decisions/<name>.md) — [chain:
 (The schema is in the `memory-update` skill §1.6, which ships with the plugin.)
 
 - [adr-20260922-001](decisions/fetch-full-commit-messages-on-truncated-headline.md) — [chain: commit-message-parsing] On a truncated `gh pr view` headline, refetch full commit messages once from the REST endpoint and match by SHA; keep the truncated form on failure
+- [adr-20260922-002](decisions/capture-decisions-in-the-interactive-retrospective.md) — [chain: decision-capture] `/memory-update` extracts decision candidates from the session itself, because the only draft writers are off by default or surfaced by no command
+- [adr-20260922-003](decisions/alternatives-must-be-sourced-not-invented.md) — [chain: decision-capture] An ADR's `## Alternatives` must cite a real rejected option; with none stated the candidate fails the gate instead of being filled in
