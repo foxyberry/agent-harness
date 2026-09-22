@@ -17,7 +17,7 @@ continue the record from there.
 ```text
 Past: backward mining                    Ongoing work: forward capture
 commit messages → ADR drafts → decisions/ ← retrospective drafts
-                                 ↑
+                                 ↑        ← session candidates (0.14.0)
                        human review and promotion
 
 Planned additional mining inputs: PR discussions, issues, and session logs
