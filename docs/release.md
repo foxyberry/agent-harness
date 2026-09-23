@@ -51,6 +51,37 @@ content; it is read-only.
 
 ---
 
+## 0.15.0
+
+Contains [#158](https://github.com/foxyberry/agent-harness/pull/158). Both adapters still ship
+**8 skills**.
+
+### Retrospectives can read recent Codex sessions ([#158](https://github.com/foxyberry/agent-harness/pull/158))
+
+The strict transcript mode accepted a Codex user turn only from an `event_msg.user_message`
+record, and Codex stopped writing that record: six rollouts from 0.154.0 held zero of them while
+carrying 1 to 57 `role=user` items each. With no attributed user turn the compactor exits 3, so
+every retrospective on Codex work read an empty transcript
+([#147](https://github.com/foxyberry/agent-harness/issues/147)).
+
+From cli_version 0.153.4 each `role=user` item declares what it carries in
+`content_item_kinds`. The compactor now keeps the items listing `user.text` and ignores every
+other kind — a positive selector, so a wrapper nobody has seen yet is ignored rather than read as
+speech. Measured over 172 local rollouts: 506 items carry `user.text` and none of them also
+carries an injection kind.
+
+The channel is read only in a session a person types into (`originator=codex-tui` with
+`source=cli`). `codex exec`, a subagent thread and the `Claude Code` originator
+put another agent’s prompt in the same slot, so they stay excluded. Logs at 0.148.0 and below
+carry no `content_item_kinds` and are unchanged — nothing in them separates typed input from
+injected context.
+
+**This also changes session recovery.** `fw`, `fw-both`, `handoff-load` and `history` compact in
+recovery mode, where Codex `role=user` items were dropped as well. They now show typed Codex input
+too.
+
+---
+
 ## 0.14.0
 
 Contains [#152](https://github.com/foxyberry/agent-harness/pull/152) and
