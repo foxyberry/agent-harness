@@ -401,10 +401,22 @@ the following assistant segment because it may be automation output.
 
 If no positively attributed user turn remains, automatic retrospectives reject the candidate;
 the strict compression CLI warns and exits with status 3. When only part of the transcript is
-retained, stderr reports attributed and excluded turn counts. Codex logs lack equivalent
-per-record provenance fields: the compactor trusts the `event_msg.user_message` channel and
-discards `response_item` records with `role=user`, which can include injected context. This does
-**not** provide the same per-record positive attribution guarantee as Claude.
+retained, stderr reports attributed and excluded turn counts.
+
+Codex logs are read through two positive channels. The first is the `event_msg.user_message`
+record, which is unambiguous wherever it appears — but it is absent from recent interactive
+sessions: six rollouts written by Codex 0.154.0 carried zero such records while holding 1 to 57
+`role=user` items each ([#147](https://github.com/foxyberry/agent-harness/issues/147)). The
+second covers those logs. From cli_version 0.153.4 onward every `role=user` item declares what it
+carries in `payload.internal_chat_message_metadata_passthrough.content_item_kinds`, and the
+compactor keeps the items listing `user.text` while ignoring every other kind
+(`agents_md.instructions`, `environments.environment_context`, `plugins.recommendations`,
+`unknown`). Measured over 172 local rollouts, 506 items carry `user.text` and none of them also
+carries an injection kind. This channel is read only in a session a person types into
+(`originator=codex-tui` with `source=cli`); `codex exec`, a subagent thread and the `Claude Code`
+originator put another agent's prompt in the same slot. Logs at 0.148.0 and below carry no
+`content_item_kinds`, so their `role=user` items stay unread — nothing in them separates typed
+input from injected context.
 
 Historical-session compression in `/feedback-review` and `/memory-update` uses this strict
 mode too. The standalone `compact_transcript.py` CLI retains a best-effort fallback when run

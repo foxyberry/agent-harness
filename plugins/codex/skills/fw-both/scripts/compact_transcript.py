@@ -154,7 +154,11 @@ def _codex_user_message(d):
     said", the retrospective extracts it as a new lesson and files it as a memory promotion
     candidate -- the project's existing rules disguise themselves as user feedback and self-replicate.
 
-    Codex distinguishes the two for us. Real input only ever arrives via `event_msg.user_message`.
+    This channel is unambiguous wherever it exists, so it is read first. It is **not** always
+    there: measured on 2026-09-22, six rollouts written by Codex 0.154.0 contained zero
+    `event_msg.user_message` records while carrying 1 to 57 `role: "user"` items each (#147).
+    Relying on this channel alone therefore reads nothing from a recent interactive session --
+    `_codex_typed_user` below covers those.
     """
     if d.get("type") != "event_msg":
         return None
@@ -165,6 +169,67 @@ def _codex_user_message(d):
     if not isinstance(text, str) or not text.strip():
         return None
     return Turn("user", [("text", text)], "attributed", "codex-channel")
+
+
+# A Codex rollout records what kind of content each `role: "user"` item carries, in
+# `payload.internal_chat_message_metadata_passthrough.content_item_kinds`. `user.text` is what the
+# person typed; every injection carries its own kind instead -- `agents_md.instructions`,
+# `environments.environment_context`, `plugins.recommendations`, `unknown` (the `<user_action>`
+# wrapper of a review task). This is a **positive** selector: we keep `user.text` rather than
+# blocking a list of wrappers, so a new wrapper is ignored by default instead of being read as
+# speech.
+#
+# Measured over 172 local rollouts (all of 2026-09): 506 items carry `user.text` and **none** of
+# them also carries an injection kind. The field itself appears at cli_version 0.153.4 and later;
+# every log at 0.148.0 and below has no `content_item_kinds` at all, so those keep the previous
+# behavior -- their `role: "user"` items stay unread, because nothing in them separates the two.
+_CODEX_TYPED_KIND = "user.text"
+
+
+def _codex_typed_session(d):
+    """Is this `session_meta` an interactive Codex session a person is typing into?
+
+    Only `originator: "codex-tui"` with `source: "cli"`. The other clients put automation in the
+    same `user.text` slot: `codex_exec` carries the prompt a delegating agent wrote, a subagent
+    thread carries the prompt its parent agent wrote (its `source` is an object, not `"cli"`), and
+    the `Claude Code` originator is Claude driving Codex. Measured on the same corpus: the gate
+    admits 242 typed items and rejects 264 that another agent wrote.
+    """
+    if d.get("type") != "session_meta":
+        return None
+    p = d.get("payload") or {}
+    return p.get("originator") == "codex-tui" and p.get("source") == "cli"
+
+
+def _codex_typed_user(d, typed_session):
+    """A `response_item` the person typed, in a session that admits typed input, or None.
+
+    Returning None for an injection keeps it out of the stream entirely, the same as before this
+    path existed. The count is reported through ``stats`` instead, so no selection policy has to
+    know about a new provenance value.
+    """
+    if not typed_session or d.get("type") != "response_item":
+        return None
+    p = d.get("payload") or {}
+    if p.get("type") != "message" or p.get("role") != "user":
+        return None
+    meta = p.get("internal_chat_message_metadata_passthrough")
+    if not isinstance(meta, dict):
+        return None
+    kinds = meta.get("content_item_kinds")
+    if not isinstance(kinds, list) or _CODEX_TYPED_KIND not in kinds:
+        return None
+    # A message with an attachment lists several kinds, e.g.
+    # ["user.text", "user.image", "user.text"], and its first text block is the `<image …>`
+    # placeholder Codex writes for the file. Membership is what decides; the text is never matched.
+    blocks = [
+        ("text", b.get("text", ""))
+        for b in (p.get("content") or [])
+        if isinstance(b, dict) and b.get("type") in ("input_text", "text")
+    ]
+    if not any(t.strip() for _, t in blocks):
+        return None
+    return Turn("user", blocks, "attributed", "codex-kinds")
 
 
 def _codex_msg(d):
@@ -197,7 +262,8 @@ def iter_turns(path, stats=None):
     """
     if stats is None:
         stats = {}
-    stats.update(lines=0, used_fallback=False)
+    stats.update(lines=0, used_fallback=False, codex_typed_session=False)
+    typed_session = False
     with open(path, encoding="utf-8", errors="replace") as f:
         for ln in f:
             stats["lines"] += 1
@@ -205,9 +271,17 @@ def iter_turns(path, stats=None):
                 d = json.loads(ln)
             except Exception:
                 continue
+            is_typed_session = _codex_typed_session(d)
+            if is_typed_session is not None:
+                # `session_meta` is the first record of a rollout, so this is decided before any
+                # message is read.
+                typed_session = is_typed_session
+                stats["codex_typed_session"] = is_typed_session
             turn = _claude_msg(d)
             if turn is None:
                 turn = _codex_user_message(d)
+            if turn is None:
+                turn = _codex_typed_user(d, typed_session)
             if turn is None:
                 turn = _codex_msg(d)
             if turn is None:
