@@ -408,9 +408,10 @@ class TruncatedHeadlineTest(unittest.TestCase):
     `_pr_details` read `[ski…` / `…p reflect]` and a retrospective-output PR asked for its own
     retrospective. The fix fetches the untruncated `commit.message` from the REST API, keyed by sha.
 
-    The fixture is study-words PR #445 (commit a353ca8), quoted verbatim from `gh pr view 445 --json
-    commits` and `gh api repos/{owner}/{repo}/pulls/445/commits`, cut after the first bullet — the
-    rest is a list and a footer naming the author's machine, which does not belong in a public repo.
+    The fixture is PR 445 of another (private) repository, commit a353ca8, quoted verbatim from
+    `gh pr view <n> --json commits` and `gh api repos/{owner}/{repo}/pulls/<n>/commits`, cut after
+    the first bullet — the rest is a list and a footer naming the author's machine, which does not
+    belong in a public repo.
     """
 
     SHA = "a353ca8ddf56ca2550db92ec3ccc7293019dcf9d"

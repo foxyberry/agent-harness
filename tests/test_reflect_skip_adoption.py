@@ -112,7 +112,7 @@ class AdoptionChangesTheVerdictTest(_Matrix):
         self.assertVerdict(
             True, ROOT, files,
             msg="this repository's reflect-skip.json is missing or no longer treats .gitignore "
-                "as incidental — the #130 recurrence (study-words #422) is back")
+                "as incidental — the #130 recurrence seen in another repository is back")
 
     def test_memory_only_never_needed_adoption(self):
         """The engine default. Stated so the pair above is read as the delta it is."""
