@@ -16,8 +16,8 @@ commit: c5f2ab7
 waived, and the directive `[skip reflect]` is only honored in the subject or on a standalone body
 line. Those messages came from `gh pr view --json commits`, which cuts a long subject at a
 **character** boundary and moves the rest into the body, putting `…` (U+2026) on both sides of the
-cut. A real case, study-words PR #445, arrived as `"[ski…"` / `"…p reflect]"`, so the marker never
-matched and the merged PR kept being asked for a retrospective (#148).
+cut. A real case, PR 445 of another (private) repository, arrived as `"[ski…"` / `"…p reflect]"`,
+so the marker never matched and the merged PR kept being asked for a retrospective (#148).
 
 ## Decision
 
