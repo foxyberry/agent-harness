@@ -96,6 +96,23 @@ class CodexTypedInputTest(unittest.TestCase):
                 with self.subTest(source=name, session=label):
                     self.assertEqual("", self._compact(self._load(name), records))
 
+    def test_a_forked_log_does_not_inherit_its_parents_session(self):
+        # A forked or subagent rollout replays its parent's `session_meta` on the next line, so the
+        # gate must be decided by the log's own first record. Reading the last one seen turned 43
+        # local logs into "typed", including the subagent threads the gate exists to exclude.
+        records = [SUBAGENT_META, TUI_META, _user_item("부모 세션에서 재생된 발언", ["user.text"])]
+        for name in SOURCES:
+            with self.subTest(source=name):
+                self.assertEqual("", self._compact(self._load(name), records))
+
+    def test_a_typed_session_is_not_revoked_by_a_later_meta(self):
+        # The mirror case: an interactive log that later replays some other session's metadata keeps
+        # reading its own typed input.
+        records = [TUI_META, EXEC_META, _user_item("내가 친 말", ["user.text"])]
+        for name in SOURCES:
+            with self.subTest(source=name):
+                self.assertIn("내가 친 말", self._compact(self._load(name), records))
+
     def test_logs_without_the_kinds_field_are_unchanged(self):
         # Codex 0.148.0 and older write no content_item_kinds, so nothing separates a typed item
         # from an injected one. Those items stay unread rather than being guessed at.

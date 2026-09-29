@@ -264,6 +264,7 @@ def iter_turns(path, stats=None):
         stats = {}
     stats.update(lines=0, used_fallback=False, codex_typed_session=False)
     typed_session = False
+    seen_session_meta = False
     with open(path, encoding="utf-8", errors="replace") as f:
         for ln in f:
             stats["lines"] += 1
@@ -271,12 +272,17 @@ def iter_turns(path, stats=None):
                 d = json.loads(ln)
             except Exception:
                 continue
-            is_typed_session = _codex_typed_session(d)
-            if is_typed_session is not None:
-                # `session_meta` is the first record of a rollout, so this is decided before any
-                # message is read.
-                typed_session = is_typed_session
-                stats["codex_typed_session"] = is_typed_session
+            if not seen_session_meta:
+                is_typed_session = _codex_typed_session(d)
+                if is_typed_session is not None:
+                    # The **first** `session_meta` is the log's own identity, and it is the first
+                    # record of the file, so this is decided before any message is read. Later ones
+                    # are history: a forked or subagent rollout replays its parent's `session_meta`
+                    # on the next line, and taking the last one seen flipped 43 local logs into
+                    # "typed" -- the very sessions the gate exists to exclude.
+                    seen_session_meta = True
+                    typed_session = is_typed_session
+                    stats["codex_typed_session"] = is_typed_session
             turn = _claude_msg(d)
             if turn is None:
                 turn = _codex_user_message(d)
