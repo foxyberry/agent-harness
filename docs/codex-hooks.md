@@ -379,11 +379,16 @@ logged event and still only 1 of 3 survived).
 
 **Conclusion:**
 
-| What you want to know | Codex log | Claude log | `HARNESS_HOOK_TRACE` |
-|---|---|---|---|
-| it ran and injected something | inferable | ✅ | ✅ |
-| it ran but stayed quiet | ❌ | ❌ | ✅ |
-| it never ran | ❌ | ❌ | ✅ |
+| What you want to know | Codex log | Codex session output | Claude log | `HARNESS_HOOK_TRACE` |
+|---|---|---|---|---|
+| it ran and injected something | inferable | ✅ | ✅ | partly — entry only |
+| it ran, produced output, and was rejected | ❌ | ✅ `hook: … Failed` | — | partly — entry only |
+| it ran but stayed quiet | ❌ | ✅ `hook: … Completed` | ❌ | ✅ |
+| it never ran | ❌ | ❌ | ❌ | ✅ |
+
+The **Codex session output** column was added on 2026-10-01: a `codex exec` run prints a line per
+hook invocation with its verdict, which separates "rejected" from "quiet" — the one distinction
+the trace file cannot make, since it is written on entry. Neither source is available to a test.
 
 Neither log **distinguishes "ran quietly" from "never ran"** — which is exactly the failure mode
 we missed for three weeks. The Claude log is a partial substitute, but it **cannot prove absence.**
@@ -420,7 +425,8 @@ tests above), or the installed copy is an old version (→ check the install pat
 
 ### Observed results (2026-08-15, `tutti-dpnc` — outside the harness repo)
 
-Plugin 0.7.1. **Every registered hook on both adapters actually fired.**
+Plugin 0.7.1. **Every registered hook on both adapters actually fired.** Firing is all this round
+measured; see the 2026-10-01 round below for what happens to the output afterwards.
 
 | Hook | Claude | Codex |
 |---|---|---|
@@ -445,6 +451,39 @@ added `trace_entry` **while the manifest still said 0.7.0**, so a build that rep
 carries the tracing code genuinely exists (a local build, or a release without a version bump).
 Confirm the version separately from the cache directory name or `plugin list`.
 
+### Observed results (2026-10-01, a throwaway project — outside the harness repo)
+
+Codex 0.154.0, plugin 0.15.0, run with `codex exec`. This round measured what happens to a hook's
+**output**, which the 2026-08-15 round did not. `HARNESS_HOOK_TRACE` confirmed all four hooks
+entered, so matchers are not the issue.
+
+| Hook | Event | Entered | Produced output | Codex verdict | Reached the model |
+|---|---|---|---|---|---|
+| `project-memory-index` | SessionStart | ✅ | ✅ index body | `Completed` | ✅ marker found in the rollout |
+| `memory-search` | PreToolUse | ✅ | ✅ matched route | **`Failed`** | ❌ 0 occurrences |
+| `reflection` | PostToolUse | ✅ | ✅ matched rule | **`Failed`** | ❌ 0 occurrences |
+| either edit hook | Pre/PostToolUse | ✅ | nothing (no match) | `Completed` | — |
+
+The controlled pair, two shell commands in one session, differing only in whether a route matched:
+`head -n 1 <file>` (no match, no output) → `Completed`; `wc -l <file>` (match, output) →
+`Failed`. Same for an `apply_patch` edit against a `glob` rule, and for `reflection` against a
+`regex` rule.
+
+**The hooks themselves are correct.** Fed the same Codex-shaped payloads directly — `apply_patch`
+with raw patch text and a relative path, and `Bash` with the matching command — each prints the
+expected `additionalContext` and exits 0. Codex runs them and discards the result.
+
+So on Codex the loop currently delivers the **index** and nothing else. What output shape Codex
+accepts from `PreToolUse`/`PostToolUse` is the open question, and it belongs in the official Codex
+hook documentation rather than in inference from this behavior
+([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+
+**A third trap, from this round:** the first `reflection` measurement used an invented
+`reflection-rules.json` shape (`{"pattern": …}` instead of `{"glob": …, "regex": …}`). The hook
+matched nothing, produced nothing, and was reported `Completed` — which reads exactly like
+"Codex accepts reflection's output". **Validate the fixture against the real schema before
+reading a verdict out of a quiet hook.**
+
 ### Two traps we walked into while observing
 
 1. **The PR that added the instrumentation (#101) did not bump the version, so no installed copy
@@ -462,9 +501,9 @@ Confirm the version separately from the cache directory name or `plugin list`.
 
 | Hook | Claude | Codex | Notes |
 |---|---|---|---|
-| `project-memory-index` | ✅ | ✅ | SessionStart — unaffected by the coverage limits |
-| `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch`. Extracts the edited file list from the raw patch to route on |
-| `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file** |
+| `project-memory-index` | ✅ | ✅ | SessionStart — output accepted and injected (measured 2026-10-01) |
+| `memory-search` | ✅ | 🟡 | `PreToolUse` / matcher `apply_patch` or `Bash`. Runs and produces text, but Codex rejects the output (measured 2026-10-01) |
+| `reflection` | ✅ | 🟡 | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**. Same rejected output as above |
 | `pr-merge-reflect` | ✅ | 🟡 | Stage 3a: SessionStart and PostToolUse detection/queueing only. UserPromptSubmit injection and the LLM job stay unregistered until measured |
 
 The Codex 3a bundle deliberately omits `reflect.py`. It can therefore detect merges and session
@@ -479,9 +518,10 @@ plus `new_string`/`content`/`edits`) and Codex's (raw patch text inside `command
 differ per tool and new ones appear).
 
 **Output keys are emitted twice** — as `hookSpecificOutput.additionalContext` (nested) and as
-`additionalContext` (top level). Claude reads the nested one (demonstrated). The Codex docs list
-`additionalContext` as `PreToolUse`/`PostToolUse` output but **do not say whether it is nested or
-top level**, and the only event where we confirmed the nested form working is `SessionStart` —
-which also accepts plain stdout, so the nested path was never really exercised there. A failed
-injection is indistinguishable from a successful one (the hook just exits 0 quietly), so we do
-not narrow to one form before observing it.
+`additionalContext` (top level). Claude reads the nested one (demonstrated).
+
+**On Codex, `PreToolUse` and `PostToolUse` reject that output** (measured 2026-10-01 — see the
+round below). The caveat this paragraph used to carry, that a failed injection would be
+indistinguishable from a successful one, turned out not to hold: Codex prints
+`hook: PreToolUse Failed` for the run, so the failure is visible in the session, just not to any
+test. `SessionStart` accepts the same output and injects it.
