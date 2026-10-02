@@ -1,14 +1,17 @@
 # Project memory index — agent-harness
 
 Shared (committed) memory. Claude reads this index at session start and then pulls the relevant
-memory bodies in through the memory-search hook. Codex ships these hooks too: the bundled
-`project-memory-index` hook injects this index at SessionStart and `memory-search` injects memory
-bodies before edits — both were observed firing on Codex on 2026-08-15. Codex coverage is still
-partial: `pr-merge-reflect` is registered for SessionStart and PostToolUse/Bash, but its install
-measurement is still pending, and UserPromptSubmit injection plus the LLM job stay unregistered
-(`docs/codex-hooks.md`). Registration is not the same as measured firing — whenever this index
-was not injected for any reason (not installed, the plugin untrusted, a hook that did not run),
-read it directly.
+memory bodies in through the memory-search hook. Codex ships these hooks too, and on Codex the
+coverage is **narrower than it used to say here**: measured on Codex 0.154.0 with plugin 0.15.0,
+`project-memory-index` injects this index at SessionStart, while `memory-search` and `reflection`
+run, produce their output, and have it **rejected** — Codex reports the hook as failed and nothing
+reaches the model. So on Codex this index arrives but the memory bodies do not
+([#85](https://github.com/foxyberry/agent-harness/issues/85), `docs/codex-hooks.md`).
+`pr-merge-reflect` is registered for SessionStart and PostToolUse/Bash, with UserPromptSubmit
+injection and the LLM job unregistered. Registration is not the same as measured injection —
+whenever this index was not injected for any reason (not installed, the plugin untrusted, a hook
+that did not run), read it directly, and on Codex read the memory bodies this index names rather
+than waiting for a hook to deliver them.
 
 - [engine-data-separation](engine-data-separation.md) — core/hooks is a generic engine; "what to do" lives in project data. No hardcoding
 - [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — when the plugin root is a live working copy, hook edits hit other running sessions; build.sh guards missing scripts, older sessions do not

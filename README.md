@@ -109,12 +109,16 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | When | Hook | What it does | Claude | Codex |
 |---|---|---|---|---|
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
-| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ |
-| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ |
+| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | 🟡 runs, output rejected |
+| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | 🟡 runs, output rejected |
 | After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 detect/queue registered, smoke pending |
 
-Codex registers the last hook only for SessionStart and Bash PostToolUse detection. Prompt delivery
-and automatic drafts remain disabled until the installed-plugin smoke test verifies them
+On Codex, measured on 0.154.0 with plugin 0.15.0: the two edit hooks are invoked with the right
+matcher and produce their text, but Codex reports `PreToolUse`/`PostToolUse` as **failed** whenever
+the hook writes `additionalContext`, and the text never reaches the model. A hook that stays quiet
+is reported as completed. `SessionStart` accepts the same output, which is why the index hook works
+there. Codex also registers the merge hook only for SessionStart and Bash PostToolUse detection;
+prompt delivery and automatic drafts stay disabled
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
