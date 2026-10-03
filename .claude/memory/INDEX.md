@@ -1,17 +1,14 @@
 # Project memory index — agent-harness
 
-Shared (committed) memory. Claude reads this index at session start and then pulls the relevant
-memory bodies in through the memory-search hook. Codex ships these hooks too, and on Codex the
-coverage is **narrower than it used to say here**: measured on Codex 0.154.0 with plugin 0.15.0,
-`project-memory-index` injects this index at SessionStart, while `memory-search` and `reflection`
-run, produce their output, and have it **rejected** — Codex reports the hook as failed and nothing
-reaches the model. So on Codex this index arrives but the memory bodies do not
-([#85](https://github.com/foxyberry/agent-harness/issues/85), `docs/codex-hooks.md`).
-`pr-merge-reflect` is registered for SessionStart and PostToolUse/Bash, with UserPromptSubmit
-injection and the LLM job unregistered. Registration is not the same as measured injection —
-whenever this index was not injected for any reason (not installed, the plugin untrusted, a hook
-that did not run), read it directly, and on Codex read the memory bodies this index names rather
-than waiting for a hook to deliver them.
+Shared (committed) memory. Claude and Codex use `project-memory-index` at SessionStart and
+`memory-search` before matching edits or shell commands. Since plugin 0.15.1, context uses only
+`hookSpecificOutput.additionalContext`: on Codex 0.160.0 the old dual-key output failed, while
+the fixed output delivered memory bodies and reflection warnings as developer context
+([#167](https://github.com/foxyberry/agent-harness/issues/167), `docs/codex-hooks.md`).
+`pr-merge-reflect` remains registered for SessionStart and PostToolUse/Bash, with UserPromptSubmit
+injection and the LLM job unregistered. Registration is not proof of injection: if the index or
+needed memory bodies have not arrived (an older plugin, missing trust, or an unmatched route),
+read the relevant files directly. Do not assume an installed plugin has the current source.
 
 - [engine-data-separation](engine-data-separation.md) — core/hooks is a generic engine; "what to do" lives in project data. No hardcoding
 - [hooks-live-dir-gotcha](hooks-live-dir-gotcha.md) — when the plugin root is a live working copy, hook edits hit other running sessions; build.sh guards missing scripts, older sessions do not

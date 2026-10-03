@@ -51,6 +51,18 @@ content; it is read-only.
 
 ---
 
+## 0.15.1
+
+Fixes [#167](https://github.com/foxyberry/agent-harness/issues/167): memory-search and reflection
+now emit only the documented nested context envelope. The duplicate top-level `additionalContext`
+made Codex reject edit-hook output. A controlled Codex 0.160.0 comparison reproduced the failure
+and confirmed the fix in rollout developer messages; Claude Code 2.1.278 still received the
+index, memory and warning markers. See the [runtime evidence](codex-hooks.md#observed-results-2026-10-04-output-fix-for-167).
+Both plugin manifests are 0.15.1. Existing installations keep the old code until updated using
+the commands above; **close your Codex sessions first**.
+
+---
+
 ## 0.15.0
 
 Contains [#158](https://github.com/foxyberry/agent-harness/pull/158). Both adapters still ship

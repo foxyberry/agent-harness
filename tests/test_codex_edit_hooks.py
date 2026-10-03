@@ -69,11 +69,8 @@ class _HookRun(unittest.TestCase):
             return None
         payload = json.loads(stdout)
         nested = (payload.get("hookSpecificOutput") or {}).get("additionalContext")
-        top = payload.get("additionalContext")
-        # If the two keys differ, the outcome depends on which one a given tool reads -- they have
-        # to match.
-        self.assertEqual(nested, top,
-                         "the nested and top-level additionalContext values diverged")
+        self.assertNotIn("additionalContext", payload,
+                         "undocumented top-level context must not reach the host")
         return nested
 
 

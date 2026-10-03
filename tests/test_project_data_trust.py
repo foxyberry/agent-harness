@@ -56,7 +56,7 @@ class _Project(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         if not proc.stdout.strip():
             return ""
-        return json.loads(proc.stdout)["additionalContext"]
+        return json.loads(proc.stdout)["hookSpecificOutput"]["additionalContext"]
 
     def bash(self, command="ls -la"):
         return {"hook_event_name": "PreToolUse", "tool_name": "Bash",

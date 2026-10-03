@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Shared **input normalization** and **output emission** for the edit hooks (Claude + Codex).
 
-Inputs arrive in a different shape per tool (see below), and each tool may read a
-different output key (`emit_context`). If every hook handled both on its own, we would
+Inputs arrive in a different shape per tool (see below); output uses the shared
+nested context envelope (`emit_context`). If every hook handled both on its own, we would
 eventually fix only one side — so it all lives here.
 
 ## Input normalization
@@ -227,25 +227,16 @@ def edited_paths(data):
 def emit_context(event, text):
     """Write text to inject into the model context to stdout. Empty text emits nothing.
 
-    **Emits the key twice** — nested (`hookSpecificOutput.additionalContext`) and
-    top-level (`additionalContext`).
-
-    Claude reads the nested form (verified). The Codex docs list `additionalContext` as
-    output for `PreToolUse`/`PostToolUse` but **do not say whether it is nested or
-    top-level**. The only event where the nested form was confirmed to work is
-    `SessionStart`, and that event also accepts plain stdout, so the nested path was never
-    really exercised there.
-
-    Emitting both is correct whichever one is right, and both parsers ignore unknown keys.
-    This failure mode is **indistinguishable from success** (the hook exits quietly even
-    when nothing was injected), so we do not guess one. Narrow it down once actual
-    injection is observed in the target environment.
+    Use only `hookSpecificOutput.additionalContext`, the documented envelope shared
+    by Claude and Codex. The former duplicate top-level key is undocumented; Codex
+    0.154.0 rejected the dual-key output for PreToolUse and PostToolUse (#167).
+    An exit code of zero only proves the script ran: verify host acceptance and
+    model-visible injection separately (docs/codex-hooks.md).
     """
     if not text:
         return
     print(json.dumps({
         "hookSpecificOutput": {"hookEventName": event, "additionalContext": text},
-        "additionalContext": text,
     }, ensure_ascii=False))
     sys.stdout.flush()
 
