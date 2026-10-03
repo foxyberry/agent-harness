@@ -109,15 +109,15 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | When | Hook | What it does | Claude | Codex |
 |---|---|---|---|---|
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
-| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | 🟡 runs, output rejected |
-| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | 🟡 runs, output rejected |
+| Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ nested context verified |
+| After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ nested context verified |
 | After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 detect/queue registered, smoke pending |
 
-On Codex, measured on 0.154.0 with plugin 0.15.0: the two edit hooks are invoked with the right
-matcher and produce their text, but Codex reports `PreToolUse`/`PostToolUse` as **failed** whenever
-the hook writes `additionalContext`, and the text never reaches the model. A hook that stays quiet
-is reported as completed. `SessionStart` accepts the same output, which is why the index hook works
-there. Codex also registers the merge hook only for SessionStart and Bash PostToolUse detection;
+Since 0.15.1, both edit hooks emit only `hookSpecificOutput.additionalContext`. On Codex
+0.160.0, the previous dual-key output failed; the nested-only output completed and its memory
+and warning markers appeared in the rollout's developer context. Claude Code 2.1.278 also
+received the markers ([measurement](docs/codex-hooks.md#observed-results-2026-10-04-output-fix-for-167)).
+Codex still registers the merge hook only for SessionStart and Bash PostToolUse detection;
 prompt delivery and automatic drafts stay disabled
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
@@ -203,7 +203,7 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.15.0`
+- Plugin version: `0.15.1`
 - Public marketplace installation verified for both Claude Code and Codex (measured on earlier
   releases, not re-run for every version)
 - 8 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)

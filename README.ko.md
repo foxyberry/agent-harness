@@ -105,16 +105,16 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | 시점 | 훅 | 하는 일 | Claude | Codex |
 |---|---|---|---|---|
 | 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md` 를 컨텍스트에 주입 | ✅ | ✅ |
-| 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | 🟡 실행되지만 출력이 거부됨 |
-| 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | 🟡 실행되지만 출력이 거부됨 |
+| 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
+| 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
 | 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | 🟡 탐지/큐 등록, smoke 대기 |
 
-Codex 에서는 0.154.0 과 플러그인 0.15.0 으로 측정한 결과가 이렇습니다. 편집 훅 둘은 맞는
-matcher 로 호출되고 텍스트도 만들어 내지만, 훅이 `additionalContext` 를 쓰는 순간 Codex 가
-`PreToolUse`·`PostToolUse` 를 **실패로 처리**하고 그 텍스트는 모델에 전달되지 않습니다. 아무
-출력도 내지 않은 훅은 완료로 처리됩니다. `SessionStart` 는 같은 출력을 받아들이고, 그래서
-인덱스 훅은 동작합니다. 머지 훅은 SessionStart 와 Bash PostToolUse 탐지에만 등록돼 있고 사용자
-프롬프트 전달과 자동 초안은 비활성입니다
+0.15.1 부터 편집 훅 둘은 `hookSpecificOutput.additionalContext` 만 출력합니다. Codex
+0.160.0 에서 기존의 이중 키 출력은 실패했고, 중첩 키만 남긴 출력은 완료 처리되며 메모리와
+경고 마커가 rollout 의 developer 컨텍스트에 나타났습니다. Claude Code 2.1.278 에서도
+마커 전달을 확인했습니다([측정 기록](docs/codex-hooks.md#observed-results-2026-10-04-output-fix-for-167)).
+머지 훅은 여전히 SessionStart 와 Bash PostToolUse 탐지에만 등록돼 있고 사용자 프롬프트
+전달과 자동 초안은 비활성입니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 훅 엔진은 `core/` 에 있고 generic 합니다. *어떤* 메모리를 넣고 *어떤* 규칙을 검사할지는 프로젝트의
@@ -197,7 +197,7 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 상태
 
-- 플러그인 버전: `0.15.0`
+- 플러그인 버전: `0.15.1`
 - Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료 (이전 릴리스에서 측정한 결과이며
   매 버전마다 다시 돌리지는 않습니다)
 - 양쪽 어댑터에 스킬 8개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)

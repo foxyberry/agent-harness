@@ -3,7 +3,8 @@
 **The official documentation is the primary source.** This is a summary of it, with anything
 we confirmed ourselves marked separately as **measured**.
 
-- Official: <https://learn.chatgpt.com/docs/config-file/config-advanced>
+- Official: <https://learn.chatgpt.com/docs/hooks>
+- Context-output contract rechecked: 2026-10-04; runtime comparison on codex-cli 0.160.0
 - Checked: 2026-08-10 / codex-cli 0.145.0
 
 > **Correction history:** the first two versions of this document were written from binary
@@ -111,7 +112,8 @@ fire" as a matcher-name problem.**
 
 ## Output (stdout)
 
-Common: `continue`, `stopReason`, `systemMessage`, `suppressOutput`
+Top-level fields include `continue`, `stopReason`, `systemMessage`, and `suppressOutput`, but
+support is event-specific; a parsed field is not necessarily supported by every event.
 
 | Event | Event-specific output |
 |---|---|
@@ -122,6 +124,17 @@ Common: `continue`, `stopReason`, `systemMessage`, `suppressOutput`
 
 Plain stdout is ignored for most events; it becomes context only for `SessionStart`,
 `SubagentStart`, and `UserPromptSubmit`.
+
+For context injection, `additionalContext` in this table belongs **inside**
+`hookSpecificOutput`, alongside `hookEventName`. It is not a top-level field. For example:
+
+```json
+{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "Project memory"}}
+```
+
+Use `PostToolUse` as the event name for a post-tool warning. No `permissionDecision` is needed
+for context-only injection. See the [official event contracts](https://learn.chatgpt.com/docs/hooks#pretooluse)
+and the controlled comparison below.
 
 ## Exit codes
 
@@ -469,20 +482,73 @@ The controlled pair, two shell commands in one session, differing only in whethe
 `Failed`. Same for an `apply_patch` edit against a `glob` rule, and for `reflection` against a
 `regex` rule.
 
-**The hooks themselves are correct.** Fed the same Codex-shaped payloads directly — `apply_patch`
+**The scripts produced text, but their output envelope was not accepted.** Fed the same Codex-shaped payloads directly — `apply_patch`
 with raw patch text and a relative path, and `Bash` with the matching command — each prints the
 expected `additionalContext` and exits 0. Codex runs them and discards the result.
 
-So on Codex the loop currently delivers the **index** and nothing else. What output shape Codex
-accepts from `PreToolUse`/`PostToolUse` is the open question, and it belongs in the official Codex
-hook documentation rather than in inference from this behavior
-([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+At that revision the loop delivered the **index** and nothing else. The 2026-10-04 comparison
+below resolves the output-shape question: the undocumented top-level duplicate caused the
+rejection. The historical measurements above remain valid for the old output.
 
 **A third trap, from this round:** the first `reflection` measurement used an invented
 `reflection-rules.json` shape (`{"pattern": …}` instead of `{"glob": …, "regex": …}`). The hook
 matched nothing, produced nothing, and was reported `Completed` — which reads exactly like
 "Codex accepts reflection's output". **Validate the fixture against the real schema before
 reading a verdict out of a quiet hook.**
+
+### Observed results (2026-10-04, output fix for #167)
+
+Codex CLI 0.160.0, with the old 0.15.0 output compared against the nested-only fix shipped in
+0.15.1. Both runs used throwaway Git projects outside this repository and separate copies of
+the generated Codex bundle. The functional difference was removal of the top-level
+`additionalContext`; `permissionDecision` was absent in both. No live installation was replaced.
+
+The same prompt forced `head -n 1 probe.txt` (no route), `wc -l probe.txt` (command route), then
+an `apply_patch` adding `trigger_value` to that file (file route and reflection rule). Markers
+were present only in fixture memory/config files, never in the prompt or edited file. The model
+was forbidden to read those files. The fixtures used the real schemas:
+
+```json
+{"rules": [{"glob": "*probe.txt", "memory": ["edit.md"]},
+           {"command_contains": ["wc -l"], "memory": ["shell.md"]}]}
+```
+
+```json
+{"rules": [{"glob": "*probe.txt", "regex": "trigger_value", "message": "<unique warning marker>"}]}
+```
+
+`HARNESS_HOOK_TRACE` recorded eight hook entries per run. A capture wrapper recorded input,
+stdout and exit status and forwarded stdout unchanged: every script exited 0, and all matching
+routes/rules produced text in both runs. The host verdict and rollout developer messages
+then distinguished rejection from injection:
+
+| Event / case | Old output | Nested-only output | Marker in rollout developer context (old → fixed) |
+|---|---|---|---|
+| SessionStart / index | `Completed` | `Completed` | yes → yes |
+| PreToolUse / unmatched shell | `Completed`, no stdout | `Completed`, no stdout | none expected |
+| PreToolUse / matching shell | `Failed` | `Completed` | no → yes |
+| PreToolUse / matching edit | `Failed` | `Completed` | no → yes |
+| PostToolUse / reflection | `Failed` | `Completed` | no → yes |
+
+The index hook already used its own nested-only emitter in the baseline; that control did not
+exercise a dual-key SessionStart payload. The fixed rollout had each of its four unique markers in a `response_item` with
+`payload.role == "developer"`; the baseline contained only its index marker. Merely finding a
+marker in an assistant's final answer was not the check. Claude Code 2.1.278, using the generated
+Claude bundle in another throwaway project, also received index, PreToolUse/Write memory and
+PostToolUse/Write warning markers with the nested-only output.
+
+**Reproducing the configuration:** these probes used `codex exec --ignore-user-config` and
+explicit inline `-c 'hooks.<Event>=…'` arrays with the generated matchers and absolute commands
+pointing at the external bundle copies. Hook trust was bypassed only for these inspected local
+scripts. Project-local `hooks.json` alone under this invocation yielded no trace entries, so
+those preliminary runs were discarded. These results verify script output acceptance, not a
+marketplace reinstall or the unverified merge-queue behavior.
+
+For an installed-plugin check, `./build.sh` alone is insufficient: `codex exec` normally loads
+the installation cache. Confirm the executing `hooks/hook_io.py` contains only the nested key,
+or test a separate copy with explicitly configured commands as above. Close existing Codex
+sessions before replacing their installation cache. A `Completed` verdict without the expected
+trace entry and developer-context marker is not proof of injection.
 
 ### Two traps we walked into while observing
 
@@ -502,8 +568,8 @@ reading a verdict out of a quiet hook.**
 | Hook | Claude | Codex | Notes |
 |---|---|---|---|
 | `project-memory-index` | ✅ | ✅ | SessionStart — output accepted and injected (measured 2026-10-01) |
-| `memory-search` | ✅ | 🟡 | `PreToolUse` / matcher `apply_patch` or `Bash`. Runs and produces text, but Codex rejects the output (measured 2026-10-01) |
-| `reflection` | ✅ | 🟡 | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**. Same rejected output as above |
+| `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch` or `Bash`. Nested-only output accepted and injected (0.15.1 fix, measured 2026-10-04 on Codex 0.160.0) |
+| `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**; nested-only warning injected in the same measurement |
 | `pr-merge-reflect` | ✅ | 🟡 | Stage 3a: SessionStart and PostToolUse detection/queueing only. UserPromptSubmit injection and the LLM job stay unregistered until measured |
 
 The Codex 3a bundle deliberately omits `reflect.py`. It can therefore detect merges and session
@@ -517,11 +583,10 @@ plus `new_string`/`content`/`edits`) and Codex's (raw patch text inside `command
 **the list of edited files plus the added content**. Hooks do not branch on `tool_name` (the names
 differ per tool and new ones appear).
 
-**Output keys are emitted twice** — as `hookSpecificOutput.additionalContext` (nested) and as
-`additionalContext` (top level). Claude reads the nested one (demonstrated).
-
-**On Codex, `PreToolUse` and `PostToolUse` reject that output** (measured 2026-10-01 — see the
-round below). The caveat this paragraph used to carry, that a failed injection would be
-indistinguishable from a successful one, turned out not to hold: Codex prints
-`hook: PreToolUse Failed` for the run, so the failure is visible in the session, just not to any
-test. `SessionStart` accepts the same output and injects it.
+**Output uses only `hookSpecificOutput.additionalContext`**, with `hookEventName` alongside it.
+This is the [documented Codex shape](https://learn.chatgpt.com/docs/hooks#pretooluse) and is also
+accepted by Claude. The former top-level duplicate was removed in 0.15.1 (#167). On Codex
+0.160.0 the controlled comparison above reproduced failure with the duplicate and injection
+without it. `permissionDecision` is not needed to inject this context. The index hook has its
+own nested-only emitter and was unchanged in both runs; its success alone never established
+edit-stage compatibility.

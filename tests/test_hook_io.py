@@ -170,7 +170,7 @@ class ConvenienceTest(unittest.TestCase):
 
 
 class EmitContextTest(unittest.TestCase):
-    """The injection payload: both keys, and non-ASCII text passed through intact.
+    """The shared nested envelope, and non-ASCII text passed through intact.
 
     Now that the hooks generate English text, nothing in the default path exercises
     non-ASCII output any more. But injected context still carries whatever the project's
@@ -178,24 +178,25 @@ class EmitContextTest(unittest.TestCase):
     `ensure_ascii=False` so that content is not silently mangled into `\\uXXXX` escapes.
     """
 
-    def _emit(self, text):
+    def _emit(self, text, event="PreToolUse"):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            hook_io.emit_context("PreToolUse", text)
+            hook_io.emit_context(event, text)
         return buffer.getvalue()
 
-    def test_both_the_nested_and_top_level_keys_are_emitted(self):
-        """Claude reads the nested key; the Codex docs are ambiguous — emit both."""
-        payload = json.loads(self._emit("hello"))
-        self.assertEqual("hello", payload["additionalContext"])
-        self.assertEqual("hello", payload["hookSpecificOutput"]["additionalContext"])
-        self.assertEqual("PreToolUse", payload["hookSpecificOutput"]["hookEventName"])
+    def test_only_the_documented_nested_envelope_is_emitted(self):
+        """Unknown top-level keys must not return to the host-facing payload (#167)."""
+        for event in ("SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit"):
+            with self.subTest(event=event):
+                self.assertEqual({"hookSpecificOutput": {
+                    "hookEventName": event, "additionalContext": "hello",
+                }}, json.loads(self._emit("hello", event)))
 
     def test_non_ascii_context_survives_unescaped(self):
         korean = "메모리 규칙: 커밋 전에 ./build.sh 를 돌릴 것"
         raw = self._emit(korean)
         self.assertIn(korean, raw, "non-ASCII context was escaped instead of written as is")
-        self.assertEqual(korean, json.loads(raw)["additionalContext"])
+        self.assertEqual(korean, json.loads(raw)["hookSpecificOutput"]["additionalContext"])
 
     def test_empty_text_emits_nothing(self):
         """An empty injection must stay silent — otherwise a hollow JSON line gets emitted."""
