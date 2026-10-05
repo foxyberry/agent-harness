@@ -10,6 +10,9 @@
     "SessionStart": [
       { "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/project-memory-index.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] },
       { "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "p=\"${CLAUDE_PLUGIN_ROOT}/hooks/pr-merge-reflect.py\"; if [ -f \"$p\" ]; then python3 \"$p\"; fi" } ] }
     ]
   }
 }

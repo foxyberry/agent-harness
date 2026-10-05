@@ -51,6 +51,19 @@ content; it is read-only.
 
 ---
 
+## 0.15.2
+
+Codex now delivers queued PR retrospective reminders at `UserPromptSubmit`. An isolated
+marketplace installation on Codex 0.160.0 verified first-run seeding, shell merge detection,
+queue delivery into developer context, and no repeat on the following prompt. GitHub responses
+were supplied by a local fixture; no real PR was merged. Automatic LLM drafting remains absent
+from the Codex bundle, including when `HARNESS_AUTO_REFLECT=1`.
+
+Both manifests are 0.15.2. Use the update commands above; **close your Codex sessions first**,
+then review and trust the changed hooks. Existing project files are unchanged.
+
+---
+
 ## 0.15.1
 
 Fixes [#167](https://github.com/foxyberry/agent-harness/issues/167): memory-search and reflection

@@ -12,9 +12,9 @@ session-start index     before-action    after-edit      merge retrospective   p
 
 Both adapters bundle **four hooks**: Claude in `plugins/harness/hooks/`, Codex in
 `plugins/codex/hooks/`. Their capabilities differ. Claude registers the full loop. Codex's
-`pr-merge-reflect` registers only **SessionStart and PostToolUse detection/queueing**;
-UserPromptSubmit reminders and automatic LLM retrospectives remain deferred pending installed
-runtime measurements ([#85](https://github.com/foxyberry/agent-harness/issues/85)). Codex hooks
+`pr-merge-reflect` registers **SessionStart and PostToolUse detection/queueing** and
+**UserPromptSubmit reminders**, verified in an isolated installation. Automatic LLM
+retrospectives remain deferred ([#85](https://github.com/foxyberry/agent-harness/issues/85)). Codex hooks
 also require **trust**: an untrusted hook is silently skipped, without an error or warning.
 See [the Codex hook contract and measured behavior](codex-hooks.md).
 
@@ -195,18 +195,17 @@ absence of a warning does not establish safety.
 
 ### pr-merge-reflect — the merge retrospective loop
 
-**Claude events:** PostToolUse `Bash`, SessionStart, and UserPromptSubmit.
-**Codex events:** SessionStart and PostToolUse `Bash` only; detection and queueing are registered,
-with installed-runtime verification still pending. Codex can also announce existing draft files
-at SessionStart; this is separate from the deferred UserPromptSubmit merge reminder.
+**Both adapters:** PostToolUse `Bash`, SessionStart, and UserPromptSubmit.
+Codex detection, queueing and reminder delivery passed an isolated installed-runtime check.
+Both adapters can also announce existing draft files at SessionStart.
 
 The hook has two roles:
 
-**A. Reminders, without an LLM.** Queue merged PRs that need a retrospective. On Claude, the
+**A. Reminders, without an LLM.** Queue merged PRs that need a retrospective. On both adapters, the
 next user prompt receives a reminder to use `/feedback-review` and `/memory-update`. This role
 does not depend on automatic retrospective opt-in. Detection paths are SessionStart polling
 (including external merges), PostToolUse after `gh pr merge` (**only after verifying MERGED
-state**), and, on Claude, user statements indicating a merge during UserPromptSubmit. The first
+state**), and user statements indicating a merge during UserPromptSubmit. The first
 SessionStart seeds the already-merged PRs rather than queuing the entire existing backlog.
 
 **B. Automatic retrospective jobs, opt-in and disabled by default.** See below. Codex's hook
@@ -492,7 +491,7 @@ backticks for outer draft fences.
   Injection experiments compared the same question with hooks disabled and enabled while
   preventing the model from directly reading the canary file.
 - **Scope of that evidence:** the historical measurements cover Claude's four hooks and Codex's
-  index and edit hooks. They do **not** establish installed runtime behavior for the later
-  Codex `pr-merge-reflect` detection/queue registration. That smoke test, UserPromptSubmit
-  injection, and automatic LLM integration remain follow-up work under #85. See
+  index and edit hooks. The 2026-10-05 isolated installation additionally verified Codex merge
+  detection, queueing and UserPromptSubmit delivery with fixture GitHub responses. Automatic
+  LLM integration and interactive trust UI verification remain follow-up work under #85. See
   [current porting status](codex-hooks.md#current-porting-status).
