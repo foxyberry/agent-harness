@@ -103,15 +103,15 @@ class RegisteredPathsTest(unittest.TestCase):
                                     f"{adapter}: {rel} is not in the bundle. {BUILD_HINT}")
 
     def test_codex_merge_hook_cannot_spawn_reflection_job(self):
-        """Phase 3a ships detect-and-queue only. Bundling reflect.py would open duplicated retrospectives during a live rollout."""
+        """Codex ships detection and reminders only. Bundling reflect.py would open duplicated retrospectives during a live rollout."""
         hooks = ROOT / "plugins" / "codex" / "hooks"
         self.assertTrue((hooks / "pr-merge-reflect.py").is_file())
         self.assertFalse((hooks / "reflect.py").exists())
 
-    def test_codex_merge_hook_phase_3a_registration_boundary(self):
+    def test_codex_merge_hook_reminder_registration_boundary(self):
         regs = [r for r in _registrations("codex") if r[2].endswith("pr-merge-reflect.py")]
         self.assertEqual(
-            [("PostToolUse", "Bash"), ("SessionStart", "")],
+            [("PostToolUse", "Bash"), ("SessionStart", ""), ("UserPromptSubmit", "")],
             [(event, matcher) for event, matcher, _script in regs],
         )
 

@@ -429,7 +429,7 @@ Expected — at least one line per registered (event, hook) pair:
 
 | Tool | Lines that must appear |
 |---|---|
-| Codex | `project-memory-index` (SessionStart), `memory-search` (PreToolUse ×2), `reflection` (PostToolUse), `pr-merge-reflect` (SessionStart, PostToolUse/Bash — pending install smoke test) |
+| Codex | `project-memory-index` (SessionStart), `memory-search` (PreToolUse ×2), `reflection` (PostToolUse), `pr-merge-reflect` (SessionStart, PostToolUse/Bash, UserPromptSubmit) |
 | Claude | the three edit/index hooks above, plus `pr-merge-reflect` (SessionStart, UserPromptSubmit, PostToolUse) |
 
 A hook with **no** line is a silent failure. There are three causes — the plugin is untrusted
@@ -550,6 +550,41 @@ or test a separate copy with explicitly configured commands as above. Close exis
 sessions before replacing their installation cache. A `Completed` verdict without the expected
 trace entry and developer-context marker is not proof of injection.
 
+### Observed results (2026-10-05, merge reminders for #85)
+
+Codex CLI 0.160.0; a candidate bundle with the UserPromptSubmit registration prepared for
+0.15.2. A separate local marketplace was registered and installed with the official CLI into an
+empty `CODEX_HOME`, outside this repository. The installed cache (not inline hook overrides)
+provided all three merge-hook registrations. Existing user caches were untouched. Authentication
+was reused only for model execution; installation used empty Git configuration. Hook trust was
+bypassed only for this inspected fixture bundle, so this does not verify the interactive trust UI.
+
+A fixture `gh` on PATH supplied local PR state and accepted a simulated merge without contacting
+GitHub. `HARNESS_HOOK_TRACE` recorded actual host events. The initial state contained one old PR.
+Four fresh Codex runs exercised this sequence:
+
+| Run | Action | Result |
+|---|---|---|
+| Seed | SessionStart with historical PR | seen seeded; pending empty; no reminder |
+| Merge | Shell `gh pr merge 85002 --squash` | PostToolUse completed; pending contained 85002 |
+| Deliver | Next ordinary prompt | UserPromptSubmit completed; PR 85002 reminder present in rollout **developer** context; pending cleared |
+| Quiet | Another ordinary prompt | No reminder; pending stayed empty |
+
+The delivery prompt did not contain the PR number, and prohibited tools and file reads. The
+rollout role, not the assistant's repetition, was the delivery check. This verifies the installed
+plugin and host lifecycle against controlled GitHub responses, not a real remote merge. Both
+adapter bundles also have subprocess regression coverage for first-run seeding, shell merge,
+external merge discovery, one-time delivery, and no automatic job with opt-in disabled.
+
+The final 0.15.2 candidate was then reinstalled into the same isolated home. A fixture merge
+from outside the session was discovered at SessionStart and delivered at UserPromptSubmit
+(PR 85003 in developer context). With `HARNESS_AUTO_REFLECT=1`, no automatic job log appeared;
+the installed bundle still contained no `reflect.py`.
+
+`reflect.py` remains absent from the Codex bundle. This measurement enables reminders only;
+it does not establish safe automatic drafting from an active Codex transcript or deduplication
+with the Claude session sweep. Those remain open in #85.
+
 ### Two traps we walked into while observing
 
 1. **The PR that added the instrumentation (#101) did not bump the version, so no installed copy
@@ -570,13 +605,12 @@ trace entry and developer-context marker is not proof of injection.
 | `project-memory-index` | ✅ | ✅ | SessionStart — output accepted and injected (measured 2026-10-01) |
 | `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch` or `Bash`. Nested-only output accepted and injected (0.15.1 fix, measured 2026-10-04 on Codex 0.160.0) |
 | `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**; nested-only warning injected in the same measurement |
-| `pr-merge-reflect` | ✅ | 🟡 | Stage 3a: SessionStart and PostToolUse detection/queueing only. UserPromptSubmit injection and the LLM job stay unregistered until measured |
+| `pr-merge-reflect` | ✅ | 🟡 | SessionStart and PostToolUse detection/queueing plus UserPromptSubmit reminders verified in 0.15.2; automatic LLM jobs remain unavailable |
 
-The Codex 3a bundle deliberately omits `reflect.py`. It can therefore detect merges and session
-starts and update the shared queue, but it will not immediately draft a retrospective from an
-in-progress Codex rollout, nor drain the queue from the still-unverified `UserPromptSubmit`. The
-final registration opens once both event firing and context injection are observed in a real
-installed copy ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+The Codex bundle deliberately omits `reflect.py`. It detects merges and delivers queued
+reminders on the next prompt, but never drafts automatically, even with `HARNESS_AUTO_REFLECT=1`.
+Immediate drafts from an in-progress Codex rollout and duplicate handling with the Claude sweep
+remain separate work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 Input normalization is `core/scripts/hook_io.py`'s job — it turns Claude's shape (`file_path`
 plus `new_string`/`content`/`edits`) and Codex's (raw patch text inside `command`) into one model:

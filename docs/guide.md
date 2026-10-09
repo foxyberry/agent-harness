@@ -154,10 +154,10 @@ When it is unclear, ask. The fork is whether it is a personal preference or a te
 session start   → the INDEX.md listing is injected whole (project-memory-index)  ← Claude and Codex
 before edit/cmd → memory that routes.json points to is injected (memory-search)  ← Claude and Codex
 after an edit   → regex quality warnings from reflection-rules.json (reflection) ← Claude and Codex
-after a merge   → retrospective prompt (pr-merge-reflect)              ← Claude; Codex detect/queue only
+after a merge   → retrospective prompt (pr-merge-reflect)              ← Claude and Codex
 ```
 
-**Codex has only the last line's detection and queueing registered** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+**Codex delivers the last line's reminder on the next prompt; automatic drafting remains unavailable** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 The edit hooks attach to Codex's `apply_patch`, and when one patch touches several files the
 rules apply to **all of them**.
 
@@ -217,17 +217,17 @@ description — adding a hook to Codex means editing **`build.sh`**.
 
 ---
 
-## 6. Current state (2026-08-31)
+## 6. Current state (2026-10-05)
 
 | | Claude | Codex |
 |---|---|---|
 | Skills | 8 | 8 |
-| Hooks | all 4 | **4** (`pr-merge-reflect` at the detect/queue stage) |
+| Hooks | all 4 | **4** (merge detection, queue and reminders) |
 | How they trigger | slash commands | `description` matching |
 | Hook trust | not needed | **required** — without it they silently do nothing |
 
-The user reminder and automatic drafting stages of the Codex merge hook open after the
-installed-plugin smoke test ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+The user reminder passed an isolated installed-plugin check. Automatic drafting remains
+separate work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 `/feedback-review` only looking at the current session ([#81](https://github.com/foxyberry/agent-harness/issues/81))
 is fixed — accumulated `_pending` drafts now always come in, and past or opposite-tool

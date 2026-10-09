@@ -69,12 +69,12 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | | Claude Code | Codex |
 |---|---|---|
 | 스킬 | 8 | 8 |
-| 훅 | 4 | **4** (`pr-merge-reflect` 는 탐지/큐 단계) |
+| 훅 | 4 | **4** (`pr-merge-reflect` 는 알림 전달까지 지원) |
 
 편집 훅은 이제 Codex 에서도 돕니다. Codex 는 편집을 파일 경로와 새 내용이 아니라 `apply_patch`
 원문으로 넘겨서, 두 모양을 같은 모델로 바꾸는 정규화 단계를 뒀습니다. 머지 훅은 탐지와 공유
-큐 갱신까지만 이식했고, 사용자 프롬프트 주입과 백그라운드 LLM 잡은 설치 smoke test 전까지
-꺼 둡니다
+큐 갱신 후 다음 사용자 프롬프트에 회고 알림을 전달합니다. 격리된 설치에서 전달을 확인했으며,
+백그라운드 LLM 회고 초안 생성은 Codex 번들에서 지원하지 않습니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## 왜 만들었나
@@ -107,7 +107,7 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md` 를 컨텍스트에 주입 | ✅ | ✅ |
 | 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
 | 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
-| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | 🟡 탐지/큐 등록, smoke 대기 |
+| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | 🟡 알림 전달 확인; 자동 초안 미지원 |
 
 0.15.1 부터 편집 훅 둘은 `hookSpecificOutput.additionalContext` 만 출력합니다. Codex
 0.160.0 에서 기존의 이중 키 출력은 실패했고, 중첩 키만 남긴 출력은 완료 처리되며 메모리와
@@ -197,14 +197,15 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 상태
 
-- 플러그인 버전: `0.15.1`
+- 플러그인 버전: `0.15.2`
 - Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료 (이전 릴리스에서 측정한 결과이며
   매 버전마다 다시 돌리지는 않습니다)
 - 양쪽 어댑터에 스킬 8개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)
 - 훅 발화와 컨텍스트 주입 검증 완료 — 훅을 끈 세션과 켠 세션에 같은 질문을 던져, 모델이 파일을
   직접 읽어 답한 경우를 배제했습니다
-- Codex 에는 훅 4개가 올라가 있고, `pr-merge-reflect` 는 설치 smoke test 전까지
-  탐지/큐 단계만 등록됩니다
+- Codex 에는 훅 4개가 올라가 있고, `pr-merge-reflect` 는 탐지·큐 갱신·알림 전달을 지원합니다.
+  격리된 설치에서 GitHub 응답을 fixture 로 대체해 확인했으며, 자동 LLM 초안 생성과
+  대화형 훅 신뢰 화면은 검증 범위에 포함하지 않았습니다
 
 ## 문서
 

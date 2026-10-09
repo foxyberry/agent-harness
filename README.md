@@ -72,12 +72,12 @@ say **when to use the skill**, not just what it does.
 | | Claude Code | Codex |
 |---|---|---|
 | Skills | 8 | 8 |
-| Hooks | 4 | **4** (`pr-merge-reflect` detection/queue phase) |
+| Hooks | 4 | **4** (merge detection, queue and reminders) |
 
 The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
 rather than a file path plus new text, so a normalization step turns both shapes into the same
-model. Codex now registers merge/session detection and shared-queue updates, pending an installed
-smoke test; prompt injection and background LLM paths remain disabled until that test verifies them
+model. Codex registers merge/session detection, queue updates and prompt reminders, verified in an
+isolated installation. Background LLM jobs remain unavailable in the Codex bundle
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## Why this exists
@@ -111,14 +111,14 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
 | Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ nested context verified |
 | After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ nested context verified |
-| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 detect/queue registered, smoke pending |
+| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 reminders; automatic drafts unavailable |
 
 Since 0.15.1, both edit hooks emit only `hookSpecificOutput.additionalContext`. On Codex
 0.160.0, the previous dual-key output failed; the nested-only output completed and its memory
 and warning markers appeared in the rollout's developer context. Claude Code 2.1.278 also
 received the markers ([measurement](docs/codex-hooks.md#observed-results-2026-10-04-output-fix-for-167)).
-Codex still registers the merge hook only for SessionStart and Bash PostToolUse detection;
-prompt delivery and automatic drafts stay disabled
+Since 0.15.2, Codex also delivers queued merge reminders at UserPromptSubmit;
+automatic drafts remain unavailable
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
@@ -203,14 +203,14 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.15.1`
+- Plugin version: `0.15.2`
 - Public marketplace installation verified for both Claude Code and Codex (measured on earlier
   releases, not re-run for every version)
 - 8 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
 - Hook firing and context injection verified — the same question was asked with hooks off and
   on, so an answer read straight from the file could be ruled out
-- Codex ships four hooks; `pr-merge-reflect` is registered for detect/queue only until its
-  installed-plugin smoke test completes
+- Codex ships four hooks; merge detection, queueing and prompt reminders passed an isolated
+  installed-plugin check. Automatic retrospective jobs remain outside the Codex bundle
 
 ## Documentation
 

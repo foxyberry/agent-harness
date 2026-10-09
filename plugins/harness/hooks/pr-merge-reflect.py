@@ -765,7 +765,7 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
     if not _auto_reflect_enabled():
         return
     if not os.path.exists(_reflect_script()):
-        return  # the Codex 3a bundle deliberately ships without the automatic LLM retrospective.
+        return  # the Codex bundle deliberately ships without the automatic LLM retrospective.
     if ProjectMatcher is None:
         return
     import time

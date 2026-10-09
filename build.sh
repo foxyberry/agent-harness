@@ -176,11 +176,9 @@ done
 # The `exec` seen in rollout logs is a tool_use_id prefix, not a tool name — do not derive
 # names from the logs. The docs claim `Edit|Write` is accepted as a matcher too, but we only
 # use names we measured.
-# pr-merge-reflect phase 3a: register only the SessionStart/PostToolUse detect-and-queue
-# steps. UserPromptSubmit stays unregistered because clearing pending before injection is
-# measured as working would lose the notification. reflect.py is not bundled either, which
-# structurally closes the path to immediate, duplicated auto-retrospectives during a live
-# Codex rollout (#85).
+# Codex delivers queued merge reminders on UserPromptSubmit (installed-plugin measurement,
+# 0.160.0; docs/codex-hooks.md). Keep reflect.py absent: automatic jobs against a live
+# Codex rollout and duplicate sweep handling remain a separate, unverified scope (#85).
 rm -rf plugins/codex/hooks
 mkdir -p plugins/codex/hooks
 cp core/hooks/project-memory-index.py core/hooks/memory-search.py core/hooks/reflection.py \
@@ -202,6 +200,9 @@ chmod +x plugins/codex/hooks/*.py
   printf '%s\n' '    ],'
   printf '%s\n' '    "SessionStart": ['
   printf '      { "hooks": [ { "type": "command", "command": "%s" } ] },\n' "$(hook_command project-memory-index.py)"
+  printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
+  printf '%s\n' '    ],'
+  printf '%s\n' '    "UserPromptSubmit": ['
   printf '      { "hooks": [ { "type": "command", "command": "%s" } ] }\n' "$(hook_command pr-merge-reflect.py)"
   printf '%s\n' '    ]'
   printf '%s\n' '  }'

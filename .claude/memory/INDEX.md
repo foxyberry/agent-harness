@@ -5,8 +5,9 @@ Shared (committed) memory. Claude and Codex use `project-memory-index` at Sessio
 `hookSpecificOutput.additionalContext`: on Codex 0.160.0 the old dual-key output failed, while
 the fixed output delivered memory bodies and reflection warnings as developer context
 ([#167](https://github.com/foxyberry/agent-harness/issues/167), `docs/codex-hooks.md`).
-`pr-merge-reflect` remains registered for SessionStart and PostToolUse/Bash, with UserPromptSubmit
-injection and the LLM job unregistered. Registration is not proof of injection: if the index or
+Since 0.15.2, `pr-merge-reflect` also delivers UserPromptSubmit reminders after SessionStart or
+PostToolUse/Bash queueing (verified in an isolated installation); the automatic LLM job remains
+unavailable in the Codex bundle. Registration is not proof of injection: if the index or
 needed memory bodies have not arrived (an older plugin, missing trust, or an unmatched route),
 read the relevant files directly. Do not assume an installed plugin has the current source.
 
