@@ -111,7 +111,7 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
 | Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ nested context verified |
 | After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ nested context verified |
-| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | ✅ reminders; automatic drafts unavailable |
+| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | 🟡 reminders; automatic drafts unavailable |
 
 Since 0.15.1, both edit hooks emit only `hookSpecificOutput.additionalContext`. On Codex
 0.160.0, the previous dual-key output failed; the nested-only output completed and its memory

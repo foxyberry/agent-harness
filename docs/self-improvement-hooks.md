@@ -432,9 +432,9 @@ export HARNESS_AUTO_REFLECT=1          # Claude hook: generate retrospective dra
 export REFLECT_BACKEND=claude          # claude (default) | deepseek | ollama
 ```
 
-Claude's reminders remain active regardless of this setting. With automatic jobs disabled,
-use `/feedback-review` and `/memory-update` manually. Codex's deferred merge reminders and LLM
-jobs are not enabled by these variables.
+Reminders on both adapters remain active regardless of this setting. With automatic jobs disabled,
+use `/feedback-review` and `/memory-update` manually. The Codex bundle omits `reflect.py`,
+so these variables do not enable LLM jobs there.
 
 Review `_pending/` drafts with `/memory-update`, then **promote, merge, or reject** them.
 Governance is explicit: `_pending → human approval → committed`. Draft generation never
