@@ -60,6 +60,7 @@ Codex reads it directly, and for Claude Code `CLAUDE.md` pulls it in with `@impo
   saves `.claude/handoff/<branch>.md` locally. Saving does not commit: commit and push that file
   under this project's commit approval rules, and never report a saved handoff as committed.
 - To pick work back up, run `/handoff-load` — the committed handoff comes first, and the current
-  git state always wins.
+  git state always wins. After reporting, it archives and removes the handoff it read; commit
+  that deletion under the same approval rules.
 - If you do not know which session to resume, browse and search Claude and Codex logs read-only
   with `/history`, then pass the path you picked to `/fw --session`.
