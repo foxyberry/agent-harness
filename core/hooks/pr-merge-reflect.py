@@ -1002,8 +1002,8 @@ def _on_user_prompt(data, project_dir, cache):
     state = _load_state(cache)
 
     if merge_done:
-        # The user said "I merged it" themselves -- the strongest signal. Treat the current session
-        # as the work session and run the job.
+        # A merge announcement requests verification. Only a pending PR confirmed by
+        # this lookup may trigger automatic drafting; lookup failures remain reminder-only.
         merged = _recent_merged(project_dir)
         if state is None:
             if merged is not None:
@@ -1024,7 +1024,6 @@ def _on_user_prompt(data, project_dir, cache):
                     _save_state(cache, seen, [])
                 return
             _emit("UserPromptSubmit", _remind_text(project_dir, ""))
-            _spawn_reflect_job(data, project_dir)
         else:
             seen, pending = set(state["seen"]), list(state["pending"])
             titles = {}
@@ -1035,10 +1034,10 @@ def _on_user_prompt(data, project_dir, cache):
                 )
             if pending:
                 _emit("UserPromptSubmit", _remind_text(project_dir, _detail(pending, titles)))
-                _spawn_reflect_job(data, project_dir)
+                if any(num in titles for num in pending):
+                    _spawn_reflect_job(data, project_dir)
             elif merged is None:
                 _emit("UserPromptSubmit", _remind_text(project_dir, ""))
-                _spawn_reflect_job(data, project_dir)
             _save_state(cache, seen, [])  # cleared once delivered
         return
 

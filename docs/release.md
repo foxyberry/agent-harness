@@ -51,6 +51,18 @@ content; it is read-only.
 
 ---
 
+## 0.16.2
+
+A user saying a PR was merged now triggers automatic drafting only when the current
+GitHub lookup confirms a pending PR. Failed lookups still deliver a manual retrospective
+reminder, including queued PRs, but do not launch a background job. An empty result or
+a result containing only unrelated already-seen PRs cannot launch a job for an old queue.
+Verified merge handling and Codex deferred session jobs are unchanged.
+
+Both manifests are 0.16.2. **Close your Codex sessions first**, then use the update commands above.
+
+---
+
 ## 0.16.1
 
 Automatic retrospective drafting is now **on by default** on both adapters when backend

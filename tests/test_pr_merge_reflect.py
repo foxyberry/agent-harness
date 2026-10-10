@@ -30,6 +30,45 @@ class PrMergeReflectTest(unittest.TestCase):
                 os.environ["HARNESS_AUTO_REFLECT"] = value
                 self.assertFalse(pr_merge_reflect._auto_reflect_enabled(), value)
 
+    def test_merge_announcement_requires_confirmed_pending_pr_for_drafting(self):
+        # Exercise core and installed copies: failed lookup, empty lookup, cached
+        # reminders, confirmed eligible merges, skip rules, and ordinary prompts.
+        cases = [
+            (None, None, False, "it is merged", False, True),
+            ({"seen": {7}, "pending": []}, None, False, "it is merged", False, True),
+            ({"seen": {7}, "pending": [7]}, None, False, "it is merged", False, True),
+            (None, [], False, "it is merged", False, False),
+            ({"seen": {7}, "pending": [7]}, [], False, "it is merged", False, True),
+            ({"seen": {7, 8}, "pending": [7]}, [(8, "other")], False, "it is merged", False, True),
+            (None, [(7, "confirmed")], False, "it is merged", True, True),
+            ({"seen": set(), "pending": []}, [(7, "confirmed")], False, "it is merged", True, True),
+            ({"seen": {7}, "pending": [7]}, [(7, "confirmed")], False, "it is merged", True, True),
+            (None, [(7, "skipped")], True, "it is merged", False, False),
+            ({"seen": set(), "pending": []}, [(7, "skipped")], True, "it is merged", False, False),
+            ({"seen": {7}, "pending": [7]}, None, False, "next task", False, True),
+        ]
+        paths = [SCRIPT] + [ROOT / "plugins" / adapter / "hooks/pr-merge-reflect.py"
+                            for adapter in ("harness", "codex")]
+        for path in paths:
+            spec = importlib.util.spec_from_file_location("merge_prompt_test", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            for initial, merged, skip, prompt, launches, reminds in cases:
+                with self.subTest(path=path, initial=initial, merged=merged, skip=skip, prompt=prompt), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    cache = str(pathlib.Path(tmp) / "state.json")
+                    if initial is not None:
+                        module._save_state(cache, initial["seen"], initial["pending"])
+                    with patch.object(module, "_recent_merged", return_value=merged), \
+                            patch.object(module, "_should_skip_reflect", return_value=skip), \
+                            patch.object(module, "_spawn_reflect_job") as spawn, \
+                            patch.object(module, "_emit") as emit:
+                        module._on_user_prompt({"prompt": prompt}, tmp, cache)
+                    self.assertEqual(spawn.call_count, int(launches))
+                    self.assertEqual(emit.call_count, int(reminds))
+                    if initial is not None:
+                        self.assertEqual(module._load_state(cache)["pending"], [])
+
     def test_codex_payload_cwd_uses_git_toplevel_but_claude_env_stays_exact(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
