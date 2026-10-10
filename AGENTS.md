@@ -35,7 +35,7 @@ an edit) → pr-merge-reflect (retrospective on merge) → `/memory-update` prom
   (measured on 0.145.0). Codex registers it from the manifest under the `"hooks"` key.
   Four hooks are bundled for Codex. `pr-merge-reflect` detects and queues merges at
   SessionStart and PostToolUse, then delivers a reminder at UserPromptSubmit (measured on
-  an isolated installation). Automatic LLM retrospectives remain unavailable in the Codex bundle.
+  an isolated installation). Opt-in automatic Codex retrospectives use deferred snapshots and a shared per-session worker lock.
   See `docs/codex-hooks.md` for the detailed limits and porting status.
 - The **automatic retrospective job** (`reflect.py` drafting through `claude -p`) is **off by
   default**. It is gated behind a `HARNESS_AUTO_REFLECT=1` opt-in so that merely installing

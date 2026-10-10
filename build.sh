@@ -177,12 +177,13 @@ done
 # names from the logs. The docs claim `Edit|Write` is accepted as a matcher too, but we only
 # use names we measured.
 # Codex delivers queued merge reminders on UserPromptSubmit (installed-plugin measurement,
-# 0.160.0; docs/codex-hooks.md). Keep reflect.py absent: automatic jobs against a live
-# Codex rollout and duplicate sweep handling remain a separate, unverified scope (#85).
+# 0.160.0; docs/codex-hooks.md). Opt-in automatic drafts use deferred snapshots and a
+# shared per-session worker lock, never the live merge-time Codex transcript.
 rm -rf plugins/codex/hooks
 mkdir -p plugins/codex/hooks
 cp core/hooks/project-memory-index.py core/hooks/memory-search.py core/hooks/reflection.py \
-   core/hooks/pr-merge-reflect.py \
+   core/hooks/pr-merge-reflect.py core/hooks/reflect.py core/hooks/compact_transcript.py \
+   core/hooks/codex_reflect_job.py \
    plugins/codex/hooks/
 # The edit hooks import these from dirname(__file__) — ship them wherever the hooks are bundled.
 cp core/scripts/hook_io.py plugins/codex/hooks/hook_io.py

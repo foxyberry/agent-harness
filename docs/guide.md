@@ -157,7 +157,7 @@ after an edit   → regex quality warnings from reflection-rules.json (reflectio
 after a merge   → retrospective prompt (pr-merge-reflect)              ← Claude and Codex
 ```
 
-**Codex delivers the last line's reminder on the next prompt; automatic drafting remains unavailable** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+**Codex delivers the last line's reminder on the next prompt; opt-in automatic drafting uses prior idle interactive sessions** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 The edit hooks attach to Codex's `apply_patch`, and when one patch touches several files the
 rules apply to **all of them**.
 
