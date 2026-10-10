@@ -51,6 +51,20 @@ content; it is read-only.
 
 ---
 
+## 0.16.0
+
+Opt-in Codex automatic retrospectives now process snapshots of prior idle interactive sessions.
+Both adapters share a per-session worker lock and completion marker in the common Git directory;
+failed jobs can retry, and drafts go to the primary worktree. Current Codex merge/prompt events
+never launch a job on the live transcript. The default remains off, and the default backend still
+requires Claude Code. One successful snapshot is processed per session; later resumed turns are
+not automatically reflected. See [automatic jobs](self-improvement-hooks.md#deferred-codex-jobs-0160).
+
+Both manifests are 0.16.0. **Close your Codex sessions first**, then use the update commands above
+and review changed hooks. Existing user installations are not updated by building this source.
+
+---
+
 ## 0.15.2
 
 Codex now delivers queued PR retrospective reminders at `UserPromptSubmit`. An isolated

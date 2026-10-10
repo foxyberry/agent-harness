@@ -31,13 +31,16 @@ class MergeReminderDeliveryTest(unittest.TestCase):
                               "else: print(json.dumps({'files':[{'path':'src/main.py'}], 'labels':[], 'commits':[]}))\n")
                 gh.chmod(0o755)
                 env = {**os.environ, "PATH": str(bindir) + os.pathsep + os.environ["PATH"],
-                       "CLAUDE_PLUGIN_ROOT": str(bundle), "HARNESS_AUTO_REFLECT": opt_in}
+                       "CLAUDE_PLUGIN_ROOT": str(bundle), "HARNESS_AUTO_REFLECT": opt_in,
+                       "CODEX_HOME": str(root / "codex-home")}
                 for key in ("CLAUDE_PROJECT_DIR", "REFLECT_JOB", "HARNESS_HOOK_TRACE"):
                     env.pop(key, None)
                 config = json.loads((bundle / "hooks/hooks.json").read_text())["hooks"]
                 cache = project / ".claude/.cache/pr-merge-seen.json"
                 transcript = root / "transcript.jsonl"
-                transcript.write_text("{}\n")
+                transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+                    "id": "current", "cwd": str(project), "originator": "codex-tui", "source": "cli"
+                }}) + "\n")
 
                 def run(event, **extra):
                     commands = [h["command"] for group in config[event] for h in group["hooks"]

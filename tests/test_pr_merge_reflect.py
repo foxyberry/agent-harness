@@ -152,7 +152,7 @@ class PrMergeReflectTest(unittest.TestCase):
             rollout.write_text(
                 '{"type":"session_meta","payload":{"id":"session-1","cwd":"'
                 + str(project)
-                + '"}}\n'
+                + '","originator":"codex-tui","source":"cli"}}\n'
             )
             old = time.time() - 3600
             pr_merge_reflect.os.utime(rollout, (old, old))

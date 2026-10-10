@@ -23,26 +23,15 @@ sides largely untouched. What differs is the **coverage limits** and the **trust
 **Per turn:** `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`,
 `UserPromptSubmit`, `SubagentStop`, `Stop`
 
-**Per session:** `SessionStart`, `SubagentStart`, `SessionEnd` (⚠️ see below — firing unverified)
+**Per session:** `SessionStart`, `SubagentStart`, `SessionEnd` (observed on 0.162.0; see below)
 
 Compared to Claude there are extras: `PermissionRequest`, `PreCompact`/`PostCompact`,
 `Stop`/`SubagentStop`, `SubagentStart`.
 
-> **`SessionEnd` — listed, but firing unverified.** The official page above does not list
-> `SessionEnd` among its events. Yet **Codex's `/hooks` screen shows it** (`Right before a
-> session ends`, 0.145.0), and it appears in the binary's strings.
->
-> But **we never observed it actually fire.** Appearing in `/hooks` means "this event is
-> configurable", not "it is guaranteed to dispatch in our environment."
-> **Observe it firing at least once before hanging cleanup work off it** — if it does not
-> fire it does nothing silently, and a session-end hook that never runs leaves no trace.
->
-> Generalizing the distinction: **enumerations** (lists of events) can be incomplete in the
-> docs, so cross-checking against the real thing is cheap — but the result only tells you
-> something *exists*. **Contracts** (tool names, input/output schemas) are where reverse
-> engineering is especially dangerous — this document's earlier version mistaking the
-> `tool_use_id` prefix `exec-` for a tool name is the example. And **"it works" is proven
-> only by observing it fire.**
+`SessionEnd` was observed in an isolated Codex 0.162.0 CLI run on 2026-10-10, with a local
+Responses fixture and a trace-only hook. Its transcript included `task_complete`, and its
+`session_id` matched the rollout metadata. This verifies CLI dispatch, not every desktop
+shutdown path. The automatic worker below does not depend on SessionEnd.
 
 ## Tool names (what `matcher` matches)
 
@@ -581,9 +570,31 @@ from outside the session was discovered at SessionStart and delivered at UserPro
 (PR 85003 in developer context). With `HARNESS_AUTO_REFLECT=1`, no automatic job log appeared;
 the installed bundle still contained no `reflect.py`.
 
-`reflect.py` remains absent from the Codex bundle. This measurement enables reminders only;
-it does not establish safe automatic drafting from an active Codex transcript or deduplication
-with the Claude session sweep. Those remain open in #85.
+`reflect.py` was absent in that 0.15.2 measurement. It established reminders only. The
+0.16.0 measurement below separately covers deferred automatic drafting and shared job state.
+
+### Observed results — 2026-10-10 (0.16.0 automatic drafts and trust controls)
+
+Run `./build.sh`, then `python3 tests/runtime_codex_hooks.py` from this repository.
+This optional smoke check needs the Codex CLI and permission to bind a loopback HTTP server.
+It copies the marketplace and generated Codex bundle to a temporary directory and uses a fresh
+`CODEX_HOME`, empty Git configuration, fake `gh` and `claude` executables, and a local Responses
+fixture. No production credentials or user install caches are used.
+
+Codex 0.162.0 loaded the plugin through `plugin marketplace add` and `plugin add`:
+
+- Untrusted control: neither the trace-only user hook nor installed plugin hooks ran.
+- Reviewed-fixture bypass: installed SessionStart hooks fired; historical rollouts were seeded
+  without invoking the backend. The bypass is scoped to this disposable inspected configuration.
+- A new idle interactive fixture rollout triggered one real `reflect.py` compaction/backend/output
+  pass against the fake backend and wrote one draft. `HARNESS_AUTO_REFLECT=1` reached the hook.
+- Another SessionStart did not invoke the backend again. The worker's completion record survived.
+- SessionStart/Stop/SessionEnd IDs matched their rollout metadata; SessionEnd fired on CLI exit.
+
+The test asserts failures rather than trusting a CLI success message. The normal unit suite
+also checks matcher wiring, live-transcript gates, concurrent workers, failed retries,
+worktree-shared state and primary-worktree draft routing. An interactive hook trust UI and
+real model quality remain outside this deterministic fixture check.
 
 ### Two traps we walked into while observing
 
@@ -605,12 +616,12 @@ with the Claude session sweep. Those remain open in #85.
 | `project-memory-index` | ✅ | ✅ | SessionStart — output accepted and injected (measured 2026-10-01) |
 | `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch` or `Bash`. Nested-only output accepted and injected (0.15.1 fix, measured 2026-10-04 on Codex 0.160.0) |
 | `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**; nested-only warning injected in the same measurement |
-| `pr-merge-reflect` | ✅ | 🟡 | SessionStart and PostToolUse detection/queueing plus UserPromptSubmit reminders verified in 0.15.2; automatic LLM jobs remain unavailable |
+| `pr-merge-reflect` | ✅ | ✅ | SessionStart and PostToolUse detection/queueing plus UserPromptSubmit reminders verified in 0.15.2; opt-in deferred snapshot jobs added in 0.16.0 |
 
-The Codex bundle deliberately omits `reflect.py`. It detects merges and delivers queued
-reminders on the next prompt, but never drafts automatically, even with `HARNESS_AUTO_REFLECT=1`.
-Immediate drafts from an in-progress Codex rollout and duplicate handling with the Claude sweep
-remain separate work ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+The Codex bundle includes `reflect.py` and a deferred worker. With `HARNESS_AUTO_REFLECT=1`,
+prior idle interactive sessions can generate drafts; current merge/prompt events never launch
+a live Codex transcript job. Both adapters share per-session locks and completion records.
+See [scope, retry and resume limits](self-improvement-hooks.md#deferred-codex-jobs-0160).
 
 Input normalization is `core/scripts/hook_io.py`'s job — it turns Claude's shape (`file_path`
 plus `new_string`/`content`/`edits`) and Codex's (raw patch text inside `command`) into one model:

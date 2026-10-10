@@ -15,7 +15,9 @@ B) Automatic retrospection job (the co-located reflect.py) -- **opt-in, off by d
    quietly starting an LLM job on every merge in every project, it is spawned only when the
    environment variable HARNESS_AUTO_REFLECT=1 is set. When enabled: once a merge is confirmed
    within the session, a background job analyses the current session transcript and stores drafts in
-   .claude/memory/_pending/. It is detached, so it finishes even if the session is closed.
+   .claude/memory/_pending/. Claude uses its merge-time transcript; Codex defers to snapshots
+   of prior idle interactive sessions at SessionStart, deduplicated across both adapters.
+   It is detached, so it finishes even if the initiating session is closed.
    At SessionStart, if there are _pending drafts (whoever created them), review is recommended.
 
 Recursion guard: when the job runs with backend=claude, the nested `claude -p` fires this hook
@@ -36,8 +38,14 @@ import subprocess
 import sys
 import tempfile
 
+
 # build.sh co-locates repo_identity in the same directory as this hook (same convention as reflect.py).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import codex_reflect_job
+except ImportError:
+    codex_reflect_job = None
+
 try:
     from repo_identity import ProjectMatcher
 except ImportError:  # helper missing (e.g. a standalone copy) -- only the sweep is disabled, the
@@ -658,6 +666,15 @@ def _transcript_path(data, project_dir):
     return cand if os.path.exists(cand) else None
 
 
+def _is_codex_transcript(path):
+    # Keep the live-read gate independent of optional helper imports.
+    try:
+        with open(path, encoding="utf-8") as stream:
+            return json.loads(stream.readline()).get("type") == "session_meta"
+    except (OSError, ValueError, AttributeError, TypeError):
+        return False
+
+
 def _run_reflect(transcript, project_dir, label="claude"):
     """Run reflect.py detached (fire-and-forget). Shared by Claude transcripts and Codex rollouts.
 
@@ -665,6 +682,8 @@ def _run_reflect(transcript, project_dir, label="claude"):
     transcript and reflect.py's result summary ([reflect] N draft(s) / no drafts / an error) are
     recorded so it can be checked after the fact.
     """
+    if _is_codex_transcript(transcript):
+        return bool(codex_reflect_job and codex_reflect_job.launch(project_dir, transcript))
     script = _reflect_script()
     if not os.path.exists(script) or not transcript or not os.path.exists(transcript):
         return False  # could not spawn -> tell the caller not to mark it seen (leaves a retry)
@@ -694,7 +713,12 @@ def _spawn_reflect_job(data, project_dir):
     off."""
     if not _auto_reflect_enabled():
         return
-    _run_reflect(_transcript_path(data, project_dir), project_dir, label="claude")
+    transcript = _transcript_path(data, project_dir)
+    # Inspect the transcript, not inherited Claude environment variables. All merge/prompt
+    # call sites pass through here, so bundling reflect.py cannot open a live Codex read.
+    if _is_codex_transcript(transcript):
+        return
+    _run_reflect(transcript, project_dir, label="claude")
 
 
 def _announce_pending_drafts(project_dir):
@@ -720,8 +744,9 @@ def _announce_pending_drafts(project_dir):
 
 CODEX_SWEEP_RECENT_DAYS = 14    # only rollouts from the last N days -- this is the cost ceiling
                                 # (reading the first line of 14 days' worth)
-CODEX_SWEEP_MIN_IDLE_MIN = 30   # modified within the last N minutes = possibly still running ->
-                                # hold off reflecting/seeding (prevents partial retrospectives)
+# Shared with the worker; idle is only a heuristic, not a session-end signal.
+CODEX_SWEEP_MIN_IDLE_MIN = (codex_reflect_job.MIN_IDLE_SECONDS // 60
+                           if codex_reflect_job else 30)
 CODEX_SWEEP_MAX_PER_RUN = 3     # cap on retrospection spawns per sweep (prevents bursts)
 
 
@@ -752,24 +777,21 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
       rest wait for the next sweep.
     - Rollouts that are still in progress (recently modified) are excluded -- this prevents partial
       retrospectives and premature seen marking (the idle guard).
-    - Matches when cwd is project_dir or below it (an in-project worktree). **External worktrees
-      (Codex Desktop `~/.codex/worktrees/.../<repo>`) are not covered in v1 -- exact path or below
-      only.**
-    - Codex-inside-Claude invocations are separate rollouts and get picked up too, so some overlap
-      with the Claude retrospective is possible (v1).
-    - Fire-and-forget: if reflect.py fails asynchronously after a successful spawn (backend
-      unavailable, a transient error), that session is not retried (it is already seen). Same limit
-      as the Claude retrospection path. Marking seen only after confirmed completion needs a status
-      callback and is follow-up work.
+    - Git identity includes external worktrees. Only interactive codex-tui/cli sessions qualify;
+      delegated/automation rollouts are excluded before any job is launched.
+    - Both adapters share a worker lock and completion marker in the common Git directory.
+      Failed jobs retry on a later sweep. Successful sessions are processed once, including
+      sessions later resumed: the snapshot is consistent, but subsequent turns are not reflected.
+    - Idle is a heuristic, not proof the session ended. The current session is always excluded.
     """
     if not _auto_reflect_enabled():
         return
     if not os.path.exists(_reflect_script()):
-        return  # the Codex bundle deliberately ships without the automatic LLM retrospective.
+        return  # incomplete/older bundles must not launch jobs
     if ProjectMatcher is None:
         return
     import time
-    base = os.path.expanduser("~/.codex/sessions")
+    base = os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"), "sessions")
     if not os.path.isdir(base):
         return
     try:
@@ -830,7 +852,8 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
             sid, cwd = _codex_meta(fp)
             # Judged by git repository identity, not by path prefix -- so a worktree outside the
             # project folder (`~/.codex/worktrees/`, a sibling `.agent-worktrees/`) is caught too.
-            if sid and sid != current_session_id and sid not in seen and matcher.belongs(cwd):
+            if (sid and sid != current_session_id and sid not in seen and matcher.belongs(cwd)
+                    and codex_reflect_job and codex_reflect_job.eligible(fp)):
                 fresh.append((sid, fp))
 
         if first_run:
@@ -840,10 +863,19 @@ def _sweep_codex_sessions(project_dir, current_session_id=None):
                 if sid not in seen:
                     seen.add(sid); seen_list.append(sid)
         else:
-            for sid, fp in fresh[:CODEX_SWEEP_MAX_PER_RUN]:
-                if _run_reflect(fp, project_dir, label=f"codex:{sid[:8]}"):
-                    # Marked seen only on a successful spawn -- a failure is retried next sweep.
+            launched = 0
+            for sid, fp in fresh:
+                if codex_reflect_job.completed(project_dir, fp):
                     seen.add(sid); seen_list.append(sid)
+                    continue
+                if not codex_reflect_job.available(project_dir, fp):
+                    continue
+                if launched >= CODEX_SWEEP_MAX_PER_RUN:
+                    break
+                if _run_reflect(fp, project_dir, label=f"codex:{sid[:8]}"):
+                    launched += 1
+                # The detached worker owns completion. Spawn failures and backend failures
+                # remain eligible for a later sweep; an OS lock prevents concurrent LLM jobs.
 
         os.makedirs(os.path.dirname(seen_path), exist_ok=True)
         # Keep the newest 500 in insertion order (prevents unbounded growth).
@@ -875,6 +907,13 @@ def _on_session_start(project_dir, cache, data=None):
             pass
     # If an earlier job left drafts behind, recommend a review.
     _announce_pending_drafts(project_dir)
+    primary = codex_reflect_job.primary_project(project_dir) if codex_reflect_job else None
+    if primary and os.path.realpath(primary) != os.path.realpath(project_dir):
+        drafts = _pending_drafts(primary)
+        if drafts:
+            _emit("SessionStart", f"{len(drafts)} retrospective draft(s) are in the primary "
+                  f"worktree at {primary}/.claude/memory/_pending/. Run /memory-update "
+                  f"for that primary project path to review them, not this linked worktree.")
     # Reflect on this project's un-reflected standalone Codex sessions (opt-in).
     _sweep_codex_sessions(project_dir, (data or {}).get("session_id"))
 

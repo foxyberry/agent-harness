@@ -14,7 +14,7 @@ Both adapters bundle **four hooks**: Claude in `plugins/harness/hooks/`, Codex i
 `plugins/codex/hooks/`. Their capabilities differ. Claude registers the full loop. Codex's
 `pr-merge-reflect` registers **SessionStart and PostToolUse detection/queueing** and
 **UserPromptSubmit reminders**, verified in an isolated installation. Automatic LLM
-retrospectives remain deferred ([#85](https://github.com/foxyberry/agent-harness/issues/85)). Codex hooks
+retrospectives run on snapshots of prior idle interactive sessions when explicitly enabled ([#85](https://github.com/foxyberry/agent-harness/issues/85)). Codex hooks
 also require **trust**: an untrusted hook is silently skipped, without an error or warning.
 See [the Codex hook contract and measured behavior](codex-hooks.md).
 
@@ -208,9 +208,8 @@ does not depend on automatic retrospective opt-in. Detection paths are SessionSt
 state**), and user statements indicating a merge during UserPromptSubmit. The first
 SessionStart seeds the already-merged PRs rather than queuing the entire existing backlog.
 
-**B. Automatic retrospective jobs, opt-in and disabled by default.** See below. Codex's hook
-bundle omits `reflect.py`, so enabling the environment variable does not enable automatic LLM
-jobs in that adapter.
+**B. Automatic retrospective jobs, opt-in and disabled by default.** See below. Both adapters ship `reflect.py`;
+Codex uses the deferred worker described below, never the live merge-time transcript.
 
 #### Retrospective skip rules
 
@@ -387,9 +386,41 @@ transcript, asks an LLM to analyze it, and writes durable lessons as **drafts** 
 running after the initiating session closes, and preserves duplicate slugs with numeric suffixes
 rather than overwriting pending drafts. ADR drafts go in `_pending/decisions/`.
 
-The Claude hook can also sweep eligible local Codex sessions at SessionStart when automatic
-retrospectives are enabled. That is distinct from running an LLM job through Codex's own hook
-adapter, which remains deferred.
+Both adapters sweep eligible local Codex sessions at SessionStart when automatic retrospectives
+are enabled. The same shared worker handles both paths; see the scope and retry limits below.
+
+#### Deferred Codex jobs (0.16.0)
+
+Set `HARNESS_AUTO_REFLECT=1` in the environment used to launch the agent. The default backend
+requires the `claude` executable; `REFLECT_BACKEND=deepseek` requires its API key, and
+`REFLECT_BACKEND=ollama` requires a running configured service. Installing the plugin alone
+never enables jobs. Missing backend prerequisites skip launching without consuming the session.
+
+At SessionStart, both adapters discover interactive `codex-tui`/`cli` rollouts in
+`$CODEX_HOME/sessions` (default `~/.codex/sessions`). The first run seeds historical sessions
+without a job. Later starts process at most three eligible sessions from the last 14 days,
+excluding the current session and anything modified in the last 30 minutes. Delegated and
+noninteractive logs are excluded even if they contain a legacy user-message event.
+
+Each worker takes a process lock under the common Git directory, copies the transcript,
+checks it did not change while copying, and removes an incomplete final JSONL record. Claude
+and Codex, including linked worktrees, use the same per-session completion marker. A failed
+backend retries at a later SessionStart after exponential backoff (one hour, then two), up to
+three attempts per session; backed-off/exhausted sessions do not block older sessions.
+A successful worker, including one producing no drafts,
+marks that session done. A session with no attributable user input is recorded as skipped, not completed.
+Temporary snapshots are deleted on normal success/failure and replaced
+on retry after a crash. Small completion records are retained to prevent later duplicates.
+Drafts go to the primary worktree, which must contain `.claude/memory/`; linked worktrees
+receive a reminder pointing to that primary path. Bare repositories with only linked worktrees
+are skipped rather than choosing an ephemeral draft destination.
+
+**Limits:** idle does not prove a session ended. Only one successful snapshot is reflected per
+session ID; additional turns after a later resume are not automatically processed. This sweep
+covers all eligible interactive sessions, not only sessions that merged a PR. A crash after
+writing drafts but before recording completion can cause a retry with duplicate drafts. The
+local `reflect.log` reports failures; manually review drafts with `/memory-update`. The existing
+Claude merge-time job behavior remains unchanged.
 
 Retrospective candidates use only segments beginning with a **user turn whose provenance is
 accepted**. For Claude logs, positive evidence is a per-record `promptSource` of `typed`,
@@ -433,8 +464,8 @@ export REFLECT_BACKEND=claude          # claude (default) | deepseek | ollama
 ```
 
 Reminders on both adapters remain active regardless of this setting. With automatic jobs disabled,
-use `/feedback-review` and `/memory-update` manually. The Codex bundle omits `reflect.py`,
-so these variables do not enable LLM jobs there.
+use `/feedback-review` and `/memory-update` manually. Codex processes prior idle interactive sessions through a shared worker;
+its default backend also requires the Claude CLI, or an explicitly configured alternative.
 
 Review `_pending/` drafts with `/memory-update`, then **promote, merge, or reject** them.
 Governance is explicit: `_pending → human approval → committed`. Draft generation never

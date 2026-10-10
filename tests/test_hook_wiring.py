@@ -102,11 +102,12 @@ class RegisteredPathsTest(unittest.TestCase):
                     self.assertTrue((bundle / rel).is_file(),
                                     f"{adapter}: {rel} is not in the bundle. {BUILD_HINT}")
 
-    def test_codex_merge_hook_cannot_spawn_reflection_job(self):
-        """Codex ships detection and reminders only. Bundling reflect.py would open duplicated retrospectives during a live rollout."""
+    def test_codex_merge_hook_bundles_deferred_reflection_worker(self):
+        """The deferred worker and its compactor must ship with both adapters."""
         hooks = ROOT / "plugins" / "codex" / "hooks"
         self.assertTrue((hooks / "pr-merge-reflect.py").is_file())
-        self.assertFalse((hooks / "reflect.py").exists())
+        for name in ("reflect.py", "compact_transcript.py", "codex_reflect_job.py"):
+            self.assertTrue((hooks / name).is_file())
 
     def test_codex_merge_hook_reminder_registration_boundary(self):
         regs = [r for r in _registrations("codex") if r[2].endswith("pr-merge-reflect.py")]
