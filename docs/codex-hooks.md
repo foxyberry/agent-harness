@@ -616,11 +616,12 @@ real model quality remain outside this deterministic fixture check.
 | `project-memory-index` | ✅ | ✅ | SessionStart — output accepted and injected (measured 2026-10-01) |
 | `memory-search` | ✅ | ✅ | `PreToolUse` / matcher `apply_patch` or `Bash`. Nested-only output accepted and injected (0.15.1 fix, measured 2026-10-04 on Codex 0.160.0) |
 | `reflection` | ✅ | ✅ | `PostToolUse` / matcher `apply_patch`. Rules apply **per file**; nested-only warning injected in the same measurement |
-| `pr-merge-reflect` | ✅ | ✅ | SessionStart and PostToolUse detection/queueing plus UserPromptSubmit reminders verified in 0.15.2; opt-in deferred snapshot jobs added in 0.16.0 |
+| `pr-merge-reflect` | ✅ | ✅ | SessionStart and PostToolUse detection/queueing plus UserPromptSubmit reminders verified in 0.15.2; deferred snapshot jobs added in 0.16.0; enabled by default in 0.16.1 |
 
-The Codex bundle includes `reflect.py` and a deferred worker. With `HARNESS_AUTO_REFLECT=1`,
+The Codex bundle includes `reflect.py` and a deferred worker. By default, with an available backend,
 prior idle interactive sessions can generate drafts; current merge/prompt events never launch
-a live Codex transcript job. Both adapters share per-session locks and completion records.
+a live Codex transcript job. Set `HARNESS_AUTO_REFLECT=0` to disable automatic drafting.
+Both adapters share per-session locks and completion records.
 See [scope, retry and resume limits](self-improvement-hooks.md#deferred-codex-jobs-0160).
 
 Input normalization is `core/scripts/hook_io.py`'s job — it turns Claude's shape (`file_path`

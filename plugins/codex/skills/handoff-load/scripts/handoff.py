@@ -586,9 +586,8 @@ def _project_matcher(root):
         return lambda cwd: cwd == root or bool(cwd and cwd.startswith(root + os.sep))
     m = ProjectMatcher(root)
     # Record the worktrees that are alive right now. Auto reflection (HARNESS_AUTO_REFLECT)
-    # is **off by default**, so leaving the bookkeeping to it alone would mean the cache
-    # never gets written — and then fw/history cannot find a session after its worktree is
-    # deleted. Record here too, so users who never enabled reflection can still look back.
+    # can be disabled or lack a backend, so record here too: fw/history must still find
+    # sessions after their worktrees are deleted.
     m.record_worktrees()
     return m.belongs
 

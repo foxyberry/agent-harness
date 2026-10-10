@@ -51,6 +51,19 @@ content; it is read-only.
 
 ---
 
+## 0.16.1
+
+Automatic retrospective drafting is now **on by default** on both adapters when backend
+prerequisites are available. The default backend uses Claude Code; configured DeepSeek or
+Ollama backends are also supported. Set `HARNESS_AUTO_REFLECT=0` before launching the agent
+to disable background LLM work. Reminders remain active, and draft promotion still requires
+human approval. Existing explicit settings retain their behavior.
+
+Both manifests are 0.16.1. **Close your Codex sessions first**, then use the update commands above.
+Existing installations keep their cached behavior until updated.
+
+---
+
 ## 0.16.0
 
 Opt-in Codex automatic retrospectives now process snapshots of prior idle interactive sessions.

@@ -159,6 +159,7 @@ class RegisteredCommandRunTest(unittest.TestCase):
     def _run(self, command, plugin_root, project, payload, trace=None):
         env = {k: v for k, v in os.environ.items()
                if k not in ("HARNESS_AUTO_REFLECT", "HARNESS_HOOK_TRACE", "REFLECT_JOB")}
+        env["HARNESS_AUTO_REFLECT"] = "0"  # Wiring tests must not launch real backends.
         env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
         env["CLAUDE_PROJECT_DIR"] = str(project)
         if trace:

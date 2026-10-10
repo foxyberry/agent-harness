@@ -77,7 +77,7 @@ say **when to use the skill**, not just what it does.
 The edit hooks now run on Codex too. Codex delivers an edit as a raw `apply_patch` payload
 rather than a file path plus new text, so a normalization step turns both shapes into the same
 model. Codex registers merge/session detection, queue updates and prompt reminders, verified in an
-isolated installation. Opt-in background jobs process snapshots of prior idle interactive Codex sessions
+isolated installation. Background jobs (enabled by default since 0.16.1) process snapshots of prior idle interactive Codex sessions
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## Why this exists
@@ -111,20 +111,20 @@ Beyond the skills you invoke explicitly, hooks fire on their own and use project
 | Session start | `project-memory-index` | Injects `.claude/memory/INDEX.md` into context | ✅ | ✅ |
 | Before an edit | `memory-search` | Injects memory relevant to the file being touched | ✅ | ✅ nested context verified |
 | After an edit | `reflection` | Quality warnings from project regex rules and TODO/FIXME | ✅ | ✅ nested context verified |
-| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, optionally drafts a retrospective | ✅ | ✅ reminders; deferred drafts opt-in |
+| After a merge | `pr-merge-reflect` | Flags un-reflected PRs, drafts a retrospective by default | ✅ | ✅ reminders; deferred drafts on by default |
 
 Since 0.15.1, both edit hooks emit only `hookSpecificOutput.additionalContext`. On Codex
 0.160.0, the previous dual-key output failed; the nested-only output completed and its memory
 and warning markers appeared in the rollout's developer context. Claude Code 2.1.278 also
 received the markers ([measurement](docs/codex-hooks.md#observed-results-2026-10-04-output-fix-for-167)).
 Since 0.15.2, Codex also delivers queued merge reminders at UserPromptSubmit;
-since 0.16.0, opt-in automatic drafts process prior idle interactive sessions
+since 0.16.0, automatic drafts process prior idle interactive sessions
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 The hook engines live in `core/` and are generic. *Which* memory to inject and *which* rules
 to check is decided by data in the project's `.claude/memory/`. With no data the hooks are
-silent no-ops. The automatic retrospective spawns `claude -p`, so it stays off until you set
-`HARNESS_AUTO_REFLECT=1`.
+silent no-ops. Automatic retrospectives are on by default and use `claude -p` when available.
+Set `HARNESS_AUTO_REFLECT=0` before launching the agent to disable background drafting.
 
 [Hook details](docs/self-improvement-hooks.md) · [Codex hook constraints](docs/codex-hooks.md)
 
@@ -203,7 +203,7 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.16.0`
+- Plugin version: `0.16.1`
 - Public marketplace installation verified for both Claude Code and Codex (measured on earlier
   releases, not re-run for every version)
 - 8 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)

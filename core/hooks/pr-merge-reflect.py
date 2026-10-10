@@ -10,10 +10,9 @@ A) Reminder (the 'pending' queue of un-reflected PRs) -- uses no LLM, always on:
    Delivery: on the next prompt, if anything is pending, inject a "reflect first" instruction and
    clear the queue.
 
-B) Automatic retrospection job (the co-located reflect.py) -- **opt-in, off by default**:
-   WARNING: this job spawns a background `claude -p` process. To stop a plugin install alone from
-   quietly starting an LLM job on every merge in every project, it is spawned only when the
-   environment variable HARNESS_AUTO_REFLECT=1 is set. When enabled: once a merge is confirmed
+B) Automatic retrospection job (the co-located reflect.py) -- **on by default**:
+   This job spawns a background LLM process or request when its backend is available.
+   Set HARNESS_AUTO_REFLECT=0 to disable it. When enabled: once a merge is confirmed
    within the session, a background job analyses the current session transcript and stores drafts in
    .claude/memory/_pending/. Claude uses its merge-time transcript; Codex defers to snapshots
    of prior idle interactive sessions at SessionStart, deduplicated across both adapters.
@@ -129,10 +128,8 @@ DEFAULT_REFLECT_SKIP = {
 
 
 def _auto_reflect_enabled():
-    """Opt-in gate for the automatic retrospection job (which spawns `claude -p`). Off by default,
-    so that installing alone never starts a background LLM job. Enabled when HARNESS_AUTO_REFLECT is
-    1/true/on."""
-    return os.environ.get("HARNESS_AUTO_REFLECT", "").strip().lower() in ("1", "true", "on", "yes")
+    """Enable automatic drafting by default; explicit values must be 1/true/on/yes."""
+    return os.environ.get("HARNESS_AUTO_REFLECT", "1").strip().lower() in ("1", "true", "on", "yes")
 
 
 def _pending_drafts(project_dir):
@@ -709,8 +706,8 @@ def _run_reflect(transcript, project_dir, label="claude"):
 
 
 def _spawn_reflect_job(data, project_dir):
-    """Run the retrospection job on the current Claude session transcript. No-op when the opt-in is
-    off."""
+    """Run the retrospection job on the current Claude session transcript. No-op when automatic drafting is
+    disabled."""
     if not _auto_reflect_enabled():
         return
     transcript = _transcript_path(data, project_dir)
@@ -769,7 +766,7 @@ def _codex_meta(rollout_path):
 
 def _sweep_codex_sessions(project_dir, current_session_id=None):
     """Find this project's (by cwd) un-reflected Codex rollouts and spawn reflect. No-op when the
-    opt-in is off.
+    automatic drafting is disabled.
 
     - First run: only seed the current ones as seen (no retrospection), to avoid a flood of
       retrospectives over past sessions.
@@ -914,7 +911,7 @@ def _on_session_start(project_dir, cache, data=None):
             _emit("SessionStart", f"{len(drafts)} retrospective draft(s) are in the primary "
                   f"worktree at {primary}/.claude/memory/_pending/. Run /memory-update "
                   f"for that primary project path to review them, not this linked worktree.")
-    # Reflect on this project's un-reflected standalone Codex sessions (opt-in).
+    # Reflect on this project's un-reflected standalone Codex sessions (unless disabled).
     _sweep_codex_sessions(project_dir, (data or {}).get("session_id"))
 
 
@@ -995,7 +992,7 @@ def _on_post_tool(data, project_dir, cache):
         # call.
         if state is not None:
             _save_state(cache, state["seen"] | {num}, state["pending"] + [num])
-    # The current session is the work session -> run the automatic retrospection job (opt-in).
+    # The current session is the work session -> run the automatic retrospection job (unless disabled).
     _spawn_reflect_job(data, project_dir)
 
 

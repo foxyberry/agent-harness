@@ -20,6 +20,16 @@ SPEC.loader.exec_module(pr_merge_reflect)
 
 
 class PrMergeReflectTest(unittest.TestCase):
+    def test_automatic_drafting_default_and_explicit_overrides(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(pr_merge_reflect._auto_reflect_enabled())
+            for value in ("1", "true", "ON", " yes "):
+                os.environ["HARNESS_AUTO_REFLECT"] = value
+                self.assertTrue(pr_merge_reflect._auto_reflect_enabled(), value)
+            for value in ("0", "false", "OFF", " no ", "", "invalid"):
+                os.environ["HARNESS_AUTO_REFLECT"] = value
+                self.assertFalse(pr_merge_reflect._auto_reflect_enabled(), value)
+
     def test_codex_payload_cwd_uses_git_toplevel_but_claude_env_stays_exact(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

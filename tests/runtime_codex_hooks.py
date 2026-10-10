@@ -36,7 +36,7 @@ def main():
     env.update(CODEX_HOME=str(home),GIT_CONFIG_GLOBAL=str(root/'empty-gitconfig'),GIT_CONFIG_NOSYSTEM='1')
     (root/'empty-gitconfig').touch()
     env['HARNESS_HOOK_TRACE']=str(root/'harness-trace.jsonl')
-    env['HARNESS_AUTO_REFLECT']='1'
+    # Leave HARNESS_AUTO_REFLECT unset to exercise default-on installed behavior.
     env['REFLECT_BACKEND']='claude'
     bindir=root/'bin';bindir.mkdir()
     (bindir/'gh').write_text('#!/bin/sh\nexit 1\n');(bindir/'gh').chmod(0o755)

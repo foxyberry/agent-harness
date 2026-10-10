@@ -177,8 +177,8 @@ class RepoIdentityTest(unittest.TestCase):
     def test_handoff_matcher_records_observations(self):
         """The fw/history path records observations as well.
 
-        Auto-retrospective is off by default, so leaving the recording to it alone means the
-        cache is never created — a user who never enables retrospectives would lose the
+        Auto-retrospective can be disabled, so leaving recording to it alone means the
+        cache might never be created — a user who disables retrospectives would lose the
         ability to resolve removed worktrees entirely."""
         sys.path.insert(0, os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "core", "scripts"))

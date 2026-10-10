@@ -157,7 +157,7 @@ after an edit   → regex quality warnings from reflection-rules.json (reflectio
 after a merge   → retrospective prompt (pr-merge-reflect)              ← Claude and Codex
 ```
 
-**Codex delivers the last line's reminder on the next prompt; opt-in automatic drafting uses prior idle interactive sessions** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
+**Codex delivers the last line's reminder on the next prompt; automatic drafting (on by default since 0.16.1) uses prior idle interactive sessions** ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 The edit hooks attach to Codex's `apply_patch`, and when one patch touches several files the
 rules apply to **all of them**.
 
@@ -184,10 +184,9 @@ the file?"**
 Shared memory goes through `_pending → human approval → committed`. It is the mechanism that
 stops an automatically drafted lesson from landing unreviewed.
 
-> Note: the automatic retrospective that fills `_pending` is **off by default**
-> (`HARNESS_AUTO_REFLECT=1` opts in). Installing the plugin should not start a background LLM
-> job. Because of that, `_pending` has never been produced in this repository, and every
-> memory here was promoted by hand through `/memory-update`.
+> Automatic retrospectives that fill `_pending` are **on by default** when backend
+> prerequisites are available. Set `HARNESS_AUTO_REFLECT=0` to disable them.
+> Review and promote drafts through `/memory-update`.
 
 Drafts a human **rejected** are recorded in `.claude/memory/_rejected.md` so the same one
 does not come back as a candidate. It is not a ban list — if the same point recurs until it
