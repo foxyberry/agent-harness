@@ -177,7 +177,7 @@ done
 # names from the logs. The docs claim `Edit|Write` is accepted as a matcher too, but we only
 # use names we measured.
 # Codex delivers queued merge reminders on UserPromptSubmit (installed-plugin measurement,
-# 0.160.0; docs/codex-hooks.md). Opt-in automatic drafts use deferred snapshots and a
+# 0.160.0; docs/codex-hooks.md). Automatic drafts use deferred snapshots and a
 # shared per-session worker lock, never the live merge-time Codex transcript.
 rm -rf plugins/codex/hooks
 mkdir -p plugins/codex/hooks

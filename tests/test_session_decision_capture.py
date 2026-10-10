@@ -1,6 +1,6 @@
 """Pins the session-level decision capture path (issue #153).
 
-The ADR schema shipped in #137, but nothing ever reached it: `reflect.py` is gated behind an
+The ADR schema shipped in #137, but nothing ever reached it: `reflect.py` was gated behind an
 opt-in, `mine.py` is a manual CLI, and the interactive retrospective extracted only
 `feedback`, `project` and `reference` candidates. So a session that made a decision produced
 no ADR candidate, and three weeks after the schema shipped this repository still had zero

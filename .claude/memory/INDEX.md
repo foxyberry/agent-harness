@@ -6,8 +6,9 @@ Shared (committed) memory. Claude and Codex use `project-memory-index` at Sessio
 the fixed output delivered memory bodies and reflection warnings as developer context
 ([#167](https://github.com/foxyberry/agent-harness/issues/167), `docs/codex-hooks.md`).
 Since 0.15.2, `pr-merge-reflect` also delivers UserPromptSubmit reminders after SessionStart or
-PostToolUse/Bash queueing (verified in an isolated installation). Since 0.16.0, opt-in Codex
-automatic drafts use prior idle interactive sessions, snapshots and shared worker locks. Registration is not proof of injection: if the index or
+PostToolUse/Bash queueing (verified in an isolated installation). Since 0.16.0, Codex
+automatic drafts use prior idle interactive sessions, snapshots and shared worker locks;
+they are enabled by default since 0.16.1. Registration is not proof of injection: if the index or
 needed memory bodies have not arrived (an older plugin, missing trust, or an unmatched route),
 read the relevant files directly. Do not assume an installed plugin has the current source.
 

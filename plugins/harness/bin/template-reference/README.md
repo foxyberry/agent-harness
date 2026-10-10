@@ -43,14 +43,13 @@ counts or open-PR status.
 
 ## _pending/ (automatic retrospective drafts)
 
-When you enable automatic retrospectives with `HARNESS_AUTO_REFLECT=1`, the reflect job analyses
-the session transcript and collects promotion candidates as drafts in `_pending/*.md`. Review and
-promote (or discard) them with `/memory-update`. It is off by default — installing the harness
-alone never starts a background LLM job.
+Automatic retrospectives are enabled by default since 0.16.1. The reflect job analyses
+the session transcript and collects promotion candidates as drafts in `_pending/*.md`.
+Review and promote (or discard) them with `/memory-update`; drafting never commits memory.
 
-This automatic drafting runs on **Claude**. The Codex adapter currently ships only the merge
-detection and queueing stages: it registers no `UserPromptSubmit` hook and does not bundle
-`reflect.py`, so no LLM draft is generated there. See
+Both adapters support automatic drafting and prompt reminders. Claude drafts from its
+merge-time transcript; Codex processes snapshots of prior idle interactive sessions.
+A working backend is required to generate drafts. See
 <https://github.com/foxyberry/agent-harness/blob/main/docs/codex-hooks.md>.
 
 The `.gitignore` in this directory excludes `_pending/` and `_rejected.md`, so unapproved drafts
@@ -60,9 +59,9 @@ to a top-level memory or to `decisions/` commits normally.
 The ignore rule is not retroactive for `_pending/` files Git already tracks. If an existing project
 has committed drafts before, review their content and then remove them from the Git index as well.
 
-## Enabling automatic retrospectives (opt-in)
+## Disabling automatic retrospectives
 
 ```bash
-export HARNESS_AUTO_REFLECT=1   # on merge, generate retrospective drafts with claude -p (Claude)
+export HARNESS_AUTO_REFLECT=0   # disable background drafting on both adapters
 ```
 Choose the backend with `REFLECT_BACKEND` (claude|deepseek|ollama, default claude).

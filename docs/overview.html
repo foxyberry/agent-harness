@@ -226,7 +226,7 @@
   <div class="toggle">
     <div class="tg off"><div class="k">Automatic drafting off <span>DEFAULT</span></div>
       <p>Eligible merged PRs trigger a reminder. Use <code>/feedback-review</code> to review lessons and <code>/memory-update</code> to persist them.</p></div>
-    <div class="tg on"><div class="k">Automatic drafting on <span>HARNESS_AUTO_REFLECT=1</span></div>
+    <div class="tg on"><div class="k">Automatic drafting on by default <span>HARNESS_AUTO_REFLECT=0 to disable</span></div>
       <p>Eligible merge events can start a background LLM job that writes drafts to <code>_pending/</code> for human review.</p></div>
   </div>
 
@@ -237,14 +237,14 @@
       <tr><td>Session start</td><td><code>project-memory-index</code></td><td>Introduces the project's shared memory index</td><td><code>.claude/memory/INDEX.md</code></td></tr>
       <tr><td>Before edits or shell commands</td><td><code>memory-search</code></td><td>Injects memory matched by file paths or command patterns</td><td><code>routes.json</code></td></tr>
       <tr><td>After supported edits</td><td><code>reflection</code></td><td>Emits regex quality warnings and built-in TODO/FIXME checks</td><td><code>reflection-rules.json</code></td></tr>
-      <tr><td>Merge detection, session start and before prompts</td><td><code>pr-merge-reflect</code></td><td>Detects and queues PRs, then reminds you. Both adapters can optionally draft lessons and ADRs.</td><td><code>reflect-skip.json</code>; env <code>HARNESS_AUTO_REFLECT</code></td></tr>
+      <tr><td>Merge detection, session start and before prompts</td><td><code>pr-merge-reflect</code></td><td>Detects and queues PRs, then reminds you. Both adapters draft lessons and ADRs by default.</td><td><code>reflect-skip.json</code>; env <code>HARNESS_AUTO_REFLECT</code></td></tr>
     </tbody>
   </table>
   <p class="muted"><code>project-memory-index</code> starts the loop by making the available memory discoverable.
     Later, <code>memory-search</code> supplies the relevant file contents before an edit or matched command.</p>
   <p class="muted"><b>Both adapters bundle four hooks.</b> Codex registers <code>pr-merge-reflect</code> for
     SessionStart and PostToolUse detection and queue updates, plus UserPromptSubmit reminders.
-    Codex bundles a deferred snapshot worker for opt-in automatic jobs. See <a href="codex-hooks.md">Codex hook constraints</a>.</p>
+    Codex bundles a deferred snapshot worker for automatic jobs (on by default). See <a href="codex-hooks.md">Codex hook constraints</a>.</p>
 
   <h3>Automatic execution and <span class="em">visible output</span> are different</h3>
   <p>Claude registers all four hooks for their supported events. Codex hooks run only after you trust them.
@@ -257,7 +257,7 @@
       <ul><li><b>project-memory-index</b> — <code>.claude/memory/INDEX.md</code>.</li>
         <li><b>memory-search</b> — <code>routes.json</code> and a matching path or command rule.</li>
         <li><b>reflection</b> project rules — <code>reflection-rules.json</code>.</li>
-        <li><b>Automatic drafting</b> — either adapter, <code>HARNESS_AUTO_REFLECT=1</code>, and its runtime dependencies.</li></ul></div>
+        <li><b>Automatic drafting</b> — either adapter with its runtime dependencies; <code>HARNESS_AUTO_REFLECT=0</code> disables it.</li></ul></div>
   </div>
   <div class="note warn"><b>⚠️ How you edit matters.</b> File-based memory routing and post-edit warnings depend on supported edit events.
     A shell command that changes a file does not automatically become a file edit event.
@@ -285,9 +285,9 @@
     <li><b>Local exclusions</b> for <code>_pending/</code> and <code>_rejected.md</code> are maintained by the engine in
       <code>.git/info/exclude</code>, independent of the optional template. Exclusions do not untrack files already committed.</li>
   </ul>
-  <div class="note warn"><b>⚠️ Automatic retrospectives are off by default.</b> In the Claude adapter,
-    the job invokes <code>claude -p</code> by default and starts only after you opt in with
-    <code>HARNESS_AUTO_REFLECT=1</code>. Claude reminders are independent of that setting.
+  <div class="note warn"><b>Automatic retrospectives are on by default.</b> The default backend uses
+    <code>claude -p</code> when available. Set <code>HARNESS_AUTO_REFLECT=0</code> to disable
+    background drafting. Reminders are independent of that setting.
     Codex uses deferred snapshots of prior idle interactive sessions; both adapters share a per-session worker lock.</div>
 
   <h2>How to tell whether it is running</h2>
@@ -303,8 +303,8 @@
         <li><code>.claude/memory/_pending/*.md</code> — drafts to review with <code>/memory-update</code>.</li>
         <li><code>.claude/.cache/reflect.log</code> — automatic retrospective job log, when enabled.</li></ul></div>
   </div>
-  <div class="note tip"><b>To enable automatic drafts,</b> set <code>export HARNESS_AUTO_REFLECT=1</code>
-    before launching the session. An eligible merge can then create drafts, if there are lessons to extract and the job succeeds.
+  <div class="note tip"><b>Automatic drafts are enabled by default.</b> Set <code>export HARNESS_AUTO_REFLECT=0</code>
+    before launching the session to disable them. Eligible sessions can create drafts when the backend is available.
     Otherwise, use <code>/feedback-review</code> and <code>/memory-update</code> interactively.</div>
 
   <h3>Check whether a hook <span class="em">started</span></h3>
@@ -534,7 +534,7 @@ codex plugin add agent-harness@foxyberry
     <li><span class="badge done">DONE</span> Project-data trust boundaries: total injection limits, empty-pattern handling, source labels, and engine-managed local exclusions with literal path escaping.</li>
     <li><span class="badge done">DONE</span> Crash-resilient hook state: atomic cache writes, reseeding corrupt state, at most three PR investigations per call, and incremental persistence. Shared project-path resolution honors Codex <code>cwd</code>.</li>
     <li><span class="badge done">DONE</span> Nested code-fence handling prevents ADR evidence blocks from prematurely ending a draft. Closing fences must be at least as long as opening fences; the prompt asks for four-backtick outer fences.</li>
-    <li><span class="badge done">DONE</span> Codex <code>pr-merge-reflect</code>: detection, queue updates and UserPromptSubmit reminders passed an isolated installed-plugin check. Opt-in deferred snapshot drafting is available in 0.16.0; see <a href="self-improvement-hooks.md">scope and retry limits</a>.</li>
+    <li><span class="badge done">DONE</span> Codex <code>pr-merge-reflect</code>: detection, queue updates and UserPromptSubmit reminders passed an isolated installed-plugin check. Deferred snapshot drafting is available since 0.16.0 and enabled by default since 0.16.1; see <a href="self-improvement-hooks.md">scope and retry limits</a>.</li>
     <li><span class="badge soon">PARTIAL</span> Handoff lifecycle. Commit-state labels (<a href="https://github.com/foxyberry/agent-harness/issues/133">#133</a>) are fixed as of 0.12.2: save and load compute the file's state when they run instead of asserting it in the saved text, and the reported state is a local commit — push state is not checked. Consumed-handoff cleanup (<a href="https://github.com/foxyberry/agent-harness/issues/138">#138</a>) is still open.</li>
     <li><span class="badge soon">OPEN</span> Repeated retrospectives on retrospective-generated PRs (<a href="https://github.com/foxyberry/agent-harness/issues/130">#130</a>) and template detection/migration (<a href="https://github.com/foxyberry/agent-harness/issues/132">#132</a>). The ADR schema portion of #132 is already addressed.</li>
     <li><span class="badge soon">DESIGN</span> Preventing parallel agents from mixing changes in one working tree (<a href="https://github.com/foxyberry/agent-harness/issues/108">#108</a>). Repository identification alone does not prevent concurrent write conflicts.</li>

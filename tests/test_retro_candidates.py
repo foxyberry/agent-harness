@@ -1,7 +1,7 @@
 """Can the retrospection skills see **material from outside this session** (issue #81)?
 
-Automatic retrospection (`HARNESS_AUTO_REFLECT`) is off by default, so for most users the
-interactive retrospective is **the only one they get**. If that is confined to the current session:
+Automatic retrospection (`HARNESS_AUTO_REFLECT`) can be disabled or lack a backend, leaving
+only interactive retrospectives. If those are confined to the current session:
 
 - `/feedback-review` never sees the `_pending` drafts the retrospection job piled up
 - work done in the other tool never arrives (if Codex implements and Claude only reviews, the Claude

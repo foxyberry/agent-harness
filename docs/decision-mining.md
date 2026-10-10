@@ -67,8 +67,8 @@ history at once.
 
 Supported `--backend` values are `claude`, `deepseek`, and `ollama`. The mining CLI defaults to
 `claude`; unlike the retrospective CLI, it does **not** use `REFLECT_BACKEND` to choose that
-default. Running `mine.py` explicitly invokes the selected backend and does not require
-`HARNESS_AUTO_REFLECT=1`, which gates automatic hook jobs.
+default. Running `mine.py` explicitly invokes the selected backend and is independent of
+`HARNESS_AUTO_REFLECT`, which controls automatic hook jobs (on by default; `=0` disables).
 
 Review resulting drafts with `/memory-update`. This is a script, **not a slash-command skill**.
 `build.sh` copies it and its LLM helpers into `plugins/harness/hooks/`; the Codex hook bundle

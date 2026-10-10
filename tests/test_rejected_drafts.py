@@ -144,7 +144,7 @@ class CommentedExampleTest(unittest.TestCase):
 class RenderedSkillTest(unittest.TestCase):
     """Is it wired into the interactive path (`/memory-update`) as well?
 
-    Automatic retrospection is off by default, so the place drafts actually get regenerated is the
+    Drafts can also be regenerated through the
     **interactive path** -- `/memory-update` re-extracts them from the transcript every time. Fixing
     only reflect.py would leave the part that actually hurts untouched. Editing core without running
     build.sh is also caught here.

@@ -74,7 +74,7 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 편집 훅은 이제 Codex 에서도 돕니다. Codex 는 편집을 파일 경로와 새 내용이 아니라 `apply_patch`
 원문으로 넘겨서, 두 모양을 같은 모델로 바꾸는 정규화 단계를 뒀습니다. 머지 훅은 탐지와 공유
 큐 갱신 후 다음 사용자 프롬프트에 회고 알림을 전달합니다. 격리된 설치에서 전달을 확인했으며,
-0.16.0부터 자동 회고를 켜면 이전 유휴 대화형 세션의 복사본으로 초안을 만듭니다
+0.16.0부터 이전 유휴 대화형 세션의 복사본으로 초안을 만들며, 0.16.1부터 기본 켜짐입니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 ## 왜 만들었나
@@ -107,19 +107,20 @@ Codex 는 `description` 을 읽고 스킬을 고르므로, Codex 를 향한 설�
 | 세션 시작 | `project-memory-index` | `.claude/memory/INDEX.md` 를 컨텍스트에 주입 | ✅ | ✅ |
 | 편집 전 | `memory-search` | 지금 건드리는 파일과 관련된 메모리 주입 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
 | 편집 후 | `reflection` | 프로젝트 정규식 규칙과 TODO/FIXME 품질 경고 | ✅ | ✅ 중첩 컨텍스트 주입 확인 |
-| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 선택적으로 회고 초안 생성 | ✅ | ✅ 알림 전달; 자동 초안은 명시적 opt-in |
+| 머지 후 | `pr-merge-reflect` | 미회고 PR 알림, 기본적으로 회고 초안 생성 | ✅ | ✅ 알림 전달; 자동 초안은 기본 켜짐 |
 
 0.15.1 부터 편집 훅 둘은 `hookSpecificOutput.additionalContext` 만 출력합니다. Codex
 0.160.0 에서 기존의 이중 키 출력은 실패했고, 중첩 키만 남긴 출력은 완료 처리되며 메모리와
 경고 마커가 rollout 의 developer 컨텍스트에 나타났습니다. Claude Code 2.1.278 에서도
 마커 전달을 확인했습니다([측정 기록](docs/codex-hooks.md#observed-results-2026-10-04-output-fix-for-167)).
-머지 훅은 다음 프롬프트에 알림을 전달합니다. 자동 초안은 기본적으로 꺼져 있으며,
-명시적으로 켜면 이전 유휴 대화형 세션을 처리합니다
+머지 훅은 다음 프롬프트에 알림을 전달합니다. 자동 초안은 기본적으로 켜져 있으며,
+백엔드를 사용할 수 있으면 이전 유휴 대화형 세션을 처리합니다
 ([#85](https://github.com/foxyberry/agent-harness/issues/85)).
 
 훅 엔진은 `core/` 에 있고 generic 합니다. *어떤* 메모리를 넣고 *어떤* 규칙을 검사할지는 프로젝트의
 `.claude/memory/` 데이터가 정합니다. 데이터가 없으면 훅은 조용히 아무것도 안 합니다. 자동 회고는
-`claude -p` 를 띄우므로 `HARNESS_AUTO_REFLECT=1` 을 켜기 전까지 실행되지 않습니다.
+기본적으로 사용 가능한 `claude -p` 를 실행합니다. 끄려면 에이전트를 시작하기 전에
+`HARNESS_AUTO_REFLECT=0` 을 설정하세요.
 
 [훅 상세](docs/self-improvement-hooks.md) · [Codex 훅 제약](docs/codex-hooks.md)
 
@@ -197,7 +198,7 @@ CI 는 JSON 매니페스트 문법, Python 문법, 테스트, 그리고 `core/` 
 
 ## 상태
 
-- 플러그인 버전: `0.16.0`
+- 플러그인 버전: `0.16.1`
 - Claude Code·Codex 양쪽 공개 marketplace 설치 검증 완료 (이전 릴리스에서 측정한 결과이며
   매 버전마다 다시 돌리지는 않습니다)
 - 양쪽 어댑터에 스킬 8개, 크로스툴 핸드오프 검증 완료 (한쪽이 저장한 것을 다른 쪽이 로드)

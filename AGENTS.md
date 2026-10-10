@@ -35,11 +35,11 @@ an edit) → pr-merge-reflect (retrospective on merge) → `/memory-update` prom
   (measured on 0.145.0). Codex registers it from the manifest under the `"hooks"` key.
   Four hooks are bundled for Codex. `pr-merge-reflect` detects and queues merges at
   SessionStart and PostToolUse, then delivers a reminder at UserPromptSubmit (measured on
-  an isolated installation). Opt-in automatic Codex retrospectives use deferred snapshots and a shared per-session worker lock.
+  an isolated installation). Automatic Codex retrospectives use deferred snapshots and a shared per-session worker lock.
   See `docs/codex-hooks.md` for the detailed limits and porting status.
-- The **automatic retrospective job** (`reflect.py` drafting through `claude -p`) is **off by
-  default**. It is gated behind a `HARNESS_AUTO_REFLECT=1` opt-in so that merely installing
-  the plugin never starts a background LLM job. The reminder is always on where it is
+- The **automatic retrospective job** (`reflect.py` drafting through `claude -p`) is **on by
+  default** when backend prerequisites are available. Set `HARNESS_AUTO_REFLECT=0` to
+  disable background drafting. The reminder is always on where it is
   registered — UserPromptSubmit on both adapters.
 - Path conventions — **bundled scripts** stay inside the plugin: hooks on both adapters use
   `${CLAUDE_PLUGIN_ROOT}`, Claude skills call commands from `bin/` on PATH, and Codex skills

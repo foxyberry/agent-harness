@@ -203,12 +203,12 @@ The hook has two roles:
 
 **A. Reminders, without an LLM.** Queue merged PRs that need a retrospective. On both adapters, the
 next user prompt receives a reminder to use `/feedback-review` and `/memory-update`. This role
-does not depend on automatic retrospective opt-in. Detection paths are SessionStart polling
+does not depend on automatic retrospective configuration. Detection paths are SessionStart polling
 (including external merges), PostToolUse after `gh pr merge` (**only after verifying MERGED
 state**), and user statements indicating a merge during UserPromptSubmit. The first
 SessionStart seeds the already-merged PRs rather than queuing the entire existing backlog.
 
-**B. Automatic retrospective jobs, opt-in and disabled by default.** See below. Both adapters ship `reflect.py`;
+**B. Automatic retrospective jobs, enabled by default.** See below. Both adapters ship `reflect.py`;
 Codex uses the deferred worker described below, never the live merge-time transcript.
 
 #### Retrospective skip rules
@@ -391,10 +391,10 @@ are enabled. The same shared worker handles both paths; see the scope and retry 
 
 #### Deferred Codex jobs (0.16.0)
 
-Set `HARNESS_AUTO_REFLECT=1` in the environment used to launch the agent. The default backend
+Automatic drafting is enabled by default; set `HARNESS_AUTO_REFLECT=0` before launching
+the agent to disable it. The default backend
 requires the `claude` executable; `REFLECT_BACKEND=deepseek` requires its API key, and
-`REFLECT_BACKEND=ollama` requires a running configured service. Installing the plugin alone
-never enables jobs. Missing backend prerequisites skip launching without consuming the session.
+`REFLECT_BACKEND=ollama` requires a running configured service. Missing backend prerequisites skip launching without consuming the session.
 
 At SessionStart, both adapters discover interactive `codex-tui`/`cli` rollouts in
 `$CODEX_HOME/sessions` (default `~/.codex/sessions`). The first run seeds historical sessions
@@ -452,14 +452,16 @@ Historical-session compression in `/feedback-review` and `/memory-update` uses t
 mode too. The standalone `compact_transcript.py` CLI retains a best-effort fallback when run
 without strict options, for compatibility.
 
-## Automatic retrospectives are opt-in
+## Automatic retrospectives are on by default
 
 Automatic retrospectives launch a **background LLM process or request** through `claude -p`,
-DeepSeek, or Ollama. They are disabled by default so installing the plugin does not silently
-start LLM work after every merge in every project.
+DeepSeek, or Ollama. They are enabled by default; successful drafting requires a working backend.
+The Codex worker checks prerequisites before launch. Claude launches `reflect.py` directly;
+backend failures are recorded in `.claude/.cache/reflect.log`.
+Set `HARNESS_AUTO_REFLECT=0` to disable background drafting.
 
 ```bash
-export HARNESS_AUTO_REFLECT=1          # Claude hook: generate retrospective drafts automatically
+export HARNESS_AUTO_REFLECT=0          # Optional: disable automatic drafts on both adapters
 export REFLECT_BACKEND=claude          # claude (default) | deepseek | ollama
 ```
 
@@ -488,7 +490,7 @@ Here `<project>` means the resolved project directory, not the plugin cache.
 | Code quality rules | `<project>/.claude/memory/reflection-rules.json` | Built-in TODO/FIXME warning only |
 | Retrospective skip rules | `<project>/.claude/memory/reflect-skip.json` | Built-in artifact paths, labels, and message markers |
 | Rejected draft history | `<project>/.claude/memory/_rejected.md` | No rejection history supplied for deduplication |
-| Automatic retrospective opt-in | Environment: `HARNESS_AUTO_REFLECT=1` | Claude reminders only; retrospective work is manual |
+| Automatic retrospective drafting | Environment: `HARNESS_AUTO_REFLECT=0` to disable | Enabled when backend prerequisites are available |
 | Retrospective backend | Environment: `REFLECT_BACKEND` | `claude` |
 | Hook entry tracing | Environment: `HARNESS_HOOK_TRACE=<file>` | No trace to distinguish a quiet run from no run |
 

@@ -47,8 +47,8 @@ Codex reads it directly, and for Claude Code `CLAUDE.md` pulls it in with `@impo
   only the built-in TODO/FIXME check and the default retrospective skip rules remain.
 - Governance: automatic retrospective drafts only accumulate in `_pending/` and are promoted
   **after human approval** through `/memory-update`. The automatic drafting job
-  (`HARNESS_AUTO_REFLECT=1`) is supported on Claude; on Codex only merge detection and queueing
-  run today. Secrets (keys, tokens, internal URLs) are forbidden in memory and handoffs.
+  is enabled by default on both adapters when backend prerequisites are available; set
+  `HARNESS_AUTO_REFLECT=0` to disable it. Codex processes prior idle session snapshots. Secrets (keys, tokens, internal URLs) are forbidden in memory and handoffs.
 - `.claude/.cache/` holds local hook and skill state and logs; it is not committed to Git.
 - Memory holds only long-lived decisions, constraints and patterns. WIP, in-flight PRs and next
   actions are handed over only through `/handoff-save` at an actual switch point, and values you
