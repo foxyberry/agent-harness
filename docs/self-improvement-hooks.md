@@ -210,6 +210,8 @@ SessionStart seeds the already-merged PRs rather than queuing the entire existin
 
 **B. Automatic retrospective jobs, enabled by default.** See below. Both adapters ship `reflect.py`;
 Codex uses the deferred worker described below, never the live merge-time transcript.
+A user merge announcement launches a job only when the current GitHub lookup confirms
+a pending PR. Failed lookups still produce a manual reminder without launching a job.
 
 #### Retrospective skip rules
 
