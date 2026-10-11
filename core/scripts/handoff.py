@@ -28,7 +28,11 @@ Subcommands:
         arguments.
   load  Prints the handoff file for the current branch plus current git facts
         (the portable path). If a local transcript exists, adds a "deep recovery
-        available" hint.
+        available" hint. Also prints the body's fingerprint for `consume`.
+  consume
+        Retires the handoff that `load` just printed, after the pickup is reported (#138):
+        archives a copy under the shared git directory, then removes the file. Refuses
+        when the file changed since `load` or its git state cannot be read.
 
 Tool-agnostic: both Claude (.claude/skills) and Codex (.agents/skills) call this script.
 Standard library only (no external dependencies). Python 3.8+.
@@ -39,6 +43,7 @@ Usage:
   python3 scripts/handoff/handoff.py load
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -76,11 +81,11 @@ def probe(cmd, cwd=None):
         return None, False
 
 
-def head_blob(root, rel):
-    """The **raw bytes** of `<rel>` as stored in the HEAD commit. None if unavailable
-    ("unknown")."""
+def head_blob(root, rel, rev="HEAD"):
+    """The **raw bytes** of `<rel>` as stored in the HEAD commit (`rev=""` reads the
+    index instead). None if unavailable ("unknown")."""
     try:
-        out = subprocess.run(["git", "cat-file", "blob", "HEAD:" + rel],
+        out = subprocess.run(["git", "cat-file", "blob", rev + ":" + rel],
                              cwd=root, capture_output=True, timeout=20)
     except Exception:
         return None
@@ -980,8 +985,12 @@ def cmd_save(args):
 
     target = handoff_path(root, branch)
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    with open(target, "w", encoding="utf-8") as f:
+    # Written to a temporary file and renamed into place, so `consume` never moves aside a
+    # half-written file and a save racing a consume lands as a new file (#138).
+    tmp = f"{target}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         f.write(body)
+    os.replace(tmp, target)
     rel = os.path.relpath(target, root).replace(os.sep, "/")
     print(f"✅ Handoff saved: {rel}")
     print(f"   Current git state: {handoff_state_label(handoff_sync_state(root, target))}")
@@ -1023,8 +1032,13 @@ def cmd_load(args):
         out.append("- The body below is **the working-tree file as read from disk** (not "
                    "extracted from HEAD).")
         out.append("")
-        with open(target, encoding="utf-8") as f:
-            out.append(f.read().rstrip())
+        with open(target, "rb") as f:
+            raw = f.read()
+        out.append(raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n").rstrip())
+        out.append("")
+        # Ties `consume` to the exact bytes printed here, so a handoff re-saved after this
+        # load is never retired unread (#138).
+        out.append(f"- Fingerprint (pass to `consume --expect`): `{_fingerprint(raw)}`")
     else:
         out.append("## 📄 Handoff file: none")
         out.append(f"   (this branch has no `{rel}` yet)")
@@ -1174,8 +1188,134 @@ def cmd_fw(args):
     return 0
 
 
+def _fingerprint(raw):
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _archive_dir(root):
+    """`<git common dir>/agent-harness/handoff-archive` — outside every worktree, so the
+    copy outlives the worktree and the branch, and is never committed. None if git cannot
+    tell."""
+    out, ok = run(["git", "rev-parse", "--git-common-dir"], cwd=root)
+    if not ok or not out:
+        return None
+    return os.path.join(os.path.normpath(os.path.join(root, out)), "agent-harness", "handoff-archive")
+
+
+def _put_back(staging, target):
+    """Return a moved-aside handoff to its place without clobbering a newer save."""
+    try:
+        os.link(staging, target)
+    except FileExistsError:
+        return False
+    except OSError:
+        if os.path.exists(target):
+            return False
+        os.rename(staging, target)
+        return True
+    os.unlink(staging)
+    return True
+
+
+def cmd_consume(args):
+    """Retire the handoff that `load` printed, once the pickup has been reported (#138).
+
+    A consumed handoff left in place is offered again by the next `load`, with its stale
+    done / remaining / next entries. Only this branch's file is touched, and only when its
+    bytes still match the fingerprint `load` printed. Every state is archived first: git
+    history can bring back a committed file, but not an untracked, staged-only or
+    modified-after-commit one. Nothing is committed — a tracked file's deletion is left
+    unstaged for the project's own commit flow.
+
+    The file is first renamed aside, and the check, the archive and the removal all act on
+    that renamed file. A save that lands meanwhile (save renames into place too) becomes a
+    new file and is left alone, instead of being deleted after an older body was checked.
+    """
+    root = repo_root(getattr(args, "project_dir", None))
+    branch = current_branch(root)
+    if branch in ("DETACHED", "HEAD"):
+        print("⚠️  DETACHED HEAD — no branch handoff to retire; nothing removed.", file=sys.stderr)
+        return 1
+    target = handoff_path(root, branch)
+    rel = os.path.relpath(target, root).replace(os.sep, "/")
+    state = handoff_sync_state(root, target)
+    if state == "missing":
+        print(f"No handoff at `{rel}` — nothing to retire.")
+        return 0
+    if state == "unknown":
+        print(f"⚠️  Git state of `{rel}` cannot be read — not removed.", file=sys.stderr)
+        return 1
+    staging = f"{target}.{os.getpid()}.consuming"
+    try:
+        os.rename(target, staging)
+    except OSError as e:
+        print(f"⚠️  Cannot move `{rel}` aside ({e}) — not removed.", file=sys.stderr)
+        return 1
+
+    def keep(reason):
+        if _put_back(staging, target):
+            print(f"⚠️  {reason} — not removed.", file=sys.stderr)
+        else:
+            print(f"⚠️  {reason}, and a newer handoff was saved meanwhile — the newer one is "
+                  f"kept; the older body is left at {staging}.", file=sys.stderr)
+        return 1
+
+    try:
+        with open(staging, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        return keep(f"Cannot read `{rel}` ({e})")
+    if _fingerprint(raw) != args.expect:
+        return keep(f"`{rel}` changed since `load` printed it (fingerprint differs); load it "
+                    "again before retiring it")
+
+    archive_dir = _archive_dir(root)
+    if not archive_dir:
+        return keep(f"Cannot locate the git directory to archive `{rel}`")
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    archive = os.path.join(archive_dir, f"{safe_name(branch)}-{stamp}.md")
+    n = 1
+    while os.path.exists(archive):
+        archive = os.path.join(archive_dir, f"{safe_name(branch)}-{stamp}-{n}.md")
+        n += 1
+    try:
+        os.makedirs(archive_dir, exist_ok=True)
+        with open(archive, "xb") as f:
+            f.write(raw)
+    except OSError as e:
+        return keep(f"Could not archive `{rel}` ({e})")
+
+    # A staged-only file would otherwise stay in the index as an added file after removal.
+    # Unstaging drops the index copy, which exists nowhere else — so only when it is the
+    # same body that was loaded and archived.
+    if state == "staged-new":
+        if head_blob(root, rel, rev="") != raw:
+            return keep(f"The staged copy of `{rel}` differs from the file on disk; stage or "
+                        "discard one of them first")
+        _, ok = run(["git", "rm", "--cached", "--quiet", "--", rel], cwd=root)
+        if not ok:
+            return keep(f"Could not unstage `{rel}` (copy kept at {archive})")
+    try:
+        os.remove(staging)
+    except OSError as e:
+        print(f"⚠️  Could not remove `{staging}` ({e}); copy kept at {archive}.", file=sys.stderr)
+        return 1
+
+    at = f"git -C {shlex.quote(root)}"
+    print(f"🧹 Retired consumed handoff: {rel}")
+    print(f"   Git state before removal: {handoff_state_label(state)}")
+    print(f"   Archived copy (outside the worktree, never committed): {archive}")
+    print(f"   Restore: cp {shlex.quote(archive)} {shlex.quote(target)}")
+    if state.startswith("committed-"):
+        print(f"   Or restore the HEAD version: {at} restore --source=HEAD -- {shlex.quote(rel)}")
+    if state in ("committed-clean", "committed-modified"):
+        print("   The deletion is left unstaged in the working tree; nothing was committed. "
+              "Commit it under the project's rules, or restore the file.")
+    return 0
+
+
 def main():
-    p = argparse.ArgumentParser(description="Work handoff (save/load/fw/history)")
+    p = argparse.ArgumentParser(description="Work handoff (save/load/consume/fw/history)")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("save", help="Save the current work state to a handoff file")
@@ -1203,6 +1343,15 @@ def main():
                         "If omitted: CLAUDE_PROJECT_DIR env → git root of cwd. Must be given "
                         "explicitly when running from a skill folder (plugin cache).")
     l.set_defaults(func=cmd_load)
+
+    c = sub.add_parser("consume", help="Archive and remove the handoff `load` just printed (after reporting)")
+    c.add_argument("--expect", required=True,
+                   help="Fingerprint printed by `load`; nothing is removed if the file changed since")
+    c.add_argument("--project-dir", dest="project_dir",
+                   help="Absolute path of the user project root. If omitted: "
+                        "CLAUDE_PROJECT_DIR env → git root of cwd. Must be given explicitly "
+                        "when running from a skill folder (plugin cache).")
+    c.set_defaults(func=cmd_consume)
 
     fw = sub.add_parser("fw", help="Restore work automatically from session logs — tool switch pickup (even without a save)")
     fw.add_argument("--from", dest="from_tool", default="auto",

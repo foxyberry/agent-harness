@@ -350,7 +350,7 @@ cat /tmp/hook-trace.jsonl</code></pre>
   <h2>Handoff commands</h2>
   <table><thead><tr><th>Command</th><th>When to use it</th><th>What it does</th></tr></thead><tbody>
     <tr><td><code>/handoff-save</code></td><td>Before ending a session or switching tools, machines, or people</td><td>Saves work state to a committable file and collects git facts. The script does not commit or push it.</td></tr>
-    <tr><td><code>/handoff-load</code></td><td>When resuming work</td><td>Reads a handoff and compares it with current git state.</td></tr>
+    <tr><td><code>/handoff-load</code></td><td>When resuming work</td><td>Reads a handoff, compares it with current git state, then archives and removes it.</td></tr>
     <tr><td><code>/fw</code></td><td>After switching tools without saving</td><td>Recovers context from the opposite tool's local session logs.</td></tr>
     <tr><td><code>/fw-both</code></td><td>When work spans Claude and Codex</td><td>Reads both sets of logs to reconstruct the combined context.</td></tr>
     <tr><td><code>/history</code></td><td>When you need to find the right session</td><td>Lists and searches logs, then prints a <code>fw --session</code> command for the selected log.</td></tr>

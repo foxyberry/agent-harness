@@ -38,7 +38,20 @@ Skip this on another machine where the file is unavailable.
 ### 4. Summarize completed work, remaining work, and the next action, then **report and stop** (report-and-stop).
 
 - Read and summarize the existing handoff rather than reconstructing everything from scratch. Do not assume it is committed: if the Git-state line reports uncommitted, modified, or unverifiable, say so in the report — the content may not be shared yet, or may diverge from HEAD.
-- **Propose** the next action. Run builds, tests, further validation, Git operations (including commit/reset), or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work.
+- **Propose** the next action. Run builds, tests, further validation, Git operations (including commit/reset), or implementation only when the user explicitly requests them. Resuming restores and reports state; it does not itself authorize further work. The one exception is step 5.
+
+### 5. Retire the consumed handoff
+
+Once the report is written from a handoff file, retire that file so the next load does not offer its stale entries again.
+Pass the fingerprint that `load` printed below the body:
+
+```bash
+agent-handoff consume --expect <fingerprint>
+```
+
+- Skip this step when there was no handoff file, when the pickup failed, or when you could not report from it.
+- `consume` archives a copy under the shared Git directory and then removes the file. It removes nothing if the file changed since `load`, its Git state cannot be read, or its staged copy differs from the file on disk. It does not commit; a committed file's deletion is left unstaged.
+- Append its output to the report: the removed path, the archive path, and the restore command.
 
 ## Constraints
 

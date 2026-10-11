@@ -89,7 +89,11 @@ list when choosing.
 **`/handoff-load`** — reads the saved handoff first and **checks it against current git
 state**, including whether the handoff file itself is actually committed. If the handoff is
 old or was never committed, it says so. Reporting the state is where it stops by
-default; verification, builds, and git operations have to be asked for separately.
+default; verification, builds, and git operations have to be asked for separately. The one
+step it takes after the report is retiring the handoff it read, so the next load does not
+offer it again: a copy goes to `.git/agent-harness/handoff-archive/` (outside every worktree,
+never committed), then the file is removed. A committed file's deletion is left unstaged for
+you to commit; the report prints the restore command.
 
 **`/fw`** — recovers from session logs even when nothing was saved. It defaults to the
 **opposite tool** (run it in Claude and it reads Codex logs). That default exists to stop

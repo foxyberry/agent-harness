@@ -51,6 +51,29 @@ content; it is read-only.
 
 ---
 
+## 0.17.0
+
+`handoff-load` now retires the handoff it read once the pickup is reported, so the next load
+does not offer its stale done, remaining and next entries again
+([#138](https://github.com/foxyberry/agent-harness/issues/138)). A new `consume` subcommand
+does the removal:
+
+- It removes only the current branch's handoff, and only if its content still matches the
+  fingerprint `load` printed. A handoff re-saved in between, one whose Git state cannot be
+  read, or a staged-only one whose staged copy differs from the file on disk, is kept.
+- Before removal it copies the file to `.git/agent-harness/handoff-archive/` under the shared
+  Git directory. That covers untracked, staged-only and modified-after-commit files, which Git
+  history cannot bring back.
+- It does not commit. A committed handoff's deletion is left unstaged; a staged-only file is
+  unstaged. The output prints the archive path and the restore command.
+
+Nothing is removed when there was no handoff or the pickup failed. Handoffs on other branches
+and session logs are untouched.
+
+Both manifests are 0.17.0. **Close your Codex sessions first**, then use the update commands above.
+
+---
+
 ## 0.16.2
 
 A user saying a PR was merged now triggers automatic drafting only when the current
@@ -258,8 +281,8 @@ Saving and loading a handoff no longer assert a commit state that the file canno
   banner no longer wins over the measured state.
 
 This closes the mislabeling in [#133](https://github.com/foxyberry/agent-harness/issues/133).
-Loading still does not retire a consumed handoff
-([#138](https://github.com/foxyberry/agent-harness/issues/138) remains open).
+Loading did not yet retire a consumed handoff; 0.17.0 adds that
+([#138](https://github.com/foxyberry/agent-harness/issues/138)).
 
 ### Memory skills anchor to the target project ([#143](https://github.com/foxyberry/agent-harness/pull/143))
 

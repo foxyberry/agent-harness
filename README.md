@@ -94,7 +94,7 @@ isolated installation. Background jobs (enabled by default since 0.16.1) process
 | Skill | What it does |
 |---|---|
 | `handoff-save` | Save the current state to a committable file before handing off |
-| `handoff-load` | Resume by reading the saved handoff, reporting whether it is committed, and diffing it against current Git state |
+| `handoff-load` | Resume by reading the saved handoff, reporting whether it is committed, and diffing it against current Git state; then archive and remove the consumed handoff |
 | `fw` | Recover unsaved work from the other tool's local session log |
 | `fw-both` | Read Claude and Codex session logs together |
 | `history` | Browse and search local sessions by time |
@@ -203,7 +203,7 @@ generated adapters are in sync.
 
 ## Status
 
-- Plugin version: `0.16.2`
+- Plugin version: `0.17.0`
 - Public marketplace installation verified for both Claude Code and Codex (measured on earlier
   releases, not re-run for every version)
 - 8 skills on both adapters; cross-tool handoff verified (saved by one, loaded by the other)
